@@ -1,0 +1,41 @@
+ZMĚNA NA ŘÁDKU 2091-2103:
+
+PŮVODNÍ KÓD:
+              // V TABLET MÓDU: vykresli modrý handle
+              if (isTabletMode) {
+                ctx.save();
+                ctx.globalAlpha = 1.0; // Plná viditelnost
+                ctx.beginPath();
+                ctx.arc(actualP2.x, actualP2.y, circleTabletState.isDraggingHandle ? 16 : 12, 0, Math.PI * 2);
+                ctx.fillStyle = darkMode ? '#7aa2f7' : '#3b82f6';
+                ctx.fill();
+                ctx.strokeStyle = darkMode ? '#c0caf5' : '#ffffff';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+                ctx.restore();
+              }
+
+NOVÝ KÓD (STEJNÝ ASSET JAKO U HOTOVÝCH KRUŽNIC!):
+              // V TABLET MÓDU: vykresli modrý handle (STEJNÝ ASSET JAKO U HOTOVÝCH KRUŽNIC!)
+              if (isTabletMode) {
+                const isHandleDragged = circleTabletState.isDraggingHandle;
+                ctx.save();
+                
+                // Glow efekt při draggingu (STEJNÝ JAKO U HOTOVÝCH KRUŽNIC!)
+                if (isHandleDragged) {
+                  ctx.beginPath();
+                  ctx.arc(actualP2.x, actualP2.y, 12, 0, Math.PI * 2);
+                  ctx.fillStyle = darkMode ? 'rgba(122, 162, 247, 0.2)' : 'rgba(59, 130, 246, 0.2)';
+                  ctx.fill();
+                }
+                
+                // Modrá kulička (STEJNÝ ASSET JAKO U HOTOVÝCH KRUŽNIC!)
+                ctx.beginPath();
+                ctx.arc(actualP2.x, actualP2.y, isHandleDragged ? 7 : 6, 0, Math.PI * 2);
+                ctx.fillStyle = darkMode ? '#7aa2f7' : '#3b82f6';
+                ctx.fill();
+                ctx.strokeStyle = darkMode ? '#c0caf5' : '#ffffff';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                ctx.restore();
+              }

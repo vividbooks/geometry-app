@@ -1,0 +1,48 @@
+Musím upravit řádky 1872-1884 v FreeGeometryEditor.tsx
+
+SOUČASNÝ KÓD (1872-1884):
+```
+          if (activeTool === 'segment') {
+              console.log('🎯 GHOST SEGMENT - isTabletMode:', isTabletMode);
+              if (!isTabletMode) {
+                console.log('✏️ Kreslím GHOST pravítko pro segment');
+                drawRuler(ctx, p1, p2, 0.5); // 0.5 progress = plné zobrazení bez animace
+              }
+              drawSegment(ctx, p1, p2, 1, ghostColor, 2);
+
+              if (showMeasurements) {
+                   const dist = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+                   const cm = (dist / PIXELS_PER_CM).toFixed(1).replace('.', ',');
+                   drawMeasurement(ctx, (p1.x + p2.x)/2, (p1.y + p2.y)/2 - 20, `${cm} cm`);
+              }
+          } else if (activeTool === 'line') {
+```
+
+NOVÝ KÓD:
+```
+          if (activeTool === 'segment') {
+              // Pokud je aktivní fixní délka, přepočítej p2
+              let actualP2 = p2;
+              if (segmentInput.active && segmentInput.mode === 'fixed') {
+                const fixedLength = segmentInput.length * PIXELS_PER_CM;
+                const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+                actualP2 = {
+                  x: p1.x + Math.cos(angle) * fixedLength,
+                  y: p1.y + Math.sin(angle) * fixedLength
+                };
+              }
+              
+              console.log('🎯 GHOST SEGMENT - isTabletMode:', isTabletMode);
+              if (!isTabletMode) {
+                console.log('✏️ Kreslím GHOST pravítko pro segment');
+                drawRuler(ctx, p1, actualP2, 0.5); // 0.5 progress = plné zobrazení bez animace
+              }
+              drawSegment(ctx, p1, actualP2, 1, ghostColor, 2);
+
+              if (showMeasurements) {
+                   const dist = Math.sqrt(Math.pow(actualP2.x - p1.x, 2) + Math.pow(actualP2.y - p1.y, 2));
+                   const cm = (dist / PIXELS_PER_CM).toFixed(1).replace('.', ',');
+                   drawMeasurement(ctx, (p1.x + actualP2.x)/2, (p1.y + actualP2.y)/2 - 20, `${cm} cm`);
+              }
+          } else if (activeTool === 'line') {
+```

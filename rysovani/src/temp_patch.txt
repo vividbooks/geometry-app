@@ -1,0 +1,24 @@
+PATCH 1 - Line 1337:
+OLD: const r = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+NEW: const r = circleInput.active ? circleInput.radius * PIXELS_PER_CM : Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+
+PATCH 2 - After line 1339, add:
+              if (circleInput.active) {
+                ctx.save();
+                ctx.fillStyle = '#22c55e';
+                ctx.font = 'bold 16px sans-serif';
+                ctx.fillText(`${circleInput.radius} cm`, p1.x + r + 15, p1.y - 15);
+                ctx.restore();
+              }
+
+PATCH 3 - Line 2023:
+OLD: setActiveTool(tool.id as ToolType);
+NEW: if (tool.id === 'circle_fixed') {
+       setCircleInput(prev => ({ ...prev, visible: true }));
+     } else {
+       setActiveTool(tool.id as ToolType);
+     }
+
+PATCH 4 - Line 2028:
+OLD: activeTool === tool.id ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-50'
+NEW: activeTool === tool.id || (tool.id === 'circle_fixed' && circleInput.active) ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-50'

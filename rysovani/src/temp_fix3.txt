@@ -1,0 +1,23 @@
+## POSLEDNÍ ZMĚNA - ŘÁDKY 2071-2076:
+
+SMAŽ TYTO ŘÁDKY:
+              if (isTabletMode && circleTabletState.active && circleTabletState.center) {
+                actualP2 = { 
+                  x: circleTabletState.center.x + circleTabletState.radius, 
+                  y: circleTabletState.center.y 
+                };
+              }
+
+NAHRAĎ JE TÍMTO:
+              if (isTabletMode && circleTabletState.active && circleTabletState.center) {
+                // Pokud máme uloženou pozici handlu (během draggingu), použij ji
+                if (circleTabletState.handlePos) {
+                  actualP2 = circleTabletState.handlePos;
+                } else {
+                  // Jinak umísti handle napravo od středu
+                  actualP2 = { 
+                    x: circleTabletState.center.x + circleTabletState.radius, 
+                    y: circleTabletState.center.y 
+                  };
+                }
+              }
