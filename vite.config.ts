@@ -4,6 +4,7 @@
   import path from 'path';
 
   export default defineConfig({
+    base: '/Vivivdbooksapp/', // required for GitHub Pages (project site)
     plugins: [react()],
     resolve: {
       // Force single copy of React for all imports (including rysovani/)
