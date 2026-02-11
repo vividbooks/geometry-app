@@ -4,7 +4,8 @@
   import path from 'path';
 
   export default defineConfig({
-    base: '/Vivivdbooksapp/', // required for GitHub Pages (project site)
+    // Use relative base so built HTML works when opened from build/ or deployed to any path (e.g. GitHub Pages)
+    base: './',
     plugins: [react()],
     resolve: {
       // Force single copy of React for all imports (including rysovani/)
@@ -60,7 +61,7 @@
     },
     build: {
       target: 'esnext',
-      outDir: 'build',
+      outDir: 'docs', // GitHub Pages: set "Source" to "Deploy from a branch" → branch: main, folder: /docs
     },
     server: {
       port: 3000,
