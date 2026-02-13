@@ -72,6 +72,7 @@ const CategoryCard = memo(({
   return (
     <button
       onClick={onClick}
+      onTouchEnd={(e) => { e.preventDefault(); onClick(); }}
       className="group flex flex-col overflow-hidden rounded-[32px] border-2 border-transparent transition-all hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] text-left cursor-pointer w-full"
       style={{ backgroundColor: bgColor, fontWeight: 400 }}
     >
@@ -123,6 +124,7 @@ const ConstructionCard = memo(({
   return (
     <button
       onClick={onClick}
+      onTouchEnd={(e) => { e.preventDefault(); onClick(); }}
       className="group flex flex-col overflow-hidden rounded-[24px] border border-[#e5e7eb] bg-white shadow-sm transition-all hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] text-left cursor-pointer w-full"
       style={{ fontWeight: 400 }}
     >
@@ -207,6 +209,7 @@ export function GeometryMenu({ onSelect }: GeometryMenuProps) {
           <button
             key={f.id}
             onClick={() => setActiveFilter(f.id)}
+            onTouchEnd={(e) => { e.preventDefault(); setActiveFilter(f.id); }}
             className={`px-6 py-2.5 rounded-full text-[14px] border-2 transition-all cursor-pointer ${
               activeFilter === f.id
                 ? 'bg-[#4d49f3] text-white border-transparent shadow-[0px_10px_15px_0px_#e0e7ff,0px_4px_6px_0px_#e0e7ff]'

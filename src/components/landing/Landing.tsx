@@ -242,6 +242,7 @@ function TutorialCard({ item }: { item: TutorialItem }) {
   return (
     <button
       onClick={() => navigate(item.route)}
+      onTouchEnd={(e) => { e.preventDefault(); navigate(item.route); }}
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -319,6 +320,7 @@ function DrawingCard({ item }: { item: DrawingItem }) {
   return (
     <button
       onClick={() => navigate(`/rysovani?view=${item.view}`)}
+      onTouchEnd={(e) => { e.preventDefault(); navigate(`/rysovani?view=${item.view}`); }}
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -400,6 +402,7 @@ function ConstructionCard({ item }: { item: ConstructionItem }) {
   return (
     <button
       onClick={() => navigate(`/rysovani?view=${item.view}`)}
+      onTouchEnd={(e) => { e.preventDefault(); navigate(`/rysovani?view=${item.view}`); }}
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -506,6 +509,7 @@ export function Landing() {
             key={f}
             type="button"
             onClick={() => setActiveFilter(f)}
+            onTouchEnd={(e) => { e.preventDefault(); setActiveFilter(f); }}
             style={filterBtnStyle(f, activeFilter)}
           >
             {HEADING_MAP[f]}

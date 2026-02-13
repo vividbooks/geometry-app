@@ -39,6 +39,7 @@ export function ConstructionControlPanel({
       {/* Reset */}
       <button
         onClick={onRestart}
+        onTouchEnd={(e) => { e.preventDefault(); onRestart(); }}
         className={`p-3 rounded-full transition-all ${
           darkMode ? 'hover:bg-gray-800' : 'hover:bg-gray-100'
         }`}
@@ -50,6 +51,7 @@ export function ConstructionControlPanel({
       {/* Zpět */}
       <button
         onClick={() => changeStep(currentStep - 1)}
+        onTouchEnd={(e) => { e.preventDefault(); changeStep(currentStep - 1); }}
         disabled={currentStep === 0}
         className={`px-5 py-2.5 rounded-xl font-bold transition-all ${
           currentStep === 0
@@ -64,6 +66,7 @@ export function ConstructionControlPanel({
       {/* Další */}
       <button
         onClick={() => changeStep(currentStep + 1)}
+        onTouchEnd={(e) => { e.preventDefault(); changeStep(currentStep + 1); }}
         disabled={currentStep >= totalSteps - 1}
         className={`px-5 py-2.5 rounded-xl font-bold transition-all ${
           currentStep >= totalSteps - 1
@@ -81,6 +84,7 @@ export function ConstructionControlPanel({
       {/* Zoom */}
       <button
         onClick={() => onZoomChange(Math.max(0.2, scale - 0.05))}
+        onTouchEnd={(e) => { e.preventDefault(); onZoomChange(Math.max(0.2, scale - 0.05)); }}
         className={`p-1.5 rounded-lg transition-colors ${
           darkMode ? 'hover:bg-gray-800 text-[#c0caf5]' : 'hover:bg-gray-100 text-gray-600'
         }`}
@@ -101,6 +105,7 @@ export function ConstructionControlPanel({
 
       <button
         onClick={() => onZoomChange(Math.min(0.6, scale + 0.05))}
+        onTouchEnd={(e) => { e.preventDefault(); onZoomChange(Math.min(0.6, scale + 0.05)); }}
         className={`p-1.5 rounded-lg transition-colors ${
           darkMode ? 'hover:bg-gray-800 text-[#c0caf5]' : 'hover:bg-gray-100 text-gray-600'
         }`}
@@ -115,6 +120,7 @@ export function ConstructionControlPanel({
       {/* Dark mode */}
       <button
         onClick={onToggleDarkMode}
+        onTouchEnd={(e) => { e.preventDefault(); onToggleDarkMode(); }}
         className={`p-3 rounded-full transition-all ${
           darkMode ? 'hover:bg-gray-800' : 'hover:bg-gray-100'
         }`}

@@ -1758,6 +1758,7 @@ export function AngleTriangleConstruction({ onBack, darkMode, onDarkModeChange }
       
       <button
         onClick={onBack}
+        onTouchEnd={(e) => { e.preventDefault(); onBack(); }}
         className={`absolute top-4 left-4 z-10 flex items-center gap-2 px-3 py-2 rounded-xl shadow-[0_2px_12px_rgba(0,0,0,0.08)] transition-all ${
           darkMode
             ? 'bg-[#1a1b26]/90 hover:bg-[#24283b] text-[#c0caf5] border border-[#2a2b3d] backdrop-blur-sm'
@@ -1772,6 +1773,7 @@ export function AngleTriangleConstruction({ onBack, darkMode, onDarkModeChange }
       <div className={`absolute top-4 z-10 transition-all duration-300 ${showProtocol ? 'right-[576px]' : 'right-4'}`}>
         <button
           onClick={() => setShowProtocol(!showProtocol)}
+          onTouchEnd={(e) => { e.preventDefault(); setShowProtocol(!showProtocol); }}
           className={`p-3 rounded-xl transition-all relative group/protocol ${
             showProtocol
               ? darkMode ? 'bg-[#7aa2f7] text-white' : 'bg-[#1e1b4b] text-white'
