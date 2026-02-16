@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Toaster, toast } from 'sonner@2.0.3';
+import katex from 'katex';
 import { 
   ArrowLeft, 
   MousePointer2, 
@@ -398,15 +399,36 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     }
     const imageDataUrl = canvas.toDataURL('image/png');
 
-    // Sestavit HTML kroků
+    // Sestavit HTML kroků - použít constructionSteps s LaTeX notací
     const title = recordingName.trim() || 'Konstrukce';
-    const stepsHtml = steps.map((step, i) => {
-      const desc = step.description || `Krok ${i + 1}`;
-      return `<tr>
-        <td style="padding:6px 12px 6px 0;font-weight:bold;color:#6366f1;vertical-align:top;white-space:nowrap">${i + 1}.</td>
-        <td style="padding:6px 0;vertical-align:top">${desc}</td>
-      </tr>`;
-    }).join('');
+    const renderLatex = (math: string): string => {
+      try {
+        return katex.renderToString(math, { throwOnError: false, displayMode: false, strict: false });
+      } catch { return math; }
+    };
+
+    // Použít constructionSteps (mají LaTeX), fallback na recording steps
+    const printSteps = constructionSteps.length > 0 ? constructionSteps : null;
+    const stepsHtml = printSteps
+      ? printSteps.map((step, i) => {
+          const latexHtml = renderLatex(step.latex || step.notation);
+          return `<tr>
+            <td style="padding:8px 12px 8px 0;font-weight:bold;color:#6366f1;vertical-align:top;white-space:nowrap;font-size:15px">${step.stepNumber}.</td>
+            <td style="padding:8px 0;vertical-align:top">
+              <div style="font-size:16px;line-height:1.6">${latexHtml}</div>
+              <div style="font-size:12px;color:#94a3b8;margin-top:2px">${step.description}</div>
+            </td>
+          </tr>`;
+        }).join('')
+      : steps.map((step, i) => {
+          const desc = step.description || `Krok ${i + 1}`;
+          return `<tr>
+            <td style="padding:8px 12px 8px 0;font-weight:bold;color:#6366f1;vertical-align:top;white-space:nowrap">${i + 1}.</td>
+            <td style="padding:8px 0;vertical-align:top">${desc}</td>
+          </tr>`;
+        }).join('');
+
+    const stepCount = printSteps ? printSteps.length : steps.length;
 
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
@@ -415,6 +437,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     }
     printWindow.document.write(`<!DOCTYPE html>
 <html><head><title>${title} - Tisk</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; padding: 24px; color: #1a1a2e; }
@@ -428,6 +451,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
   .steps-section h2 { font-size: 16px; color: #4338ca; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #e2e8f0; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   tr:not(:last-child) td { border-bottom: 1px solid #f1f5f9; }
+  .katex { font-size: 1.1em !important; }
   @media print {
     body { padding: 10mm; }
     .content { gap: 20px; }
@@ -437,14 +461,14 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
 </head><body>
   <div class="header">
     <h1>${title}</h1>
-    <div class="meta">${new Date().toLocaleDateString('cs-CZ')} | ${steps.length} krok${steps.length === 1 ? '' : steps.length <= 4 ? 'y' : 'u'}</div>
+    <div class="meta">${new Date().toLocaleDateString('cs-CZ')} | ${stepCount} krok${stepCount === 1 ? '' : stepCount <= 4 ? 'y' : 'ů'}</div>
   </div>
   <div class="content">
     <div class="canvas-section">
       <img src="${imageDataUrl}" alt="Konstrukce" />
     </div>
     <div class="steps-section">
-      <h2>Zapis konstrukce</h2>
+      <h2>Zápis konstrukce</h2>
       <table>${stepsHtml}</table>
     </div>
   </div>
@@ -4215,46 +4239,46 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
 
       {/* TOP RIGHT CORNER: Undo, Redo, Record, Zápis konstrukce */}
       {!recordingState.showPlayer && (
-      <div className={`absolute top-4 z-30 flex gap-2 transition-all duration-300 ${showConstructionPanel ? 'right-[516px]' : 'right-4'}`} onTouchStart={(e) => e.stopPropagation()}>
+      <div className="absolute top-4 right-4 z-30 bg-[#F2F2F2] rounded-full p-2 flex items-center gap-1 shadow-sm" onTouchStart={(e) => e.stopPropagation()}>
         {/* Undo */}
         <button
           onClick={handleUndo}
           disabled={historyIndex < 0}
-          className={`p-3 rounded-xl transition-all ${
+          className={`w-12 h-12 flex items-center justify-center rounded-xl transition-all duration-300 ${
             historyIndex < 0 
-              ? darkMode ? 'bg-[#24283b] text-[#565f89] cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed border'
-              : darkMode ? 'bg-[#24283b] hover:bg-[#414868] text-[#c0caf5]' : 'bg-white hover:bg-gray-50 text-gray-700 shadow-sm border'
+              ? 'text-gray-400 cursor-not-allowed'
+              : 'text-black hover:bg-gray-200'
           }`}
           title="Zpět (Ctrl+Z)"
         >
-          <Undo className="size-6" />
+          <Undo className="w-6 h-6" />
         </button>
         {/* Redo */}
         <button
           onClick={handleRedo}
           disabled={historyIndex >= history.length - 1}
-          className={`p-3 rounded-xl transition-all ${
+          className={`w-12 h-12 flex items-center justify-center rounded-xl transition-all duration-300 ${
             historyIndex >= history.length - 1
-              ? darkMode ? 'bg-[#24283b] text-[#565f89] cursor-not-allowed' : 'bg-gray-100 text-gray-400 cursor-not-allowed border'
-              : darkMode ? 'bg-[#24283b] hover:bg-[#414868] text-[#c0caf5]' : 'bg-white hover:bg-gray-50 text-gray-700 shadow-sm border'
+              ? 'text-gray-400 cursor-not-allowed'
+              : 'text-black hover:bg-gray-200'
           }`}
           title="Vpřed (Ctrl+Y)"
         >
-          <RotateCw className="size-6" />
+          <RotateCw className="w-6 h-6" />
         </button>
         {/* Record */}
         <button
           onClick={toggleRecording}
-          className={`p-3 rounded-xl transition-all relative group/record ${
+          className={`w-12 h-12 flex items-center justify-center rounded-xl transition-all duration-300 relative group/record ${
             recordingState.isRecording 
               ? 'bg-red-500 hover:bg-red-600 text-white animate-pulse' 
-              : darkMode ? 'bg-[#24283b] hover:bg-[#414868] text-[#c0caf5]' : 'bg-white hover:bg-gray-50 text-gray-700 shadow-sm border'
+              : 'text-black hover:bg-gray-200'
           }`}
           title={recordingState.isRecording ? 'Zastavit nahrávání' : 'Začít nahrávání'}
         >
           {recordingState.isRecording ? (
             <>
-              <div className="size-6 bg-white rounded-sm" />
+              <div className="w-6 h-6 bg-white rounded-sm" />
               <span className="absolute -top-1 -right-1 flex h-3 w-3">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
@@ -4262,8 +4286,8 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
             </>
           ) : (
             <>
-              <div className="size-6 rounded-full border-2 border-current flex items-center justify-center">
-                <div className="size-3 rounded-full bg-current" />
+              <div className="w-6 h-6 rounded-full border-2 border-current flex items-center justify-center">
+                <div className="w-3 h-3 rounded-full bg-current" />
               </div>
               {/* Tooltip */}
               <div className="absolute right-0 top-full mt-2 px-3 py-1.5 bg-black/80 text-white text-xs rounded-lg whitespace-nowrap opacity-0 group-hover/record:opacity-100 transition-opacity pointer-events-none">
@@ -4275,18 +4299,16 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
         {/* Zápis konstrukce */}
         <button
           onClick={() => setShowConstructionPanel(!showConstructionPanel)}
-          className={`p-3 rounded-xl transition-all relative group/protocol ${
+          className={`w-12 h-12 flex items-center justify-center rounded-xl transition-all duration-300 relative group/protocol ${
             showConstructionPanel
-              ? darkMode ? 'bg-[#7aa2f7] text-white' : 'bg-[#1e1b4b] text-white'
-              : darkMode ? 'bg-[#24283b] hover:bg-[#414868] text-[#c0caf5]' : 'bg-white hover:bg-gray-50 text-gray-700 shadow-sm border'
+              ? 'bg-[#1e1b4b] text-white'
+              : 'text-black hover:bg-gray-200'
           }`}
           title="Zápis konstrukce"
         >
-          <FileText className="size-6" />
+          <FileText className="w-6 h-6" />
           {constructionSteps.length > 0 && !showConstructionPanel && (
-            <span className={`absolute -top-1 -right-1 min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-bold px-1 ${
-              darkMode ? 'bg-[#7aa2f7] text-white' : 'bg-[#1e1b4b] text-white'
-            }`}>
+            <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-bold px-1 bg-[#1e1b4b] text-white">
               {constructionSteps.length}
             </span>
           )}
@@ -4815,17 +4837,12 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
 
         // Determine content
         let content: React.ReactNode = null;
-        let showBlueStyle = false;
 
         if (canvasWarning) {
-          showBlueStyle = true;
           content = (
-            <span className="flex items-center gap-3">
-              <span className="relative flex size-3">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-300 opacity-75"></span>
-                <span className="relative inline-flex rounded-full size-3 bg-orange-400"></span>
-              </span>
-              <span className="tracking-wide">{canvasWarning}</span>
+            <span className="flex items-center gap-2">
+              <span className="size-2 rounded-full bg-orange-400"></span>
+              {canvasWarning}
             </span>
           );
         } else if (animState.isActive) {
@@ -4836,7 +4853,6 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
             </span>
           );
         } else if (isTabletMode && (activeTool === 'perpendicular' || activeTool === 'circle' || activeTool === 'angle')) {
-          showBlueStyle = true;
           let tabletText = '';
           if (activeTool === 'perpendicular') {
             tabletText = perpTabletState.step === 'selectLine' 
@@ -4855,36 +4871,23 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
                 ? 'Posunuj úhloměr po lince a klikni "Umístit úhloměr"'
                 : 'Vyber kam chceš umístit úhloměr';
           }
-          content = (
-            <span className="flex items-center gap-3">
-              <span className="relative flex size-3">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
-                <span className="relative inline-flex rounded-full size-3 bg-white"></span>
-              </span>
-              <span className="tracking-wide">{tabletText}</span>
-            </span>
-          );
+          content = <span>{tabletText}</span>;
         } else {
+          // Only show hints when actively drawing (selectedPointId set = mid-construction)
           let text = '';
-          if (activeTool === 'move') text = selectedShapeIds.length > 0 ? `Vybráno ${selectedShapeIds.length} ${selectedShapeIds.length === 1 ? 'tvar' : selectedShapeIds.length < 5 ? 'tvary' : 'tvarů'} · Táhni pro přesun · Del smaže` : 'Klikni na bod nebo tvar · Táhni pro obdélníkový výběr · Ctrl+klik pro vícenásobný výběr';
-          else if (activeTool === 'point') text = 'Klikni pro vytvoření bodu';
-          else if (activeTool === 'segment') text = segmentInput.active ? (selectedPointId ? `Vyber směr (fixní délka ${segmentInput.length} cm)` : 'Vyber začátek úsečky') : (selectedPointId ? 'Vyber druhý bod úsečky' : 'Vyber první bod úsečky');
-          else if (activeTool === 'line') text = selectedPointId ? 'Vyber druhý bod přímky' : 'Vyber první bod přímky';
-          else if (activeTool === 'circle' && !isTabletMode) text = selectedPointId ? 'Vyber bod na obvodu (poloměr)' : 'Vyber střed kružnice';
-          else if (activeTool === 'distance') text = 'Měření vzdálenosti (připravujeme)';
-          else if (activeTool === 'angle' && !isTabletMode) text = selectedPointId ? 'Vyber bod na rameni úhlu' : 'Vyber vrchol úhlu';
-          else if (activeTool === 'perpendicular' && !isTabletMode) text = 'Klikni na linku pro vytvoření kolmice';
+          if (activeTool === 'segment' && selectedPointId) text = segmentInput.active ? `Vyber směr (fixní délka ${segmentInput.length} cm)` : 'Vyber druhý bod úsečky';
+          else if (activeTool === 'line' && selectedPointId) text = 'Vyber druhý bod přímky';
+          else if (activeTool === 'circle' && !isTabletMode && selectedPointId) text = 'Vyber bod na obvodu (poloměr)';
+          else if (activeTool === 'angle' && !isTabletMode && selectedPointId) text = 'Vyber bod na rameni úhlu';
           if (text) content = <span>{text}</span>;
         }
 
         if (!content) return null;
 
         return (
-      <div className={`absolute left-1/2 -translate-x-1/2 z-10 rounded-full font-medium transition-all duration-300 ${
-        showBlueStyle
-          ? 'px-8 py-4 text-base bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-[0_0_24px_rgba(59,130,246,0.5)] border-2 border-blue-300/60'
-          : `px-6 py-3 text-sm ${darkMode ? 'bg-[#24283b] text-[#c0caf5]' : 'bg-white text-gray-600 shadow-md border'}`
-      }`} style={{ bottom: 'calc(64px + env(safe-area-inset-bottom, 0px))' }}>
+      <div className={`absolute left-1/2 -translate-x-1/2 z-10 rounded-2xl font-medium transition-all duration-300 px-5 py-2.5 text-sm border ${
+        darkMode ? 'bg-[#24283b]/95 text-[#c0caf5] border-[#565f89] shadow-lg' : 'bg-white/95 text-gray-600 shadow-lg border-gray-200 backdrop-blur-sm'
+      }`} style={{ bottom: 'calc(24px + env(safe-area-inset-bottom, 0px))' }}>
         {content}
       </div>
         );
@@ -4892,16 +4895,12 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
 
       {/* ZOOM + CONTROLS (top center) */}
       {!recordingState.showPlayer && (
-      <div className={`absolute left-1/2 -translate-x-1/2 top-4 z-10 flex items-center gap-2 p-2 rounded-xl border ${
-        darkMode ? 'bg-[#24283b] border-[#565f89]' : 'bg-white shadow-lg border-gray-200'
-      }`}>
+      <div className="absolute left-1/2 -translate-x-1/2 top-4 z-10 flex items-center gap-1 p-2 bg-[#F2F2F2] rounded-full shadow-sm">
         <button 
           onClick={() => zoomToCenter(scale - 0.1)}
-          className={`p-1.5 rounded-lg transition-colors ${
-            darkMode ? 'hover:bg-[#414868] text-[#c0caf5]' : 'hover:bg-gray-100 text-gray-600'
-          }`}
+          className="w-10 h-10 flex items-center justify-center rounded-xl text-black hover:bg-gray-200 transition-all duration-300"
         >
-          <ZoomOut className="size-5" />
+          <ZoomOut className="w-5 h-5" />
         </button>
         
         <div className="w-24 px-2">
@@ -4916,38 +4915,32 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
         
         <button 
           onClick={() => zoomToCenter(scale + 0.1)}
-          className={`p-1.5 rounded-lg transition-colors ${
-            darkMode ? 'hover:bg-[#414868] text-[#c0caf5]' : 'hover:bg-gray-100 text-gray-600'
-          }`}
+          className="w-10 h-10 flex items-center justify-center rounded-xl text-black hover:bg-gray-200 transition-all duration-300"
         >
-          <ZoomIn className="size-5" />
+          <ZoomIn className="w-5 h-5" />
         </button>
 
         {/* Dark Mode Toggle */}
-        <div className={`w-px h-6 ${darkMode ? 'bg-[#565f89]' : 'bg-gray-200'}`} />
+        <div className="w-px h-6 bg-gray-300" />
         <button 
           onClick={() => onDarkModeChange(!darkMode)}
-          className={`p-1.5 rounded-lg transition-colors ${
-            darkMode ? 'hover:bg-[#414868] text-[#c0caf5]' : 'hover:bg-gray-100 text-gray-600'
-          }`}
+          className="w-10 h-10 flex items-center justify-center rounded-xl text-black hover:bg-gray-200 transition-all duration-300"
           title={darkMode ? 'Světlý režim' : 'Tmavý režim'}
         >
-          {darkMode ? <Sun className="size-5" /> : <Moon className="size-5" />}
+          {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
         </button>
 
         {/* Tablet/Board Mode Toggle */}
-        <div className={`w-px h-6 ${darkMode ? 'bg-[#565f89]' : 'bg-gray-200'}`} />
+        <div className="w-px h-6 bg-gray-300" />
         <button 
           onClick={() => {
             console.log('🔄 Přepínám režim:', !isTabletMode ? 'TABULE' : 'PC');
             setIsTabletMode(!isTabletMode);
           }}
-          className={`px-3 py-1.5 rounded-lg transition-all font-medium text-xs ${
+          className={`px-3 py-1.5 rounded-xl transition-all duration-300 font-medium text-xs ${
             isTabletMode 
-              ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/50' 
-              : darkMode 
-                ? 'bg-[#414868] text-[#7aa2f7] hover:bg-[#565f89]' 
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              ? 'bg-[#1e1b4b] text-white' 
+              : 'text-black hover:bg-gray-200'
           }`}
           title={isTabletMode ? 'Klasický režim' : 'Režim pro tabule a tablety'}
         >
