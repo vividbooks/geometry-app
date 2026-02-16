@@ -70,6 +70,10 @@ export type AnswerMode = 'number' | 'choices';
 
 /** Vygeneruje 4 možnosti A–D: jedna správná a tři plausibilní špatné */
 function generateChoices(correctNum: number, correctDisplay: string): string[] {
+  const hasDecimals = correctDisplay.includes('.');
+  const decimals = hasDecimals ? (correctDisplay.split('.')[1]?.length ?? 0) : 0;
+  const fmt = (v: number) => hasDecimals ? v.toFixed(decimals) : String(Math.round(v));
+
   const step = Math.max(1, Math.abs(correctNum) * 0.12);
   const wrongs = new Set<string>();
   const variants = [
@@ -81,13 +85,13 @@ function generateChoices(correctNum: number, correctDisplay: string): string[] {
     correctNum * 1.15,
   ].filter((n) => Number.isFinite(n) && n > 0 && Math.abs(n - correctNum) > 0.01);
   for (const v of variants) {
-    const s = v >= 10 ? String(Math.round(v)) : v.toFixed(1);
+    const s = fmt(v);
     if (s !== correctDisplay) wrongs.add(s);
     if (wrongs.size >= 3) break;
   }
   while (wrongs.size < 3) {
     const v = correctNum + (wrongs.size + 1) * step;
-    wrongs.add(v >= 10 ? String(Math.round(v)) : v.toFixed(1));
+    wrongs.add(fmt(v));
   }
   const choices = [correctDisplay, ...Array.from(wrongs).slice(0, 3)];
   for (let i = choices.length - 1; i > 0; i--) {
@@ -306,7 +310,25 @@ export function ObjectExercisePage() {
                 <Label className="text-slate-700 text-sm whitespace-nowrap">Drátěný model</Label>
                 <Switch checked={isWireframe} onCheckedChange={setIsWireframe} />
               </div>
-              {hasUnfold && (
+              {hasUnfold && (objectId === 'valec' || objectId === 'kuzel') && (
+                <button
+                  type="button"
+                  onClick={() => setUnfoldProgress(unfoldProgress < 0.5 ? 1 : 0)}
+                  className="flex items-center gap-2 py-2 px-4 rounded-lg border transition-colors"
+                  style={{
+                    background: unfoldProgress >= 0.5 ? '#eff6ff' : '#f8fafc',
+                    borderColor: unfoldProgress >= 0.5 ? '#93c5fd' : '#e2e8f0',
+                    color: unfoldProgress >= 0.5 ? '#1d4ed8' : '#334155',
+                    fontWeight: 500,
+                    fontSize: '0.875rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Expand className="h-4 w-4" />
+                  {unfoldProgress >= 0.5 ? 'Složit zpět' : 'Rozložit do sítě'}
+                </button>
+              )}
+              {hasUnfold && objectId !== 'valec' && objectId !== 'kuzel' && (
                 <div className="flex items-center gap-2" style={{ flex: 1, minWidth: 180 }}>
                   <Expand className="h-4 w-4 text-slate-600 flex-shrink-0" />
                   <Label className="text-slate-700 text-sm whitespace-nowrap">

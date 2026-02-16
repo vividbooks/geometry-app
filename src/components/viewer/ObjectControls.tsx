@@ -56,6 +56,9 @@ const TUTORIAL_LINKS: Record<string, { label: string; route: string; color: stri
   ],
 };
 
+// Properties temporarily hidden (objem/povrch – will be re-enabled later)
+const HIDDEN_PROPERTY_LABELS = new Set(['Objem', 'Povrch']);
+
 interface Props {
   objectId?: string;
   objectName: string;
@@ -90,6 +93,14 @@ export function ObjectControls({
   const navigate = useNavigate();
   const [isPropertiesOpen, setIsPropertiesOpen] = useState(is2D);
   const tutorials = objectId ? TUTORIAL_LINKS[objectId] ?? [] : [];
+
+  // Filter out hidden properties (objem/povrch temporarily hidden)
+  const visibleProperties = mathProperties.filter(
+    (prop) => !HIDDEN_PROPERTY_LABELS.has(prop.label),
+  );
+
+  // All tutorial links temporarily hidden
+  const visibleTutorials: typeof tutorials = [];
 
   return (
     <div className="space-y-4">
@@ -134,29 +145,57 @@ export function ObjectControls({
             </div>
           )}
 
-          {/* Unfold slider */}
+          {/* Unfold slider or toggle button */}
           {hasUnfold && (
             <div className="space-y-3 pt-2 border-t border-slate-100">
-              <div className="flex items-center space-x-2">
-                <Expand className="h-4 w-4 text-slate-600" />
-                <Label className="text-slate-700">
-                  Rozbalení do sítě: {Math.round(unfoldProgress * 100)}%
-                </Label>
-              </div>
-              <Slider
-                value={[unfoldProgress]}
-                onValueChange={(v) => onUnfoldProgressChange(v[0])}
-                min={0}
-                max={1}
-                step={0.01}
-                className="w-full"
-              />
-              {unfoldProgress < 1 && (
-                <div className="text-sm text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-100">
-                  {unfoldProgress === 0
-                    ? '💡 Tip: Táhněte pro otáčení, kolečkem myši přiblížíte nebo oddálíte.'
-                    : '💡 Táhněte slider pro postupné rozbalení'}
-                </div>
+              {objectId === 'valec' || objectId === 'kuzel' ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => onUnfoldProgressChange(unfoldProgress < 0.5 ? 1 : 0)}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg border transition-colors"
+                    style={{
+                      background: unfoldProgress >= 0.5 ? '#eff6ff' : '#f8fafc',
+                      borderColor: unfoldProgress >= 0.5 ? '#93c5fd' : '#e2e8f0',
+                      color: unfoldProgress >= 0.5 ? '#1d4ed8' : '#334155',
+                      fontWeight: 500,
+                      fontSize: '0.875rem',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <Expand className="h-4 w-4" />
+                    {unfoldProgress >= 0.5 ? 'Složit zpět' : 'Rozložit do sítě'}
+                  </button>
+                  {unfoldProgress < 0.5 && (
+                    <div className="text-sm text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-100">
+                      💡 Tip: Táhněte pro otáčení, kolečkem myši přiblížíte nebo oddálíte.
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center space-x-2">
+                    <Expand className="h-4 w-4 text-slate-600" />
+                    <Label className="text-slate-700">
+                      Rozbalení do sítě: {Math.round(unfoldProgress * 100)}%
+                    </Label>
+                  </div>
+                  <Slider
+                    value={[unfoldProgress]}
+                    onValueChange={(v) => onUnfoldProgressChange(v[0])}
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    className="w-full"
+                  />
+                  {unfoldProgress < 1 && (
+                    <div className="text-sm text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-100">
+                      {unfoldProgress === 0
+                        ? '💡 Tip: Táhněte pro otáčení, kolečkem myši přiblížíte nebo oddálíte.'
+                        : '💡 Táhněte slider pro postupné rozbalení'}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -188,7 +227,7 @@ export function ObjectControls({
           </CollapsibleTrigger>
           <CollapsibleContent>
             <div className="space-y-3" style={{ padding: '0 16px 16px' }}>
-              {mathProperties.map((prop, i) => (
+              {visibleProperties.map((prop, i) => (
                 <div key={i} className="flex justify-between items-center">
                   <span className="text-slate-700">{prop.label}:</span>
                   <Badge
@@ -207,13 +246,13 @@ export function ObjectControls({
         </div>
       </Collapsible>
 
-      {/* Tutorial links */}
-      {tutorials.length > 0 && (
+      {/* Tutorial links (temporarily hidden) */}
+      {visibleTutorials.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ fontSize: '0.75rem', fontWeight: 500, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', paddingLeft: 2 }}>
             Návody
           </div>
-          {tutorials.map((t) => (
+          {visibleTutorials.map((t) => (
             <button
               key={t.route}
               type="button"

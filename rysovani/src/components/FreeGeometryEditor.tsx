@@ -30,7 +30,8 @@ import {
   Copy,
   Loader2,
   Link,
-  Printer
+  Printer,
+  Grid2X2
 } from 'lucide-react';
 import { useIsMobile } from './ui/use-mobile';
 import { Slider } from './ui/slider';
@@ -121,6 +122,7 @@ interface RecordedStep {
   id: string;
   actionType: 'create-point' | 'create-segment' | 'create-line' | 'create-ray' | 'create-circle' | 'create-angle' | 'move-point' | 'delete' | 'freehand';
   description: string;
+  notation?: string; // LaTeX notation for construction log
   snapshot: {
     points: GeoPoint[];
     shapes: GeoShape[];
@@ -271,6 +273,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
   const [visualEffects, setVisualEffects] = useState<VisualEffect[]>([]);
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
   const [showMeasurements, setShowMeasurements] = useState(true); // Toggle pro zobrazení měření - defaultně zapnuté
+  const [showGrid, setShowGrid] = useState(true); // Toggle pro zobrazení mřížky
   const canvasWarningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [canvasWarning, setCanvasWarning] = useState<string | null>(null);
   
@@ -306,6 +309,8 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     showPlayer: false
   });
   const [editableSteps, setEditableSteps] = useState<RecordedStep[]>([]);
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+  const [showRenameModal, setShowRenameModal] = useState(false);
   const previousStateRef = useRef<{points: GeoPoint[], shapes: GeoShape[], freehandPaths: FreehandPath[]} | null>(null);
   const pendingToolVisualizationRef = useRef<RecordedStep['toolVisualization']>(undefined);
   const playbackAnimationTimeoutRef = useRef<number | null>(null);
@@ -410,28 +415,21 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
       } catch { return math; }
     };
 
-    // Použít constructionSteps (mají LaTeX), fallback na recording steps
-    const printSteps = constructionSteps.length > 0 ? constructionSteps : null;
-    const stepsHtml = printSteps
-      ? printSteps.map((step, i) => {
-          const latexHtml = renderLatex(step.latex || step.notation);
-          return `<tr>
-            <td style="padding:8px 12px 8px 0;font-weight:bold;color:#6366f1;vertical-align:top;white-space:nowrap;font-size:15px">${step.stepNumber}.</td>
-            <td style="padding:8px 0;vertical-align:top">
-              <div style="font-size:16px;line-height:1.6">${latexHtml}</div>
-              <div style="font-size:12px;color:#94a3b8;margin-top:2px">${step.description}</div>
-            </td>
-          </tr>`;
-        }).join('')
-      : steps.map((step, i) => {
-          const desc = step.description || `Krok ${i + 1}`;
-          return `<tr>
-            <td style="padding:8px 12px 8px 0;font-weight:bold;color:#6366f1;vertical-align:top;white-space:nowrap">${i + 1}.</td>
-            <td style="padding:8px 0;vertical-align:top">${desc}</td>
-          </tr>`;
-        }).join('');
+    // Použít recording steps s jejich notation (LaTeX) a description
+    const stepsHtml = steps.map((step, i) => {
+      const hasNotation = step.notation && step.notation.trim();
+      const latexHtml = hasNotation ? renderLatex(step.notation!) : '';
+      const desc = step.description || `Krok ${i + 1}`;
+      return `<tr>
+        <td style="padding:8px 12px 8px 0;font-weight:bold;color:#6366f1;vertical-align:top;white-space:nowrap;font-size:15px">${i + 1}.</td>
+        <td style="padding:8px 0;vertical-align:top">
+          ${hasNotation ? `<div style="font-size:16px;line-height:1.6">${latexHtml}</div>` : ''}
+          <div style="font-size:${hasNotation ? '12' : '14'}px;color:${hasNotation ? '#94a3b8' : '#1a1a2e'};${hasNotation ? 'margin-top:2px' : ''}">${desc}</div>
+        </td>
+      </tr>`;
+    }).join('');
 
-    const stepCount = printSteps ? printSteps.length : steps.length;
+    const stepCount = steps.length;
 
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
@@ -895,18 +893,32 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
           isRecording: false
         }));
       } else {
-        // Otevrit prehravac primo po nahravani
-        setEditableSteps(recordingState.steps);
+        // Auto-populate notation from constructionSteps
+        const stepsWithNotation = recordingState.steps.map((step, idx) => {
+          if (step.notation) return step; // already has notation
+          const prevSnapshot = idx > 0 ? recordingState.steps[idx - 1].snapshot : { points: [] as GeoPoint[], shapes: [] as GeoShape[] };
+          const prevPointIds = new Set(prevSnapshot.points.map((p: GeoPoint) => p.id));
+          const prevShapeIds = new Set(prevSnapshot.shapes.map((s: GeoShape) => s.id));
+          const newIds = [
+            ...step.snapshot.points.filter((p: GeoPoint) => !prevPointIds.has(p.id)).map((p: GeoPoint) => p.id),
+            ...step.snapshot.shapes.filter((s: GeoShape) => !prevShapeIds.has(s.id)).map((s: GeoShape) => s.id),
+          ];
+          const matchingCS = newIds.length > 0
+            ? constructionSteps.find(cs => cs.objectIds.some(id => newIds.includes(id)))
+            : undefined;
+          return {
+            ...step,
+            notation: matchingCS ? (matchingCS.latex || matchingCS.notation) : ''
+          };
+        });
+        // Otevrit editor primo po nahravani
+        setEditableSteps(stepsWithNotation);
         setRecordingState(prev => ({
           ...prev,
           isRecording: false,
-          showPlayer: true,
+          showEditor: true,
           currentStepIndex: -1
         }));
-        // Vycistit canvas pro prehravani
-        setPoints([]);
-        setShapes([]);
-        setFreehandPaths([]);
         setShareLink(null);
         setRecordingName('');
       }
@@ -1615,6 +1627,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
             };
             
             // Nastavit pravítko pro přehrávač (kolmé pravítko)
+            // p1 = průsečík, p2 = 100px ve směru kolmice (krátká vzdálenost = detekce kolmice v animaci)
             pendingToolVisualizationRef.current = {
                 type: 'ruler',
                 p1: { x: pX, y: pY },
@@ -2605,7 +2618,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     return () => {
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
     };
-  }, [animState, points, shapes, freehandPaths, scale, offset, canvasSize, darkMode, selectedPointId, hoveredPointId, hoveredShape, activeTool, visualEffects, angleInput, circleInput, recordingState.showPlayer, showMeasurements, perpTabletState, circleTabletState, isTabletMode, angleTabletState, selectedShapeIds, hoveredShapeForMove]);
+  }, [animState, points, shapes, freehandPaths, scale, offset, canvasSize, darkMode, selectedPointId, hoveredPointId, hoveredShape, activeTool, visualEffects, angleInput, circleInput, recordingState.showPlayer, showMeasurements, showGrid, perpTabletState, circleTabletState, isTabletMode, angleTabletState, selectedShapeIds, hoveredShapeForMove]);
 
 
   // --- RENDEROVÁNÍ ---
@@ -2630,7 +2643,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     ctx.scale(dpr, dpr);
 
     // Grid (mřížka)
-    drawGrid(ctx, offset, scale);
+    if (showGrid) drawGrid(ctx, offset, scale);
 
     ctx.translate(offset.x, offset.y);
     ctx.scale(scale, scale);
@@ -2711,7 +2724,6 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
 
       if (shape.type === 'segment') {
         drawSegment(ctx, p1, p2, 1, darkMode ? '#e5e7eb' : '#1f2937');
-        drawLabel(ctx, { x: (p1.x + p2.x)/2, y: (p1.y + p2.y)/2 }, shape.label, darkMode ? '#9ca3af' : '#6b7280');
         
         if (showMeasurements) {
             const dist = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
@@ -2934,8 +2946,16 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
         const start = { x: p1.x - dx/len * extend, y: p1.y - dy/len * extend };
         const end = { x: p2.x + dx/len * extend, y: p2.y + dy/len * extend };
         
-        // Fix: Pravítko ukotvíme v P1 a směrujeme k P2, aby bylo vidět v záběru a chovalo se intuitivně
-        drawRuler(ctx, p1, p2, progress);
+        // Pro kolmice (krátké definiční body ≤200px): centrovat pravítko na p1 (průsečík)
+        if (len <= 200) {
+          const nx = dx / len;
+          const ny = dy / len;
+          const rStart = { x: p1.x - nx * 360, y: p1.y - ny * 360 };
+          const rEnd = { x: p1.x + nx * 440, y: p1.y + ny * 440 };
+          drawRuler(ctx, rStart, rEnd, progress);
+        } else {
+          drawRuler(ctx, p1, p2, progress);
+        }
         drawLine(ctx, p1, p2, progress, activeColor, activeWidth);
 
         if (progress > 0.2 && progress < 0.8) {
@@ -3029,9 +3049,12 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     points.forEach(p => {
       if (p.hidden) return; // Skip hidden points
       
-      // Skrýt bod B u kružnic (bod na obvodu)
+      // Skrýt bod na obvodu kružnice POUZE pokud nemá label a není použit jinou konstrukcí
       const isCircleRadiusPoint = shapes.some(s => s.type === 'circle' && s.definition.p2Id === p.id);
-      if (isCircleRadiusPoint) return; // Bod B se nevykresluje
+      if (isCircleRadiusPoint) {
+        const usedByOtherShape = shapes.some(s => s.type !== 'circle' && s.points.includes(p.id));
+        if (!p.label && !usedByOtherShape) return; // Skrýt jen pokud nemá jméno a není jinde použit
+      }
 
       const isHovered = p.id === hoveredPointId;
       const isSelected = p.id === selectedPointId;
@@ -3312,17 +3335,22 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
          ctx.globalAlpha = 0.6;
 
          if (activeTool === 'segment') {
-             console.log('🎯 ghostSeg tablet:', isTabletMode);
-             if (!isTabletMode) {
-               console.log('✏️ Kreslím GHOST pravítko pro segment');
-               drawRuler(ctx, p1, p2, 0.5); // 0.5 progress = plné zobrazení bez animace
+             // Pokud je fixní délka, omezit p2 na přesnou vzdálenost
+             let segP2 = p2;
+             if (segmentInput.active && segmentInput.mode === 'fixed') {
+               const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+               const fixedDist = segmentInput.length * PIXELS_PER_CM;
+               segP2 = { x: p1.x + Math.cos(angle) * fixedDist, y: p1.y + Math.sin(angle) * fixedDist };
              }
-             drawSegment(ctx, p1, p2, 1, ghostColor, ghostLW);
+             if (!isTabletMode) {
+               drawRuler(ctx, p1, segP2, 0.5);
+             }
+             drawSegment(ctx, p1, segP2, 1, ghostColor, ghostLW);
 
              if (showMeasurements) {
-                  const dist = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+                  const dist = Math.sqrt(Math.pow(segP2.x - p1.x, 2) + Math.pow(segP2.y - p1.y, 2));
                   const cm = (dist / PIXELS_PER_CM).toFixed(1).replace('.', ',');
-                  drawLineMeasurement(ctx, p1, p2, `${cm} cm`);
+                  drawLineMeasurement(ctx, p1, segP2, `${cm} cm`);
              }
          } else if (activeTool === 'line') {
              console.log('🎯 GHOST LINE - isTabletMode:', isTabletMode);
@@ -4513,25 +4541,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
                 if (group.id === 'group_paper') iconStyle = "w-[49px] absolute left-0 top-0 rotate-[50deg]";
 
                 if (group.id === 'group_paper') {
-                     return (
-                         <div key={group.id} className="relative group w-full flex justify-center transition-all duration-300">
-                             <button
-                                 onClick={() => setShowMeasurements(!showMeasurements)}
-                                 onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setShowMeasurements(!showMeasurements); }}
-                                 className={`w-12 h-12 relative flex items-center justify-center rounded-lg transition-transform hover:scale-105 overflow-visible z-10 border-2 group/measure ${
-                                     showMeasurements 
-                                        ? 'bg-[#1e1b4b] border-[#1e1b4b] text-white' 
-                                        : 'bg-white border-gray-200 text-black'
-                                 }`}
-                             >
-                                 <span className="text-[10px] font-bold">1cm</span>
-                                 {/* Tooltip */}
-                                 <div className="absolute left-full ml-3 px-3 py-1.5 bg-black/80 text-white text-xs rounded-lg whitespace-nowrap opacity-0 group-hover/measure:opacity-100 transition-opacity pointer-events-none">
-                                   {showMeasurements ? 'Skrýt míry' : 'Zobrazit míry'}
-                                 </div>
-                             </button>
-                         </div>
-                     );
+                     return null;
                 }
 
                 return (
@@ -4605,7 +4615,19 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
              {/* Separator */}
              <div className="h-8"></div>
 
-             {/* Bottom: Trash / Delete selection */}
+             {/* Bottom: Rename + Trash when selected */}
+             {(selection || selectedShapeIds.length > 0) && (
+             <button
+                 onClick={() => setShowRenameModal(true)}
+                 onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setShowRenameModal(true); }}
+                 className="w-12 flex flex-col items-center justify-center rounded-xl bg-blue-50 text-blue-500 hover:bg-blue-100 transition-colors py-2"
+             >
+                 <Pencil className="w-5 h-5" />
+                 <span className="text-[9px] font-bold mt-0.5 leading-tight">název</span>
+             </button>
+             )}
+
+             {/* Trash / Delete selection */}
              {(selection || selectedShapeIds.length > 0) ? (
              <button
                  onClick={() => {
@@ -4982,6 +5004,36 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
           title={darkMode ? 'Světlý režim' : 'Tmavý režim'}
         >
           {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+        </button>
+
+        {/* Measurements Toggle */}
+        <div className="w-px h-6 bg-gray-300" />
+        <button 
+          onClick={() => setShowMeasurements(!showMeasurements)}
+          onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setShowMeasurements(!showMeasurements); }}
+          className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-300 ${
+            showMeasurements 
+              ? 'bg-[#1e1b4b] text-white' 
+              : 'text-black hover:bg-gray-200'
+          }`}
+          title={showMeasurements ? 'Skrýt míry' : 'Zobrazit míry'}
+        >
+          <span className="text-[10px] font-bold">cm</span>
+        </button>
+
+        {/* Grid Toggle */}
+        <div className="w-px h-6 bg-gray-300" />
+        <button 
+          onClick={() => setShowGrid(!showGrid)}
+          onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setShowGrid(!showGrid); }}
+          className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-300 ${
+            showGrid 
+              ? 'bg-[#1e1b4b] text-white' 
+              : 'text-black hover:bg-gray-200'
+          }`}
+          title={showGrid ? 'Skrýt mřížku' : 'Zobrazit mřížku'}
+        >
+          <Grid2X2 className="w-5 h-5" />
         </button>
 
         {/* Tablet/Board Mode Toggle */}
@@ -5405,24 +5457,34 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
       {/* EDITOR KROKŮ - Po ukončení nahrávání */}
       {recordingState.showEditor && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-          <div className={`${darkMode ? 'bg-[#24283b]' : 'bg-white'} rounded-2xl p-8 shadow-2xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden flex flex-col`}>
+          <div className={`${darkMode ? 'bg-[#24283b]' : 'bg-white'} rounded-2xl p-8 shadow-2xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden flex flex-col relative`}>
+            {/* X button to close editor */}
+            <button
+              onClick={() => setShowCloseConfirm(true)}
+              className={`absolute top-4 right-4 p-2 rounded-full transition-all ${
+                darkMode ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-400'
+              }`}
+              title="Zavřít"
+            >
+              <X className="size-5" />
+            </button>
             <h2 className={`text-2xl font-bold mb-2 ${darkMode ? 'text-[#c0caf5]' : 'text-gray-900'}`}>
-              Uprava kroku
+              Úprava kroků
             </h2>
             <p className={`mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-              Nahrano {editableSteps.length} kroku. Muzes upravit nazvy jednotlivych kroku.
+              Nahráno {editableSteps.length} kroků. Můžete upravit zápis konstrukce i popis jednotlivých kroků.
             </p>
 
             {/* Recording name input */}
             <div className="mb-4">
               <label className={`block text-sm font-medium mb-1.5 ${darkMode ? 'text-[#9aa5ce]' : 'text-gray-700'}`}>
-                Nazev zaznamu (pro sdileni)
+                Název konstrukce
               </label>
               <input
                 type="text"
                 value={recordingName}
                 onChange={(e) => setRecordingName(e.target.value)}
-                placeholder="Napr. Konstrukce trojuhelniku ABC..."
+                placeholder="Např. Konstrukce trojúhelníku ABC..."
                 className={`w-full px-4 py-2.5 rounded-xl border ${
                   darkMode ? 'bg-[#414868] border-[#565f89] text-[#c0caf5] placeholder-[#565f89]' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'
                 } focus:outline-none focus:ring-2 focus:ring-blue-500`}
@@ -5431,25 +5493,47 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
 
             <div className="flex-1 overflow-y-auto mb-6 space-y-3">
               {editableSteps.map((step, index) => (
-                <div key={step.id} className={`flex items-center gap-3 p-3 rounded-lg ${darkMode ? 'bg-gray-800' : 'bg-gray-50'}`}>
-                  <div className={`flex items-center justify-center w-8 h-8 rounded-full ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-700'} font-bold text-sm`}>
-                    {index + 1}
+                <div key={step.id} className={`p-4 rounded-lg ${darkMode ? 'bg-gray-800' : 'bg-gray-50'}`}>
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className={`flex items-center justify-center w-8 h-8 rounded-full ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-700'} font-bold text-sm flex-shrink-0`}>
+                      {index + 1}
+                    </div>
+                    <div className={`flex items-center justify-center w-8 h-8 rounded-full ${darkMode ? 'bg-blue-900/50 text-blue-400' : 'bg-blue-100 text-blue-600'} flex-shrink-0`}>
+                      {getActionIcon(step.actionType)}
+                    </div>
+                    <div className="flex-1">
+                      <label className={`block text-[11px] mb-0.5 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>Zápis konstrukce (LaTeX)</label>
+                      <input
+                        type="text"
+                        value={step.notation || ''}
+                        onChange={(e) => {
+                          const newSteps = [...editableSteps];
+                          newSteps[index] = { ...newSteps[index], notation: e.target.value };
+                          setEditableSteps(newSteps);
+                        }}
+                        placeholder="Např. |AB| = 5\,\text{cm}"
+                        className={`w-full px-3 py-1.5 rounded-lg border text-sm font-mono ${
+                          darkMode ? 'bg-[#414868] border-[#565f89] text-[#c0caf5] placeholder-[#565f89]' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-300'
+                        } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                      />
+                    </div>
                   </div>
-                  <div className={`flex items-center justify-center w-8 h-8 rounded-full ${darkMode ? 'bg-blue-900/50 text-blue-400' : 'bg-blue-100 text-blue-600'}`}>
-                    {getActionIcon(step.actionType)}
+                  <div className="ml-[72px]">
+                    <label className={`block text-[11px] mb-0.5 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>Popis kroku</label>
+                    <input
+                      type="text"
+                      value={step.description}
+                      onChange={(e) => {
+                        const newSteps = [...editableSteps];
+                        newSteps[index] = { ...newSteps[index], description: e.target.value };
+                        setEditableSteps(newSteps);
+                      }}
+                      placeholder="Popis kroku..."
+                      className={`w-full px-3 py-1.5 rounded-lg border text-sm ${
+                        darkMode ? 'bg-[#414868] border-[#565f89] text-[#c0caf5] placeholder-[#565f89]' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-300'
+                      } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                    />
                   </div>
-                  <input
-                    type="text"
-                    value={step.description}
-                    onChange={(e) => {
-                      const newSteps = [...editableSteps];
-                      newSteps[index] = { ...newSteps[index], description: e.target.value };
-                      setEditableSteps(newSteps);
-                    }}
-                    className={`flex-1 px-3 py-2 rounded-lg border ${
-                      darkMode ? 'bg-[#414868] border-[#565f89] text-[#c0caf5]' : 'bg-white border-gray-300 text-gray-900'
-                    } focus:outline-none focus:ring-2 focus:ring-blue-500`}
-                  />
                 </div>
               ))}
             </div>
@@ -5486,6 +5570,100 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
           {/* Canvas pro přehrávání */}
           <div className="flex-1" />
           
+          {/* INTRO OBRAZOVKA - Před spuštěním kroků */}
+          {recordingState.currentStepIndex === -1 && (
+            <div className="absolute inset-0 z-40 flex items-center justify-center pointer-events-none">
+              <div className="flex flex-col items-center gap-6 pointer-events-auto">
+                {/* "Jak narýsovat:" bubble */}
+                <div className={`px-5 py-2 rounded-full text-sm font-medium ${
+                  darkMode ? 'bg-[#7aa2f7]/20 text-[#7aa2f7] border border-[#7aa2f7]/30' : 'bg-blue-50 text-blue-600 border border-blue-200'
+                }`}>
+                  Jak narýsovat:
+                </div>
+                
+                {/* Název konstrukce */}
+                <h1 className={`font-bold text-center max-w-4xl ${
+                  darkMode ? 'text-[#8b9ec7]' : 'text-[#3b4a6b]'
+                }`} style={{ fontSize: 'clamp(3.2rem, 9.6vw, 8rem)', lineHeight: '0.848' }}>
+                  {recordingName || (sharedRecording ? sharedRecording.name : 'Konstrukce')}
+                </h1>
+                
+                {/* Sdílet tlačítko */}
+                {!sharedRecording && !shareLink && (
+                  <button
+                    onClick={async () => {
+                      const name = recordingName.trim() || `Záznam ${new Date().toLocaleDateString('cs-CZ')}`;
+                      await saveRecordingToServer(name, recordingState.steps);
+                    }}
+                    disabled={isSavingRecording}
+                    className={`flex items-center gap-2 px-6 py-3 rounded-xl font-medium transition-all ${
+                      isSavingRecording
+                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                        : 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg hover:shadow-xl'
+                    }`}
+                  >
+                    {isSavingRecording ? <Loader2 className="size-5 animate-spin" /> : <Share2 className="size-5" />}
+                    Sdílet
+                  </button>
+                )}
+                
+                {/* Upozornění pod sdílením */}
+                {!sharedRecording && !shareLink && (
+                  <p className={`text-sm text-center max-w-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                    Uložte si odkaz na přehrávání.<br />Automaticky se neukládá.
+                  </p>
+                )}
+                
+                {/* Share link po sdílení */}
+                {shareLink && (
+                  <div className={`px-5 py-4 rounded-2xl shadow-lg ${
+                    darkMode ? 'bg-gray-900 border border-gray-800' : 'bg-white border border-gray-200'
+                  }`}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Link className={`size-4 ${darkMode ? 'text-[#7aa2f7]' : 'text-blue-600'}`} />
+                      <span className={`text-sm font-medium ${darkMode ? 'text-[#7aa2f7]' : 'text-blue-700'}`}>Odkaz ke sdílení</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        readOnly
+                        value={shareLink}
+                        className={`w-72 px-3 py-2 rounded-lg text-sm font-mono ${
+                          darkMode ? 'bg-[#414868] text-[#c0caf5] border-[#565f89]' : 'bg-gray-50 text-gray-900 border-gray-300'
+                        } border`}
+                        onClick={(e) => (e.target as HTMLInputElement).select()}
+                      />
+                      <button
+                        onClick={() => {
+                          const ta = document.createElement('textarea');
+                          ta.value = shareLink;
+                          ta.style.position = 'fixed';
+                          ta.style.opacity = '0';
+                          document.body.appendChild(ta);
+                          ta.select();
+                          try { document.execCommand('copy'); toast.success('Odkaz zkopírován!'); }
+                          catch { toast.error('Nelze zkopírovat'); }
+                          document.body.removeChild(ta);
+                        }}
+                        className={`p-2.5 rounded-lg transition-all ${
+                          darkMode ? 'bg-[#7aa2f7] hover:bg-[#7aa2f7]/80 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'
+                        }`}
+                        title="Kopírovat odkaz"
+                      >
+                        <Copy className="size-4" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Pokyn k začátku */}
+                <div className={`text-sm mt-2 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                  Klikněte na <span className="font-bold">Další</span> pro spuštění konstrukce
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Ovladaci panel prehravace */}
           <div className={`absolute left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl ${
             darkMode ? 'bg-gray-900 border border-gray-800' : 'bg-white'
@@ -5602,14 +5780,12 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
                   }
                   
                   if (animType) {
-                    console.log('🎬 Spouštím animaci:', animType, 'p1:', viz.p1, 'p2:', viz.p2);
-                    
-                    // Nejdřív nastavit finální snapshot (body a tvary)
+                    // Nastavit finální snapshot okamžitě (tvary jsou viditelné)
                     setPoints(step.snapshot.points);
                     setShapes(step.snapshot.shapes);
                     setFreehandPaths(step.snapshot.freehandPaths);
                     
-                    // Pak spustit animaci nástroje (vizuální efekt)
+                    // Spustit animaci nástroje (pravítko/kružítko overlay)
                     setAnimState({
                       isActive: true,
                       type: animType,
@@ -5621,7 +5797,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
                       progress: 0
                     });
                     
-                    // Po 2 sekundách zrušit animaci nástroje
+                    // Po 2 sekundách zrušit animaci (tvary zůstanou ze snapshot)
                     setTimeout(() => {
                       setAnimState({
                         isActive: false,
@@ -5726,54 +5902,31 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
 
             {/* Close/Exit player */}
             <button
-              onClick={() => {
-                if (sharedRecording) {
-                  onBack();
-                } else {
-                  setRecordingState(prev => ({
-                    ...prev,
-                    showPlayer: false,
-                    currentStepIndex: -1
-                  }));
-                  setPoints([]);
-                  setShapes([]);
-                  setFreehandPaths([]);
-                  setShareLink(null);
-                  setRecordingName('');
-                  setAnimState({
-                    isActive: false,
-                    type: null,
-                    startTime: 0,
-                    p1: null,
-                    p2: null,
-                    progress: 0
-                  });
-                }
-              }}
+              onClick={() => setShowCloseConfirm(true)}
               className={`p-3 rounded-full transition-all ${
                 darkMode ? 'hover:bg-gray-800 text-red-400' : 'hover:bg-gray-100 text-red-500'
               }`}
-              title="Zavrit prehravac"
+              title="Zavřít přehrávač"
             >
               <X className="size-6" />
             </button>
           </div>
 
-          {/* Share link display - po sdileni */}
-          {shareLink && (
-            <div className={`absolute bottom-28 left-1/2 -translate-x-1/2 z-50 px-5 py-4 rounded-2xl shadow-2xl ${
+          {/* Share link display - po sdílení (viditelné i mimo intro) */}
+          {shareLink && recordingState.currentStepIndex !== -1 && (
+            <div className={`absolute left-1/2 -translate-x-1/2 z-50 px-5 py-4 rounded-2xl shadow-2xl ${
               darkMode ? 'bg-gray-900 border border-gray-800' : 'bg-white border border-gray-200'
-            }`}>
+            }`} style={{ bottom: 'calc(100px + env(safe-area-inset-bottom, 0px))' }}>
               <div className="flex items-center gap-2 mb-2">
                 <Link className={`size-4 ${darkMode ? 'text-[#7aa2f7]' : 'text-blue-600'}`} />
-                <span className={`text-sm font-medium ${darkMode ? 'text-[#7aa2f7]' : 'text-blue-700'}`}>Odkaz ke sdileni</span>
+                <span className={`text-sm font-medium ${darkMode ? 'text-[#7aa2f7]' : 'text-blue-700'}`}>Odkaz ke sdílení</span>
               </div>
               <div className="flex items-center gap-2">
                 <input
                   type="text"
                   readOnly
                   value={shareLink}
-                  className={`w-80 px-3 py-2 rounded-lg text-sm font-mono ${
+                  className={`w-72 px-3 py-2 rounded-lg text-sm font-mono ${
                     darkMode ? 'bg-[#414868] text-[#c0caf5] border-[#565f89]' : 'bg-gray-50 text-gray-900 border-gray-300'
                   } border`}
                   onClick={(e) => (e.target as HTMLInputElement).select()}
@@ -5786,14 +5939,14 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
                     ta.style.opacity = '0';
                     document.body.appendChild(ta);
                     ta.select();
-                    try { document.execCommand('copy'); toast.success('Odkaz zkopirovan!'); }
-                    catch { toast.error('Nelze zkopirovat'); }
+                    try { document.execCommand('copy'); toast.success('Odkaz zkopírován!'); }
+                    catch { toast.error('Nelze zkopírovat'); }
                     document.body.removeChild(ta);
                   }}
                   className={`p-2.5 rounded-lg transition-all ${
                     darkMode ? 'bg-[#7aa2f7] hover:bg-[#7aa2f7]/80 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'
                   }`}
-                  title="Kopirovat odkaz"
+                  title="Kopírovat odkaz"
                 >
                   <Copy className="size-4" />
                 </button>
@@ -5801,53 +5954,31 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
             </div>
           )}
 
-          {/* Shared recording name badge */}
-          {sharedRecording && (
-            <div className={`absolute top-8 right-8 px-4 py-2 rounded-xl ${
-              darkMode ? 'bg-[#24283b] border border-[#565f89]' : 'bg-white shadow-lg'
-            }`}>
-              <div className={`text-sm font-bold ${darkMode ? 'text-[#c0caf5]' : 'text-gray-900'}`}>
-                {sharedRecording.name}
-              </div>
-            </div>
-          )}
-
-          {/* Název aktuálního kroku — zápis konstrukce (LaTeX) */}
+          {/* Název aktuálního kroku — zápis konstrukce + popis */}
           {recordingState.currentStepIndex >= 0 && recordingState.currentStepIndex < recordingState.steps.length && (() => {
             const recStep = recordingState.steps[recordingState.currentStepIndex];
-            const prevSnapshot = recordingState.currentStepIndex > 0
-              ? recordingState.steps[recordingState.currentStepIndex - 1].snapshot
-              : { points: [] as GeoPoint[], shapes: [] as GeoShape[] };
-            const prevPointIds = new Set(prevSnapshot.points.map((p: GeoPoint) => p.id));
-            const prevShapeIds = new Set(prevSnapshot.shapes.map((s: GeoShape) => s.id));
-            const newIds = [
-              ...recStep.snapshot.points.filter((p: GeoPoint) => !prevPointIds.has(p.id)).map((p: GeoPoint) => p.id),
-              ...recStep.snapshot.shapes.filter((s: GeoShape) => !prevShapeIds.has(s.id)).map((s: GeoShape) => s.id),
-            ];
-            const matchingStep = newIds.length > 0
-              ? constructionSteps.find(cs => cs.objectIds.some(id => newIds.includes(id)))
-              : undefined;
             return (
-              <div className={`absolute top-8 left-1/2 -translate-x-1/2 px-6 py-3 rounded-xl shadow-lg ${
+              <div className={`absolute top-8 left-1/2 -translate-x-1/2 px-6 py-3 rounded-xl shadow-lg max-w-lg ${
                 darkMode ? 'bg-[#24283b] text-[#c0caf5] border border-[#565f89]' : 'bg-white text-gray-900'
               }`}>
                 <div className={`text-sm mb-1 ${darkMode ? 'text-[#9aa5ce]' : 'text-gray-500'}`}>
                   Krok {recordingState.currentStepIndex + 1} / {recordingState.steps.length}
                 </div>
                 <div className="flex items-center gap-3">
-                  <div className={`flex items-center justify-center w-10 h-10 rounded-full ${darkMode ? 'bg-[#7aa2f7]/20 text-[#7aa2f7]' : 'bg-blue-100 text-blue-600'}`}>
+                  <div className={`flex items-center justify-center w-10 h-10 rounded-full flex-shrink-0 ${darkMode ? 'bg-[#7aa2f7]/20 text-[#7aa2f7]' : 'bg-blue-100 text-blue-600'}`}>
                     {getActionIcon(recStep.actionType)}
                   </div>
-                  {matchingStep ? (
-                    <div className="text-lg">
-                      <span className={`mr-2 ${darkMode ? 'text-[#565f89]' : 'text-gray-400'}`}>{matchingStep.stepNumber}.</span>
-                      <Latex math={matchingStep.latex || matchingStep.notation} className={darkMode ? 'katex-dark' : ''} />
-                    </div>
-                  ) : (
-                    <div className="font-bold text-lg">
+                  <div>
+                    {recStep.notation ? (
+                      <div className="text-lg">
+                        <span className={`mr-2 ${darkMode ? 'text-[#565f89]' : 'text-gray-400'}`}>{recordingState.currentStepIndex + 1}.</span>
+                        <Latex math={recStep.notation} className={darkMode ? 'katex-dark' : ''} />
+                      </div>
+                    ) : null}
+                    <div className={`text-sm ${recStep.notation ? (darkMode ? 'text-[#9aa5ce] mt-0.5' : 'text-gray-500 mt-0.5') : 'font-bold text-lg'}`}>
                       {recStep.description}
                     </div>
-                  )}
+                  </div>
                 </div>
               </div>
             );
@@ -5867,6 +5998,220 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
         shapes={shapes}
         pixelsPerCm={PIXELS_PER_CM}
       />
+
+      {/* PŘEJMENOVÁNÍ BODŮ A TVARŮ */}
+      {showRenameModal && (
+        <div 
+          className="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          style={{ zIndex: 9999, touchAction: 'auto' }}
+          onTouchStart={(e) => e.stopPropagation()}
+          onClick={() => setShowRenameModal(false)}
+        >
+          <div 
+            className={`rounded-2xl p-6 shadow-2xl max-w-md w-full mx-4 max-h-[80vh] overflow-hidden flex flex-col ${
+              darkMode ? 'bg-[#24283b] border border-[#565f89]' : 'bg-white'
+            }`}
+            style={{ touchAction: 'auto' }}
+            onClick={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+          >
+            <h3 className={`text-xl font-bold mb-4 ${darkMode ? 'text-[#c0caf5]' : 'text-gray-900'}`}>
+              Přejmenovat
+            </h3>
+
+            <div className="flex-1 overflow-y-auto space-y-4 mb-4">
+              {/* Body vybraných tvarů + přímo vybraný bod */}
+              {(() => {
+                const relevantPointIds = new Set<string>();
+                const relevantShapes: typeof shapes = [];
+
+                if (selection) {
+                  relevantPointIds.add(selection);
+                  shapes.forEach(s => {
+                    if (s.points.includes(selection!)) {
+                      relevantShapes.push(s);
+                      s.points.forEach(pid => relevantPointIds.add(pid));
+                    }
+                  });
+                }
+                selectedShapeIds.forEach(sid => {
+                  const s = shapes.find(sh => sh.id === sid);
+                  if (s) {
+                    relevantShapes.push(s);
+                    s.points.forEach(pid => relevantPointIds.add(pid));
+                  }
+                });
+
+                const uniqueShapes = [...new Map(relevantShapes.map(s => [s.id, s])).values()];
+                const relevantPoints = points.filter(p => relevantPointIds.has(p.id));
+
+                return (
+                  <>
+                    {/* Body */}
+                    {relevantPoints.length > 0 && (
+                      <div>
+                        <div className={`text-xs font-medium mb-2 uppercase tracking-wider ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>Body</div>
+                        <div className="space-y-2">
+                          {relevantPoints.map(pt => (
+                            <div key={pt.id} className="flex items-center gap-3">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                                darkMode ? 'bg-blue-900/50 text-blue-400' : 'bg-blue-100 text-blue-600'
+                              } font-bold text-sm`}>
+                                {pt.label}
+                              </div>
+                              <input
+                                type="text"
+                                value={pt.label}
+                                onChange={(e) => {
+                                  const newLabel = e.target.value.trim();
+                                  if (newLabel) {
+                                    setPoints(prev => prev.map(p => p.id === pt.id ? { ...p, label: newLabel } : p));
+                                  }
+                                }}
+                                maxLength={3}
+                                className={`flex-1 px-3 py-2 rounded-lg border text-center text-lg font-bold ${
+                                  darkMode ? 'bg-[#414868] border-[#565f89] text-[#c0caf5]' : 'bg-white border-gray-300 text-gray-900'
+                                } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Tvary (přímky, kružnice) - ne úsečky */}
+                    {uniqueShapes.filter(s => s.type !== 'segment').length > 0 && (
+                      <div>
+                        <div className={`text-xs font-medium mb-2 uppercase tracking-wider ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>Tvary</div>
+                        <div className="space-y-2">
+                          {uniqueShapes.filter(s => s.type !== 'segment').map(shape => {
+                            const typeLabel = shape.type === 'line' ? 'Přímka' : shape.type === 'ray' ? 'Polopřímka' : shape.type === 'circle' ? 'Kružnice' : shape.type;
+                            return (
+                              <div key={shape.id} className="flex items-center gap-3">
+                                <div className={`px-2 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                                  darkMode ? 'bg-purple-900/50 text-purple-400' : 'bg-purple-100 text-purple-600'
+                                } font-medium text-xs`}>
+                                  {typeLabel}
+                                </div>
+                                <input
+                                  type="text"
+                                  value={shape.label}
+                                  onChange={(e) => {
+                                    const newLabel = e.target.value.trim();
+                                    if (newLabel) {
+                                      setShapes(prev => prev.map(s => s.id === shape.id ? { ...s, label: newLabel } : s));
+                                    }
+                                  }}
+                                  maxLength={5}
+                                  className={`flex-1 px-3 py-2 rounded-lg border text-center text-lg font-bold font-mono italic ${
+                                    darkMode ? 'bg-[#414868] border-[#565f89] text-[#c0caf5]' : 'bg-white border-gray-300 text-gray-900'
+                                  } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                                />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+
+            <button
+              onClick={() => setShowRenameModal(false)}
+              onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setShowRenameModal(false); }}
+              className="w-full py-3 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-500 transition-all"
+            >
+              Hotovo
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* POTVRZOVACÍ DIALOG - Zavření přehrávače/editoru */}
+      {showCloseConfirm && (
+        <div 
+          className="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          style={{ zIndex: 9999, touchAction: 'auto' }}
+          onTouchStart={(e) => e.stopPropagation()}
+          onTouchMove={(e) => e.stopPropagation()}
+          onClick={() => setShowCloseConfirm(false)}
+        >
+          <div className={`rounded-2xl p-8 shadow-2xl max-w-sm w-full mx-4 ${
+            darkMode ? 'bg-[#24283b] border border-[#565f89]' : 'bg-white'
+          }`} style={{ touchAction: 'auto' }} onClick={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()}>
+            <h3 className={`text-xl font-bold mb-3 ${darkMode ? 'text-[#c0caf5]' : 'text-gray-900'}`}>
+              Určitě chcete zavřít?
+            </h3>
+            <p className={`mb-6 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+              Uložili jste si odkaz na přehrávání?<br />Automaticky se neukládá.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setShowCloseConfirm(false); }}
+                onClick={() => setShowCloseConfirm(false)}
+                className={`flex-1 py-3 rounded-xl font-medium transition-all ${
+                  darkMode ? 'bg-gray-700 hover:bg-gray-600 text-[#c0caf5]' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                }`}
+              >
+                Zůstat
+              </button>
+              <button
+                onTouchEnd={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setShowCloseConfirm(false);
+                  if (sharedRecording) {
+                    onBack();
+                  } else {
+                    const lastStep = recordingState.steps[recordingState.steps.length - 1];
+                    if (lastStep) {
+                      setPoints(lastStep.snapshot.points);
+                      setShapes(lastStep.snapshot.shapes);
+                      setFreehandPaths(lastStep.snapshot.freehandPaths);
+                    }
+                    setRecordingState(prev => ({
+                      ...prev,
+                      showEditor: false,
+                      showPlayer: false,
+                      currentStepIndex: -1
+                    }));
+                    setShareLink(null);
+                    setRecordingName('');
+                    setAnimState({ isActive: false, type: null, startTime: 0, p1: null, p2: null, progress: 0 });
+                  }
+                }}
+                onClick={() => {
+                  setShowCloseConfirm(false);
+                  if (sharedRecording) {
+                    onBack();
+                  } else {
+                    const lastStep = recordingState.steps[recordingState.steps.length - 1];
+                    if (lastStep) {
+                      setPoints(lastStep.snapshot.points);
+                      setShapes(lastStep.snapshot.shapes);
+                      setFreehandPaths(lastStep.snapshot.freehandPaths);
+                    }
+                    setRecordingState(prev => ({
+                      ...prev,
+                      showEditor: false,
+                      showPlayer: false,
+                      currentStepIndex: -1
+                    }));
+                    setShareLink(null);
+                    setRecordingName('');
+                    setAnimState({ isActive: false, type: null, startTime: 0, p1: null, p2: null, progress: 0 });
+                  }
+                }}
+                className="flex-1 py-3 rounded-xl font-medium bg-red-500 hover:bg-red-400 text-white transition-all"
+              >
+                Zavřít
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
     <Toaster position="top-center" theme={darkMode ? 'dark' : 'light'} />

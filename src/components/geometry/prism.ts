@@ -11,7 +11,7 @@ import {
 // ── Parameter definitions ──────────────────────────────────
 
 export const PRISM_PARAMS: ParameterDef[] = [
-  { id: 'sides', label: 'Počet stěn', min: 3, max: 12, step: 1, defaultValue: 6, unit: '' },
+  { id: 'sides', label: 'Počet podstavných hran', min: 3, max: 12, step: 1, defaultValue: 6, unit: '' },
   { id: 'edgeLength', label: 'Délka hrany', min: 3, max: 20, step: 0.5, defaultValue: 8, unit: 'cm' },
   { id: 'height', label: 'Výška', min: 5, max: 30, step: 1, defaultValue: 15, unit: 'cm' },
 ];

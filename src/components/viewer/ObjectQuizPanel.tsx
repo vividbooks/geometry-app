@@ -35,16 +35,16 @@ interface Props {
   correctValue: string;
 }
 
-function randomInRange(min: number, max: number, step: number): number {
-  const steps = Math.round((max - min) / step);
-  const n = Math.floor(Math.random() * (steps + 1));
-  return Math.min(max, min + n * step);
+function randomIntInRange(min: number, max: number): number {
+  return min + Math.floor(Math.random() * (max - min + 1));
 }
 
 export function generateRandomParams(parameterDefs: ParameterDef[]): Record<string, number> {
   const p: Record<string, number> = {};
   for (const d of parameterDefs) {
-    p[d.id] = randomInRange(d.min, d.max, d.step);
+    const lo = Math.max(1, Math.ceil(d.min));
+    const hi = Math.min(10, Math.floor(d.max));
+    p[d.id] = randomIntInRange(lo, hi);
   }
   return p;
 }
