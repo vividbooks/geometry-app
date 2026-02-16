@@ -326,7 +326,7 @@ function DrawingCard({ item }: { item: DrawingItem }) {
         flexDirection: 'column',
         borderRadius: '32px',
         overflow: 'hidden',
-        border: '2px solid transparent',
+        border: '1px solid #e5e7eb',
         background: item.color,
         textDecoration: 'none',
         textAlign: 'left' as const,
@@ -575,7 +575,7 @@ export function Landing({ mode }: { mode: LandingMode }) {
 
         {/* Rýsování – Volné rýsování (Tabule + Počítač) */}
         {activeFilter === 'rysovani' && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(280px, 100%), 1fr))', gap: '24px', maxWidth: '660px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '24px', maxWidth: '660px' }}>
             {drawingItems.map((item) => (
               <DrawingCard key={item.id} item={item} />
             ))}
@@ -584,7 +584,7 @@ export function Landing({ mode }: { mode: LandingMode }) {
 
         {/* Konstrukce */}
         {activeFilter === 'konstrukce' && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(280px, 100%), 1fr))', gap: '24px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '24px' }}>
             {constructionItems.map((item) => (
               <ConstructionCard key={item.id} item={item} />
             ))}
@@ -593,14 +593,14 @@ export function Landing({ mode }: { mode: LandingMode }) {
 
         {/* 3D tělesa */}
         {activeFilter === 'telesa' && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(280px, 100%), 1fr))', gap: '24px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '24px' }}>
             {bodies3D.map((obj) => <ObjectCard key={obj.id} object={obj} />)}
           </div>
         )}
 
         {/* Rovinné útvary */}
         {activeFilter === 'rovinne' && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(280px, 100%), 1fr))', gap: '24px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '24px' }}>
             {flat2D.map((obj) => <ObjectCard key={obj.id} object={obj} />)}
           </div>
         )}
@@ -658,7 +658,7 @@ export function Landing({ mode }: { mode: LandingMode }) {
 
             {/* Tiles */}
             {filteredExercises.length > 0 ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(280px, 100%), 1fr))', gap: '24px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '24px' }}>
                 {filteredExercises.map(({ object, taskType }) => (
                   <ExerciseTile key={`${object.id}-${taskType}`} object={object} taskType={taskType} />
                 ))}

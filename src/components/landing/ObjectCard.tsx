@@ -77,7 +77,7 @@ export function ObjectCard({ object }: Props) {
             size={16}
             style={{
               color: '#4d49f3',
-              opacity: 0,
+              opacity: 0.5,
               transition: 'all 200ms',
             }}
           />
