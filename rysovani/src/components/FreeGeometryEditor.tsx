@@ -1089,10 +1089,11 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
   };
 
   // Helper: najde nejbližší průsečík dvou čar/kružnic v okolí bodu
-  const findNearestIntersection = (wx: number, wy: number, threshold = 20): {x: number, y: number} | null => {
+  const findNearestIntersection = (wx: number, wy: number, threshold = 30): {x: number, y: number} | null => {
     const lineShapes = shapes.filter(s => ['line', 'segment', 'ray'].includes(s.type));
     const circleShapes = shapes.filter(s => s.type === 'circle');
-    const thresh = threshold / scale;
+    const effectiveThreshold = isTabletMode ? threshold * 1.5 : threshold;
+    const thresh = effectiveThreshold / scale;
     let bestDist = thresh;
     let bestPoint: {x: number, y: number} | null = null;
 
@@ -2117,24 +2118,9 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     }
   };
 
-  // Optimalizovany mousemove s podminenym throttlingem
-  // Pro precision tools (perpendicular, angle, circle) vypnout throttling kvuli presne detekci
+  // Mouse move handler - bez throttlingu pro spolehlivé přichytávání na body a průsečíky
   const handleMouseMoveWrapper = (e: React.MouseEvent) => {
-    const needsPrecision = ['perpendicular', 'angle', 'circle'].includes(activeTool);
-    
-    if (needsPrecision) {
-      // Pro precision tools volat primo bez throttlingu
-      handleMouseMove(e);
-    } else {
-      // Pro ostatni tools pouzit RAF throttling
-      if (!mouseMoveThrottleRef.current) {
-        mouseMoveThrottleRef.current = true;
-        requestAnimationFrame(() => {
-          handleMouseMove(e);
-          mouseMoveThrottleRef.current = false;
-        });
-      }
-    }
+    handleMouseMove(e);
   };
 
   const handleMouseUp = () => {
