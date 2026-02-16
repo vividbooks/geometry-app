@@ -14,6 +14,10 @@ export const handleToolMenuClick = (
     // Special popup triggers
     if (toolId === '__popup__circle_fixed') {
       setCircleInput(prev => ({ ...prev, visible: true, center: null, isDraggingCenter: false, isDraggingHandle: false }));
+      // Reset tablet circle state to avoid conflicts
+      if (setCircleTabletState) {
+        setCircleTabletState({ active: false, centerId: null, center: null, radius: 150, isDraggingHandle: false, handlePos: null });
+      }
     } else if (toolId === '__popup__segment_fixed') {
       if (setSegmentInput) {
         setSegmentInput(prev => ({ ...prev, visible: true }));

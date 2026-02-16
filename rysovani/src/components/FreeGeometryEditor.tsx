@@ -1643,8 +1643,8 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
       if (selectedPointId === null) {
         // První kliknutí
         
-        // TABLET MÓD PRO KRUŽNICI
-        if (activeTool === 'circle' && isTabletMode && !selectedPointId) {
+        // TABLET MÓD PRO KRUŽNICI (skip if compass mode is active)
+        if (activeTool === 'circle' && isTabletMode && !selectedPointId && !circleInput.visible) {
           // První klik - vytvoř/vyber bod a aktivuj workflow
           let centerId = targetPointId;
           let centerPos = { x: wx, y: wy };
@@ -4551,8 +4551,21 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
       {/* Circle fixed radius helper button */}
       {!recordingState.showPlayer && activeTool === 'circle' && !circleInput.visible && !(isTabletMode && circleTabletState.active) && !selectedPointId && (
         <button
-          onClick={() => setCircleInput(prev => ({ ...prev, visible: true, center: null }))}
-          onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setCircleInput(prev => ({ ...prev, visible: true, center: null })); }}
+          onClick={() => {
+            const cx = (canvasSize.width / 2 - offset.x) / scale;
+            const cy = (canvasSize.height / 2 - offset.y) / scale;
+            setCircleInput(prev => ({ ...prev, visible: true, center: { x: cx, y: cy } }));
+            setCircleTabletState({ active: false, centerId: null, center: null, radius: 150, isDraggingHandle: false, handlePos: null });
+            setSelectedPointId(null);
+          }}
+          onTouchEnd={(e) => {
+            e.preventDefault(); e.stopPropagation();
+            const cx = (canvasSize.width / 2 - offset.x) / scale;
+            const cy = (canvasSize.height / 2 - offset.y) / scale;
+            setCircleInput(prev => ({ ...prev, visible: true, center: { x: cx, y: cy } }));
+            setCircleTabletState({ active: false, centerId: null, center: null, radius: 150, isDraggingHandle: false, handlePos: null });
+            setSelectedPointId(null);
+          }}
           className={`absolute left-4 z-10 px-4 py-2 rounded-full text-sm font-medium flex items-center gap-2 transition-all hover:scale-105 ${
             darkMode ? 'bg-[#24283b] text-[#c0caf5] border border-[#565f89]' : 'bg-white text-gray-600 shadow-md border'
           }`}
@@ -4681,8 +4694,8 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
         </button>
       )}
       
-      {/* Circle tablet mode - Narýsovat button */}
-      {!recordingState.showPlayer && activeTool === 'circle' && isTabletMode && circleTabletState.active && circleTabletState.center && circleTabletState.centerId && (
+      {/* Circle tablet mode - Narýsovat button (hidden when compass mode is active) */}
+      {!recordingState.showPlayer && activeTool === 'circle' && isTabletMode && circleTabletState.active && circleTabletState.center && circleTabletState.centerId && !circleInput.visible && (
         <button
           onClick={() => {
             // Vytvoříme bod na obvodu kružnice
