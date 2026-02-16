@@ -2092,7 +2092,13 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
 
     // Drawing logic
     if ((activeTool === 'freehand' || activeTool === 'highlighter') && currentPathRef.current) {
-       currentPathRef.current.push({ x: wx, y: wy });
+       if (activeTool === 'highlighter' && e.shiftKey && currentPathRef.current.length >= 1) {
+         // Shift held: straight line from start point to current position
+         const start = currentPathRef.current[0];
+         currentPathRef.current = [start, { x: wx, y: wy }];
+       } else {
+         currentPathRef.current.push({ x: wx, y: wy });
+       }
     }
     
     // Tablet mód - positioning kolmice (with point snapping)
