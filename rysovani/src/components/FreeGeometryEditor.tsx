@@ -3108,7 +3108,110 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
       ctx.restore();
     }
 
-    // 4. Náhled při tvorbě (ghost line)
+    // 4a. TABLET: circle ghost rendering (independent of mousePosRef - touch devices don't have continuous mouse position)
+    if (isTabletMode && activeTool === 'circle' && circleTabletState.active && circleTabletState.center && selectedPointId && !animState.isActive && !circleInput.visible) {
+      const p1 = points.find(p => p.id === selectedPointId);
+      if (p1) {
+        const ghostColor = darkMode ? 'rgba(255, 255, 255, 0.65)' : 'rgba(0, 0, 0, 0.55)';
+        const liveHandlePos = circleTabletHandlePosRef.current;
+        const liveRadius = circleTabletRadiusRef.current;
+        const actualP2 = liveHandlePos 
+          ? liveHandlePos 
+          : { x: circleTabletState.center.x + liveRadius, y: circleTabletState.center.y };
+        
+        const r = Math.sqrt(Math.pow(actualP2.x - p1.x, 2) + Math.pow(actualP2.y - p1.y, 2));
+        
+        ctx.save();
+        ctx.globalAlpha = 0.6;
+        
+        drawCompass(ctx, p1, r, 0.5, actualP2);
+        drawCircle(ctx, p1, r, 1, ghostColor, 2.5);
+
+        // Kontrastní střed kružnice
+        ctx.globalAlpha = 1;
+        ctx.beginPath();
+        ctx.arc(p1.x, p1.y, 10, 0, Math.PI * 2);
+        ctx.fillStyle = darkMode ? '#ffffff' : '#1e1b4b';
+        ctx.fill();
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = '#3b82f6';
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(p1.x, p1.y, 4, 0, Math.PI * 2);
+        ctx.fillStyle = '#3b82f6';
+        ctx.fill();
+
+        // Radius measurement
+        if (showMeasurements && r > 10) {
+          const ghostCm = (r / PIXELS_PER_CM).toFixed(1).replace('.', ',');
+          const ghostRadAngle = Math.atan2(actualP2.y - p1.y, actualP2.x - p1.x);
+          const ghostMidX = p1.x + (actualP2.x - p1.x) / 2;
+          const ghostMidY = p1.y + (actualP2.y - p1.y) / 2;
+          const ghostPerpOff = 18;
+          const ghostOx = -Math.sin(ghostRadAngle) * ghostPerpOff;
+          const ghostOy = Math.cos(ghostRadAngle) * ghostPerpOff;
+          drawMeasurement(ctx, ghostMidX + ghostOx, ghostMidY + ghostOy, `r = ${ghostCm} cm`, ghostRadAngle);
+        }
+        
+        // Pulzující handle
+        const isHandleDragged = circleTabletState.isDraggingHandle;
+        const radialAngle = Math.atan2(actualP2.y - p1.y, actualP2.x - p1.x);
+        const pulse = (Math.sin(Date.now() * 0.004) + 1) / 2;
+        const dragPulse = isHandleDragged ? 1 : pulse;
+        
+        const glowRadius = 24 + dragPulse * 12;
+        const glowAlpha = 0.12 + dragPulse * 0.18;
+        ctx.beginPath();
+        ctx.arc(actualP2.x, actualP2.y, glowRadius, 0, Math.PI * 2);
+        ctx.fillStyle = darkMode 
+          ? `rgba(122, 162, 247, ${glowAlpha})` 
+          : `rgba(59, 130, 246, ${glowAlpha})`;
+        ctx.fill();
+        
+        ctx.beginPath();
+        ctx.arc(actualP2.x, actualP2.y, 17, 0, Math.PI * 2);
+        ctx.fillStyle = darkMode 
+          ? `rgba(122, 162, 247, ${0.2 + dragPulse * 0.12})` 
+          : `rgba(59, 130, 246, ${0.2 + dragPulse * 0.12})`;
+        ctx.fill();
+        
+        const mainRadius = isHandleDragged ? 13 : 12;
+        ctx.beginPath();
+        ctx.arc(actualP2.x, actualP2.y, mainRadius, 0, Math.PI * 2);
+        ctx.fillStyle = darkMode ? '#7aa2f7' : '#3b82f6';
+        ctx.fill();
+        ctx.strokeStyle = darkMode ? '#c0caf5' : '#ffffff';
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+        
+        // Oboustranná šipka v handle
+        ctx.save();
+        ctx.translate(actualP2.x, actualP2.y);
+        ctx.rotate(radialAngle);
+        const arrowLen = 7;
+        const headLen = 3.5;
+        const headAngle = Math.PI / 5;
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.moveTo(-arrowLen, 0);
+        ctx.lineTo(arrowLen, 0);
+        ctx.moveTo(-arrowLen + headLen * Math.cos(headAngle), -headLen * Math.sin(headAngle));
+        ctx.lineTo(-arrowLen, 0);
+        ctx.lineTo(-arrowLen + headLen * Math.cos(headAngle), headLen * Math.sin(headAngle));
+        ctx.moveTo(arrowLen - headLen * Math.cos(headAngle), -headLen * Math.sin(headAngle));
+        ctx.lineTo(arrowLen, 0);
+        ctx.lineTo(arrowLen - headLen * Math.cos(headAngle), headLen * Math.sin(headAngle));
+        ctx.stroke();
+        ctx.restore();
+        
+        ctx.restore();
+      }
+    }
+
+    // 4b. Náhled při tvorbě (ghost line) - requires mousePosRef for non-tablet tools
     if (selectedPointId && !animState.isActive && mousePosRef.current && !circleInput.visible) {
       const p1 = points.find(p => p.id === selectedPointId);
       // Pokud hoverujeme nad bodem, použijeme ten bod jako cíl (snapping), jinak mousePos
@@ -3182,42 +3285,15 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
              drawRay(ctx, p1, endRay, 1, ghostColor, 2.5);
 
          } else if (activeTool === 'circle') {
-             let actualP2 = p2;
-             
-         if (isTabletMode && circleTabletState.active && circleTabletState.center) {
-                const liveHandlePos = circleTabletHandlePosRef.current;
-                const liveRadius = circleTabletRadiusRef.current;
-                if (liveHandlePos) {
-                  actualP2 = liveHandlePos;
-                } else {
-                  actualP2 = { 
-                    x: circleTabletState.center.x + liveRadius, 
-                    y: circleTabletState.center.y 
-                  };
-                }
-              }
-           
+             // Tablet circle rendering is handled in section 4a above (independent of mousePosRef)
+             if (isTabletMode && circleTabletState.active) {
+               // Already rendered above, skip
+             } else {
+             const actualP2 = p2;
              const r = Math.sqrt(Math.pow(actualP2.x - p1.x, 2) + Math.pow(actualP2.y - p1.y, 2));
              
              drawCompass(ctx, p1, r, 0.5, actualP2);
              drawCircle(ctx, p1, r, 1, ghostColor, 2.5);
-
-              // Kontrastní střed kružnice (viditelný i na tabletu)
-              if (isTabletMode) {
-                ctx.save();
-                ctx.beginPath();
-                ctx.arc(p1.x, p1.y, 10, 0, Math.PI * 2);
-                ctx.fillStyle = darkMode ? '#ffffff' : '#1e1b4b';
-                ctx.fill();
-                ctx.lineWidth = 3;
-                ctx.strokeStyle = '#3b82f6';
-                ctx.stroke();
-                ctx.beginPath();
-                ctx.arc(p1.x, p1.y, 4, 0, Math.PI * 2);
-                ctx.fillStyle = '#3b82f6';
-                ctx.fill();
-                ctx.restore();
-              }
 
               // Ghost circle radius measurement
               if (showMeasurements && r > 10) {
@@ -3230,67 +3306,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
                    const ghostOy = Math.cos(ghostRadAngle) * ghostPerpOff;
                    drawMeasurement(ctx, ghostMidX + ghostOx, ghostMidY + ghostOy, `r = ${ghostCm} cm`, ghostRadAngle);
               }
-             
-              // V TABLET MÓDU: vykresli výrazný pulzující handle s oboustrannou šipkou
-              if (isTabletMode) {
-                const isHandleDragged = circleTabletState.isDraggingHandle;
-                ctx.save();
-                const radialAngle = Math.atan2(actualP2.y - p1.y, actualP2.x - p1.x);
-                const pulse = (Math.sin(Date.now() * 0.004) + 1) / 2;
-                const dragPulse = isHandleDragged ? 1 : pulse;
-                
-                const glowRadius = 24 + dragPulse * 12;
-                const glowAlpha = 0.12 + dragPulse * 0.18;
-                ctx.beginPath();
-                ctx.arc(actualP2.x, actualP2.y, glowRadius, 0, Math.PI * 2);
-                ctx.fillStyle = darkMode 
-                  ? `rgba(122, 162, 247, ${glowAlpha})` 
-                  : `rgba(59, 130, 246, ${glowAlpha})`;
-                ctx.fill();
-                
-                ctx.beginPath();
-                ctx.arc(actualP2.x, actualP2.y, 17, 0, Math.PI * 2);
-                ctx.fillStyle = darkMode 
-                  ? `rgba(122, 162, 247, ${0.2 + dragPulse * 0.12})` 
-                  : `rgba(59, 130, 246, ${0.2 + dragPulse * 0.12})`;
-                ctx.fill();
-                
-                const mainRadius = isHandleDragged ? 13 : 12;
-                ctx.beginPath();
-                ctx.arc(actualP2.x, actualP2.y, mainRadius, 0, Math.PI * 2);
-                ctx.fillStyle = darkMode ? '#7aa2f7' : '#3b82f6';
-                ctx.fill();
-                ctx.strokeStyle = darkMode ? '#c0caf5' : '#ffffff';
-                ctx.lineWidth = 2.5;
-                ctx.stroke();
-                
-                ctx.save();
-                ctx.translate(actualP2.x, actualP2.y);
-                ctx.rotate(radialAngle);
-                const arrowLen = 7;
-                const headLen = 3.5;
-                const headAngle = Math.PI / 5;
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
-                ctx.lineWidth = 2;
-                ctx.lineCap = 'round';
-                ctx.lineJoin = 'round';
-                ctx.beginPath();
-                ctx.moveTo(-arrowLen, 0);
-                ctx.lineTo(arrowLen, 0);
-                ctx.stroke();
-                ctx.beginPath();
-                ctx.moveTo(arrowLen - headLen * Math.cos(headAngle), -headLen * Math.sin(headAngle));
-                ctx.lineTo(arrowLen, 0);
-                ctx.lineTo(arrowLen - headLen * Math.cos(headAngle), headLen * Math.sin(headAngle));
-                ctx.stroke();
-                ctx.beginPath();
-                ctx.moveTo(-arrowLen + headLen * Math.cos(headAngle), -headLen * Math.sin(headAngle));
-                ctx.lineTo(-arrowLen, 0);
-                ctx.lineTo(-arrowLen + headLen * Math.cos(headAngle), headLen * Math.sin(headAngle));
-                ctx.stroke();
-                ctx.restore();
-                ctx.restore();
-              }
+             }
 
          } else if (activeTool === 'angle') {
              // Pro úhel ukážeme kulatý úhloměr natočený ve směru myši
@@ -4829,7 +4845,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
         showBlueStyle
           ? 'px-8 py-4 text-base bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-[0_0_24px_rgba(59,130,246,0.5)] border-2 border-blue-300/60'
           : `px-6 py-3 text-sm ${darkMode ? 'bg-[#24283b] text-[#c0caf5]' : 'bg-white text-gray-600 shadow-md border'}`
-      }`} style={{ bottom: 'calc(16px + env(safe-area-inset-bottom, 0px))' }}>
+      }`} style={{ bottom: 'calc(64px + env(safe-area-inset-bottom, 0px))' }}>
         {canvasWarning ? (
           <span className="flex items-center gap-3">
             <span className="relative flex size-3">
