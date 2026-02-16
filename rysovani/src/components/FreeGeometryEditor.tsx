@@ -4883,11 +4883,11 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
         );
       })()}
 
-      {/* ZOOM CONTROLS */}
+      {/* ZOOM + CONTROLS (top center) */}
       {!recordingState.showPlayer && (
-      <div className={`absolute right-4 z-10 flex items-center gap-2 p-2 rounded-xl border ${
+      <div className={`absolute left-1/2 -translate-x-1/2 top-4 z-10 flex items-center gap-2 p-2 rounded-xl border ${
         darkMode ? 'bg-[#24283b] border-[#565f89]' : 'bg-white shadow-lg border-gray-200'
-      }`} style={{ bottom: 'calc(16px + env(safe-area-inset-bottom, 0px))' }}>
+      }`}>
         <button 
           onClick={() => zoomToCenter(scale - 0.1)}
           className={`p-1.5 rounded-lg transition-colors ${
