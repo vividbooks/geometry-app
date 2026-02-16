@@ -260,6 +260,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
   const circleTabletRadiusRef = useRef<number>(150); // Real-time radius tracking pro smooth rendering
   const circleTabletHandlePosRef = useRef<{x: number, y: number} | null>(null); // Real-time handle position pro smooth rendering
   const nearestIntersectionRef = useRef<{x: number, y: number} | null>(null); // Intersection snap indicator for visual feedback
+  const pendingCircleCenterRef = useRef<string | null>(null); // ID of point created as circle center (removed if circle not completed)
   const mouseMoveThrottleRef = useRef(false); // Throttle flag for conditional throttling
   const lastTouchTimeRef = useRef<number>(0); // Timestamp posledniho touch eventu pro prevenci double-tap
   const pinchRef = useRef<{ active: boolean; lastDist: number; lastCenter: { x: number; y: number } }>({ active: false, lastDist: 0, lastCenter: { x: 0, y: 0 } });
@@ -1031,6 +1032,22 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     }
   }, [circleInput.visible, circleInput.center]);
 
+  // Cleanup pending circle center when tool changes or circle creation is cancelled
+  useEffect(() => {
+    if (activeTool !== 'circle' && pendingCircleCenterRef.current) {
+      const pendingId = pendingCircleCenterRef.current;
+      pendingCircleCenterRef.current = null;
+      // Remove the orphaned center point (only if it's not used by any shape)
+      setPoints(prev => {
+        const usedByShape = shapes.some(s =>
+          s.definition.p1Id === pendingId || s.definition.p2Id === pendingId
+        );
+        if (usedByShape) return prev;
+        return prev.filter(p => p.id !== pendingId);
+      });
+    }
+  }, [activeTool]);
+
   // Native wheel listener with { passive: false } to prevent browser zoom (trackpad pinch)
   useEffect(() => {
     const container = containerRef.current;
@@ -1637,6 +1654,10 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
           setPoints(prev => [...prev, newPoint]);
           triggerEffect(ptX, ptY, '#3b82f6'); // Effect at actual (possibly snapped) position
           targetPointId = newPoint.id;
+          // Track auto-created circle center for cleanup if circle not completed
+          if (activeTool === 'circle' && selectedPointId === null) {
+            pendingCircleCenterRef.current = newPoint.id;
+          }
         }
       }
 
@@ -1665,6 +1686,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
             setPoints(prev => [...prev, newCenterPoint]);
             centerId = newCenterPoint.id;
             centerPos = { x: cX, y: cY };
+            pendingCircleCenterRef.current = newCenterPoint.id;
           } else {
             // Použijeme existující bod
             const existingPoint = points.find(p => p.id === centerId);
@@ -1763,6 +1785,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
           return;
         }
 
+        if (activeTool === 'circle') pendingCircleCenterRef.current = null;
         startConstructionAnimation(activeTool as 'segment'|'line'|'circle'|'ray', p1, p2);
         setSelectedPointId(null);
       }
@@ -4718,6 +4741,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
             setPoints(prev => [...prev, radiusPoint]);
             
             // Spustíme animaci
+            pendingCircleCenterRef.current = null; // Circle completed
             startConstructionAnimation('circle', centerPoint, radiusPoint);
             
             // Resetujeme tablet state i selectedPointId
@@ -4749,6 +4773,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
               hidden: false
             };
             setPoints(prev => [...prev, radiusPoint]);
+            pendingCircleCenterRef.current = null; // Circle completed
             startConstructionAnimation('circle', centerPoint, radiusPoint);
             setSelectedPointId(null);
             setCircleTabletState({
@@ -5055,8 +5080,10 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
                 const radiusId = crypto.randomUUID();
                 const radiusPoint: GeoPoint = { id: radiusId, x: targetX, y: targetY, label: '', hidden: false };
                 setPoints(prev => [...prev, centerPoint, radiusPoint]);
+                pendingCircleCenterRef.current = null;
                 startConstructionAnimation('circle', centerPoint, radiusPoint);
               }
+              pendingCircleCenterRef.current = null;
               setCircleInput(prev => ({ ...prev, visible: false, center: null, isDraggingCenter: false, isDraggingHandle: false }));
               setActiveTool('circle');
             };
