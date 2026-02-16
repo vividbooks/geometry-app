@@ -188,7 +188,7 @@ const constructionItems: ConstructionItem[] = [
   },
 ];
 
-/* ── Tutoriály data ── */
+/* ── Návody data ── */
 
 interface TutorialItem {
   id: string;

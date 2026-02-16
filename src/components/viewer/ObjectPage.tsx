@@ -22,7 +22,8 @@ export function ObjectPage() {
   const { objectId } = useParams<{ objectId: string }>();
   const navigate = useNavigate();
   const windowWidth = useWindowWidth();
-  const isDesktop = windowWidth >= 900;
+  const isMobile = windowWidth < 768;
+  const isDesktop = !isMobile;
 
   const def = getObjectDef(objectId || '');
 
@@ -79,8 +80,8 @@ export function ObjectPage() {
   const mathProperties = def.computeProperties(params);
 
   const sidebarWidth = isDesktop ? 320 : 280;
-  const gap = 16;
-  const marginFromEdge = 16;
+  const gap = isMobile ? 8 : 16;
+  const marginFromEdge = isMobile ? 8 : 16;
 
   return (
     <div
@@ -89,16 +90,28 @@ export function ObjectPage() {
         inset: 0,
         backgroundColor: 'rgba(255, 255, 255, 1)',
         overflow: 'hidden',
+        display: 'flex',
+        flexDirection: isMobile ? 'column' : 'row',
+        padding: isMobile ? `${marginFromEdge}px ${marginFromEdge}px ${marginFromEdge}px ${marginFromEdge}px` : 0,
       }}
     >
       {/* Levý panel – bílá lišta s odsazením od kraje */}
       <div
         style={{
-          position: 'absolute',
-          top: 0,
-          left: marginFromEdge,
-          bottom: 0,
-          width: sidebarWidth,
+          ...(isMobile
+            ? {
+                position: 'relative',
+                width: '100%',
+                height: '40%',
+                minHeight: 0,
+              }
+            : {
+                position: 'absolute',
+                top: 0,
+                left: marginFromEdge,
+                bottom: 0,
+                width: sidebarWidth,
+              }),
           background: '#ffffff',
           boxShadow: 'none',
           zIndex: 10,
@@ -115,7 +128,7 @@ export function ObjectPage() {
             flexShrink: 0,
             width: 40,
             height: 40,
-            margin: 12,
+            margin: isMobile ? 8 : 12,
             borderRadius: '50%',
             background: '#f8fafc',
             border: '1px solid #e2e8f0',
@@ -125,7 +138,7 @@ export function ObjectPage() {
           <ArrowLeft className="h-4 w-4" />
         </button>
 
-        <div style={{ flex: 1, overflowY: 'auto', padding: '0 12px 12px' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: `0 ${isMobile ? 8 : 12}px ${isMobile ? 8 : 12}px` }}>
           <ObjectControls
             objectId={objectId}
             objectName={def.name}
@@ -147,7 +160,7 @@ export function ObjectPage() {
           style={{
             textDecoration: 'none',
             flexShrink: 0,
-            margin: '0 12px 12px',
+            margin: `0 ${isMobile ? 8 : 12}px ${isMobile ? 8 : 12}px`,
           }}
         >
           <Calculator className="h-4 w-4" />
@@ -158,11 +171,21 @@ export function ObjectPage() {
       {/* Pravá oblast – zaoblená světle modrá plocha pro 3D náhled */}
       <div
         style={{
-          position: 'absolute',
-          top: gap,
-          left: marginFromEdge + sidebarWidth + gap,
-          right: gap,
-          bottom: gap,
+          ...(isMobile
+            ? {
+                position: 'relative',
+                width: '100%',
+                flex: 1,
+                minHeight: 0,
+                marginTop: gap,
+              }
+            : {
+                position: 'absolute',
+                top: gap,
+                left: marginFromEdge + sidebarWidth + gap,
+                right: gap,
+                bottom: gap,
+              }),
           borderRadius: 16,
           background: '#E0E7FF',
           overflow: 'hidden',

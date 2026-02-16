@@ -211,7 +211,7 @@ export function ObjectControls({
       {tutorials.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ fontSize: '0.75rem', fontWeight: 500, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', paddingLeft: 2 }}>
-            Tutoriály
+            Návody
           </div>
           {tutorials.map((t) => (
             <button

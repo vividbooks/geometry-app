@@ -1046,32 +1046,25 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
   });
 
   const getSnappingPoint = (wx: number, wy: number, threshold = 20) => {
-    // Naj t nejbli    bod v dosahu (v etn  oblasti labelu)
-    // V t   threshold pro tablety a dotykové obrazovky pro lep   pr ci s prstem
     const effectiveThreshold = isTabletMode ? threshold * 1.5 : threshold;
     let closest: GeoPoint | null = null;
-    let minDist = effectiveThreshold / scale; // Threshold v pixelech p epo ten  na sv t
+    let minDist = effectiveThreshold / scale;
 
     for (const p of points) {
-      // Pro kontrolní body kružnic (p2) používáme menší threshold
       const isCircleHandle = shapes.some(s => s.type === 'circle' && s.definition.p2Id === p.id);
       const currentThreshold = isCircleHandle ? 15 / scale : minDist;
       
-      // Kontrola vzdálenosti od samotného bodu
       const distToPoint = Math.sqrt(Math.pow(p.x - wx, 2) + Math.pow(p.y - wy, 2));
       
-      // Kontrola, jestli je myš uvnitř labelu (label je vpravo nahoře od bodu)
       const labelX = p.x + 20;
       const labelY = p.y - 20;
       const distToLabel = Math.sqrt(Math.pow(labelX - wx, 2) + Math.pow(labelY - wy, 2));
-      const labelRadius = 18; // Poloměr labelu
+      const labelRadius = 18;
       
-      // Bod je snappable pokud je myš blízko bodu NEBO uvnitř labelu (kromě kontrolních bodů kružnic, které nemají label)
       let isNearPoint = false;
       if (distToPoint < currentThreshold) {
         isNearPoint = true;
       } else if (!isCircleHandle && distToLabel < labelRadius) {
-        // Myš je uvnitř labelu
         isNearPoint = true;
       }
       
@@ -1079,12 +1072,20 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
         minDist = distToPoint;
         closest = p;
       } else if (isNearPoint && !isCircleHandle && distToLabel < labelRadius) {
-        // Pokud jsme uvnitř labelu, přijmeme tento bod
         closest = p;
-        minDist = 0; // Nastavíme na 0, abychom měli nejvyšší prioritu
+        minDist = 0;
       }
     }
     return closest;
+  };
+
+  // Unified snap: first try existing points, then intersection points
+  const getSnapPosition = (wx: number, wy: number, threshold = 25): { x: number; y: number } | null => {
+    const pointSnap = getSnappingPoint(wx, wy, threshold);
+    if (pointSnap) return { x: pointSnap.x, y: pointSnap.y };
+    const intSnap = findNearestIntersection(wx, wy, threshold);
+    if (intSnap) return intSnap;
+    return null;
   };
 
   // Helper: najde nejbližší průsečík dvou čar/kružnic v okolí bodu
@@ -1289,10 +1290,10 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
       } else if (distToCenter < threshold) {
         setCircleInput(prev => ({ ...prev, isDraggingCenter: true }));
       } else {
-        // Snap to nearest point if close enough
-        const snappedPoint = getSnappingPoint(wx, wy, 30);
-        const snapX = snappedPoint ? snappedPoint.x : wx;
-        const snapY = snappedPoint ? snappedPoint.y : wy;
+        // Snap to nearest point or intersection
+        const snap = getSnapPosition(wx, wy, 30);
+        const snapX = snap ? snap.x : wx;
+        const snapY = snap ? snap.y : wy;
         setCircleInput(prev => ({ ...prev, center: { x: snapX, y: snapY } }));
       }
       return;
@@ -1320,8 +1321,8 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
             const baseShape = shapes.find(s => s.id === hoveredShape.id);
             if (baseShape && ['line', 'segment', 'ray'].includes(baseShape.type)) {
               let initPos = hoveredShape.proj;
-              const nearPt = getSnappingPoint(hoveredShape.proj.x, hoveredShape.proj.y, 25);
-              if (nearPt) initPos = { x: nearPt.x, y: nearPt.y };
+              const snap = getSnapPosition(hoveredShape.proj.x, hoveredShape.proj.y, 25);
+              if (snap) initPos = snap;
               setAngleTabletState({
                 step: 'positioning',
                 selectedLineId: baseShape.id,
@@ -1335,11 +1336,11 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
           return;
         }
         
-        // PC mód - původní logika (jeden klik otevře popup) s přichytáváním na body
+        // PC mód - původní logika (jeden klik otevře popup) s přichytáváním na body/průsečíky
         let anglePos = hoveredShape.proj;
-        const nearPointAngle = getSnappingPoint(hoveredShape.proj.x, hoveredShape.proj.y, 25);
-        if (nearPointAngle) {
-          anglePos = { x: nearPointAngle.x, y: nearPointAngle.y };
+        const snapAngle = getSnapPosition(hoveredShape.proj.x, hoveredShape.proj.y, 25);
+        if (snapAngle) {
+          anglePos = snapAngle;
         }
         setAngleInput({
             visible: true,
@@ -1492,8 +1493,8 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
             const baseShape = shapes.find(s => s.id === hoveredShape.id);
             if (baseShape && ['line', 'segment', 'ray'].includes(baseShape.type)) {
               let initPos = hoveredShape.proj;
-              const nearPt = getSnappingPoint(hoveredShape.proj.x, hoveredShape.proj.y, 25);
-              if (nearPt) initPos = { x: nearPt.x, y: nearPt.y };
+              const snap = getSnapPosition(hoveredShape.proj.x, hoveredShape.proj.y, 25);
+              if (snap) initPos = snap;
               setPerpTabletState({
                 step: 'positioning',
                 selectedLineId: baseShape.id,
@@ -1529,8 +1530,10 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
             const perpDy = dx;
             const len = Math.sqrt(perpDx*perpDx + perpDy*perpDy) || 1;
             
-            const pX = snapped ? snapped.x : wx;
-            const pY = snapped ? snapped.y : wy;
+            // Snap to existing point, then intersection, then raw position
+            const snapPos = snapped ? { x: snapped.x, y: snapped.y } : getSnapPosition(wx, wy, 25);
+            const pX = snapPos ? snapPos.x : wx;
+            const pY = snapPos ? snapPos.y : wy;
             
             const newP1Id = crypto.randomUUID();
             const newP2Id = crypto.randomUUID();
@@ -1995,7 +1998,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     mousePosRef.current = { x: wx, y: wy };
 
     // Intersection snap indicator (only when no point is snapped and tool is relevant)
-    if (!snapped && ['point', 'circle', 'segment', 'line'].includes(activeTool)) {
+    if (!snapped && ['point', 'circle', 'segment', 'line', 'angle', 'perpendicular'].includes(activeTool)) {
       nearestIntersectionRef.current = findNearestIntersection(wx, wy);
     } else {
       nearestIntersectionRef.current = null;
@@ -2046,9 +2049,9 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
       if (perpTabletState.selectedLineId && hoveredShape && hoveredShape.id === perpTabletState.selectedLineId) {
         let pos = hoveredShape.proj;
         // Snap to nearby point on the line
-        const nearPoint = getSnappingPoint(hoveredShape.proj.x, hoveredShape.proj.y, 25);
-        if (nearPoint) {
-          pos = { x: nearPoint.x, y: nearPoint.y };
+        const snapPerp = getSnapPosition(hoveredShape.proj.x, hoveredShape.proj.y, 25);
+        if (snapPerp) {
+          pos = snapPerp;
         }
         setPerpTabletState(prev => ({
           ...prev,
@@ -2057,15 +2060,14 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
       }
     }
     
-    // Tablet mód - positioning úhloměru (with point snapping)
+    // Tablet mód - positioning úhloměru (with point + intersection snapping)
     if (activeTool === 'angle' && isTabletMode && angleTabletState.step === 'positioning') {
       if (angleTabletState.selectedLineId && hoveredShape && hoveredShape.id === angleTabletState.selectedLineId) {
         let pos = hoveredShape.proj;
         let angle = hoveredShape.angle;
-        // Snap to nearby point on the line
-        const nearPoint = getSnappingPoint(hoveredShape.proj.x, hoveredShape.proj.y, 25);
-        if (nearPoint) {
-          pos = { x: nearPoint.x, y: nearPoint.y };
+        const snapAngle = getSnapPosition(hoveredShape.proj.x, hoveredShape.proj.y, 25);
+        if (snapAngle) {
+          pos = snapAngle;
         }
         setAngleTabletState(prev => ({
           ...prev,
@@ -2091,9 +2093,9 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
         return;
       }
       if (circleInput.isDraggingCenter) {
-        const snappedPoint = getSnappingPoint(wx, wy, 25);
-        const snapX = snappedPoint ? snappedPoint.x : wx;
-        const snapY = snappedPoint ? snappedPoint.y : wy;
+        const snap = getSnapPosition(wx, wy, 25);
+        const snapX = snap ? snap.x : wx;
+        const snapY = snap ? snap.y : wy;
         setCircleInput(prev => ({ ...prev, center: { x: snapX, y: snapY } }));
         return;
       }
@@ -4188,7 +4190,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
 
       {/* TOP RIGHT CORNER: Undo, Redo, Record, Zápis konstrukce */}
       {!recordingState.showPlayer && (
-      <div className={`absolute top-4 z-30 flex gap-2 transition-all duration-300 ${showConstructionPanel ? 'right-[386px]' : 'right-4'}`} onTouchStart={(e) => e.stopPropagation()}>
+      <div className={`absolute top-4 z-30 flex gap-2 transition-all duration-300 ${showConstructionPanel ? 'right-[516px]' : 'right-4'}`} onTouchStart={(e) => e.stopPropagation()}>
         {/* Undo */}
         <button
           onClick={handleUndo}

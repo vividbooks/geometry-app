@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, CheckCircle2, XCircle, Lightbulb, RotateCcw } from 'lucide-react';
+import { useIsMobile } from '../ui/use-mobile';
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -4483,6 +4484,7 @@ function PyramidVis({ edgeA, height, anim = 'none', stepKey }: {
 export function TutorialPage() {
   const { tutorialId } = useParams<{ tutorialId: string }>();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
 
   const tutorial = TUTORIALS[tutorialId || ''];
 
@@ -4551,14 +4553,15 @@ export function TutorialPage() {
         backgroundColor: '#fff',
         overflow: 'hidden',
         display: 'flex',
-        flexDirection: 'row',
+        flexDirection: isMobile ? 'column' : 'row',
         fontFamily: "'Fenomen Sans', ui-sans-serif, system-ui, sans-serif",
       }}
     >
       {/* ─── Left panel: tutorial content ─── */}
       <div
         style={{
-          width: '50%',
+          width: isMobile ? '100%' : '50%',
+          height: isMobile ? '50vh' : 'auto',
           display: 'flex',
           flexDirection: 'column',
           background: '#ffffff',
@@ -4578,12 +4581,12 @@ export function TutorialPage() {
             <ArrowLeft style={{ width: 16, height: 16, color: '#475569' }} />
           </button>
           <div style={{ flex: 1 }}>
-            <span style={{ fontSize: 14, color: '#94a3b8' }}>Tutoriál</span>
-            <div style={{ fontSize: 20, fontWeight: 600, color: '#0f172a' }}>
+            <span style={{ fontSize: isMobile ? 12 : 14, color: '#94a3b8' }}>Návod</span>
+            <div style={{ fontSize: isMobile ? 16 : 20, fontWeight: 600, color: '#0f172a' }}>
               {tutorial.objectName} — {tutorial.taskLabel}
             </div>
           </div>
-          <span style={{ fontSize: 18, color: '#94a3b8', fontWeight: 500 }}>
+          <span style={{ fontSize: isMobile ? 16 : 18, color: '#94a3b8', fontWeight: 500 }}>
             {stepIdx + 1}/{totalSteps}
           </span>
         </div>
@@ -4617,10 +4620,10 @@ export function TutorialPage() {
             <div
               style={{
               background: '#eef2ff', border: '2px solid #c7d2fe', borderRadius: 16,
-              padding: '20px 28px', textAlign: 'center', marginBottom: 24,
+              padding: isMobile ? '16px 20px' : '20px 28px', textAlign: 'center', marginBottom: 24,
             }}
           >
-            <span style={{ fontSize: 28, fontWeight: 700, color: '#4338ca', letterSpacing: '0.02em' }}>{step.formula}</span>
+            <span style={{ fontSize: isMobile ? 22 : 28, fontWeight: 700, color: '#4338ca', letterSpacing: '0.02em' }}>{step.formula}</span>
             </div>
           )}
 
@@ -4664,13 +4667,13 @@ export function TutorialPage() {
               </div>
 
               {answerState === 'correct' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#16a34a', fontSize: 20, fontWeight: 600 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#16a34a', fontSize: isMobile ? 16 : 20, fontWeight: 600 }}>
                 <CheckCircle2 style={{ width: 24, height: 24 }} /> Správně! Výborně!
                 </div>
               )}
               {answerState === 'wrong' && (
                 <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#dc2626', fontSize: 20, fontWeight: 600, marginBottom: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#dc2626', fontSize: isMobile ? 16 : 20, fontWeight: 600, marginBottom: 10 }}>
                   <XCircle style={{ width: 24, height: 24 }} /> Zkus to znovu
                   </div>
                   {!showHint && (
@@ -4679,7 +4682,7 @@ export function TutorialPage() {
                     style={{
                       display: 'flex', alignItems: 'center', gap: 8,
                       background: '#fefce8', border: '1px solid #fde68a', borderRadius: 10,
-                      padding: '10px 18px', fontSize: 18, color: '#92400e', cursor: 'pointer',
+                      padding: isMobile ? '8px 14px' : '10px 18px', fontSize: isMobile ? 16 : 18, color: '#92400e', cursor: 'pointer',
                     }}
                   >
                     <Lightbulb style={{ width: 20, height: 20 }} /> Nápověda
@@ -4691,7 +4694,7 @@ export function TutorialPage() {
                 <div
                   style={{
                     marginTop: 10, background: '#fefce8', border: '1px solid #fde68a',
-                    borderRadius: 12, padding: '14px 18px', fontSize: 18, color: '#92400e',
+                    borderRadius: 12, padding: isMobile ? '12px 14px' : '14px 18px', fontSize: isMobile ? 16 : 18, color: '#92400e',
                   }}
                 >
                   <Lightbulb style={{ width: 14, height: 14, display: 'inline', verticalAlign: 'middle', marginRight: 6 }} />
@@ -4706,18 +4709,18 @@ export function TutorialPage() {
         <div
           style={{
             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-            padding: '12px 20px', flexShrink: 0, borderTop: '1px solid #f1f5f9',
+            padding: isMobile ? '10px 16px' : '12px 20px', flexShrink: 0, borderTop: '1px solid #f1f5f9',
           }}
         >
           <button
             onClick={goPrev}
             disabled={stepIdx === 0}
             style={{
-              display: 'flex', alignItems: 'center', gap: 8, padding: '14px 24px', borderRadius: 12,
+              display: 'flex', alignItems: 'center', gap: 8, padding: isMobile ? '12px 20px' : '14px 24px', borderRadius: 12,
               border: '1px solid #e2e8f0',
               background: stepIdx === 0 ? '#f8fafc' : '#fff',
               color: stepIdx === 0 ? '#94a3b8' : '#334155',
-              cursor: stepIdx === 0 ? 'default' : 'pointer', fontSize: 18, fontWeight: 500,
+              cursor: stepIdx === 0 ? 'default' : 'pointer', fontSize: isMobile ? 16 : 18, fontWeight: 500,
             }}
           >
             <ArrowLeft style={{ width: 20, height: 20 }} /> Zpět
@@ -4727,8 +4730,8 @@ export function TutorialPage() {
             <button
               onClick={() => navigate('/')}
               style={{
-                display: 'flex', alignItems: 'center', gap: 8, padding: '14px 28px', borderRadius: 12,
-                background: '#4d49f3', color: '#fff', fontWeight: 600, fontSize: 18, border: 'none',
+                display: 'flex', alignItems: 'center', gap: 8, padding: isMobile ? '12px 24px' : '14px 28px', borderRadius: 12,
+                background: '#4d49f3', color: '#fff', fontWeight: 600, fontSize: isMobile ? 16 : 18, border: 'none',
                 cursor: 'pointer', boxShadow: '0 4px 12px rgba(77,73,243,0.3)',
               }}
             >
@@ -4739,9 +4742,9 @@ export function TutorialPage() {
               onClick={goNext}
               disabled={!canGoNext}
               style={{
-                display: 'flex', alignItems: 'center', gap: 8, padding: '14px 28px', borderRadius: 12,
+                display: 'flex', alignItems: 'center', gap: 8, padding: isMobile ? '12px 24px' : '14px 28px', borderRadius: 12,
                 background: canGoNext ? '#4d49f3' : '#cbd5e1',
-                color: '#fff', fontWeight: 600, fontSize: 18, border: 'none',
+                color: '#fff', fontWeight: 600, fontSize: isMobile ? 16 : 18, border: 'none',
                 cursor: canGoNext ? 'pointer' : 'default',
                 boxShadow: canGoNext ? '0 4px 12px rgba(77,73,243,0.3)' : 'none',
                 transition: 'all 200ms',
@@ -4756,7 +4759,8 @@ export function TutorialPage() {
       {/* ─── Right panel: animated visualisation ─── */}
       <div
         style={{
-          width: '50%',
+          width: isMobile ? '100%' : '50%',
+          height: isMobile ? '50vh' : 'auto',
           position: 'relative',
           padding: gap,
           display: 'flex',

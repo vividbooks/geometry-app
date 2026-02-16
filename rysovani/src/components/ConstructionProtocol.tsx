@@ -103,7 +103,7 @@ export function ConstructionProtocol({ steps, visible, onClose, onClear, darkMod
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState<'none' | 'text' | 'latex'>('none');
-  const t = tabletMode;
+  const t = true; // Always use large (tablet-size) styling
 
   const fmtCm = (px: number): string => {
     const cm = px / pixelsPerCm;
@@ -408,8 +408,7 @@ export function ConstructionProtocol({ steps, visible, onClose, onClear, darkMod
         .katex-dark .katex .minner {
           color: #c0caf5;
         }
-        .katex { font-size: 1em !important; }
-        .protocol-tablet .katex { font-size: 1.45em !important; }
+        .katex { font-size: 1.45em !important; }
       `}</style>
     </div>
   );

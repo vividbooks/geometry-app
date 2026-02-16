@@ -56,6 +56,16 @@ function parseTaskType(s: string | undefined): TaskType {
   return 'objem';
 }
 
+function useWindowWidth() {
+  const [w, setW] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
+  useEffect(() => {
+    const h = () => setW(window.innerWidth);
+    window.addEventListener('resize', h);
+    return () => window.removeEventListener('resize', h);
+  }, []);
+  return w;
+}
+
 export type AnswerMode = 'number' | 'choices';
 
 /** Vygeneruje 4 možnosti A–D: jedna správná a tři plausibilní špatné */
@@ -91,6 +101,8 @@ export function ObjectExercisePage() {
   const { objectId, taskType: taskTypeParam } = useParams<{ objectId: string; taskType: string }>();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const windowWidth = useWindowWidth();
+  const isMobile = windowWidth < 768;
   const def = getObjectDef(objectId || '');
   const taskType = parseTaskType(taskTypeParam);
 
@@ -198,13 +210,14 @@ export function ObjectExercisePage() {
         backgroundColor: 'rgba(255, 255, 255, 1)',
         overflow: 'hidden',
         display: 'flex',
-        flexDirection: 'row',
+        flexDirection: isMobile ? 'column' : 'row',
       }}
     >
       {/* Levá polovina – úkol, bez stínu */}
       <div
         style={{
-          width: '50%',
+          width: isMobile ? '100%' : '50%',
+          height: isMobile ? '40%' : 'auto',
           display: 'flex',
           flexDirection: 'column',
           background: '#ffffff',
@@ -212,41 +225,41 @@ export function ObjectExercisePage() {
           boxShadow: 'none',
         }}
       >
-        <div className="flex items-center gap-2" style={{ flexShrink: 0, padding: 12 }}>
+        <div className="flex items-center gap-2" style={{ flexShrink: 0, padding: isMobile ? 8 : 12 }}>
           <button
             onClick={() => navigate('/')}
             className="flex items-center justify-center text-slate-600 hover:text-slate-900 transition-colors"
             style={{
-              width: 40,
-              height: 40,
+              width: isMobile ? 36 : 40,
+              height: isMobile ? 36 : 40,
               borderRadius: '50%',
               background: '#f8fafc',
               border: '1px solid #e2e8f0',
             }}
             title="Zpět na rozcestník"
           >
-            <ArrowLeft className="h-4 w-4" />
+            <ArrowLeft className={isMobile ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
           </button>
           <Link
             to="/cviceni"
-            className="flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900"
+            className={`flex items-center gap-2 text-slate-600 hover:text-slate-900 ${isMobile ? 'text-xs' : 'text-sm'}`}
             style={{ textDecoration: 'none' }}
           >
-            <List className="h-4 w-4" />
+            <List className={isMobile ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
             Výběr úloh
           </Link>
           <Link
             to={def.path}
-            className="flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900"
+            className={`flex items-center gap-2 text-slate-600 hover:text-slate-900 ${isMobile ? 'text-xs' : 'text-sm'}`}
             style={{ textDecoration: 'none' }}
           >
-            <Box className="h-4 w-4" />
+            <Box className={isMobile ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
             Prohlížet těleso
           </Link>
         </div>
 
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px 16px' }}>
+          <div style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '0 12px 12px' : '0 16px 16px' }}>
             <ObjectQuizPanel
               objectName={def.name}
               shapeBadge={def.badge}
@@ -266,7 +279,7 @@ export function ObjectExercisePage() {
               <button
                 type="button"
                 onClick={resetTask}
-                className="text-sm text-blue-600 hover:underline mt-2"
+                className={`text-blue-600 hover:underline mt-2 ${isMobile ? 'text-xs' : 'text-sm'}`}
               >
                 Další úloha
               </button>
@@ -323,12 +336,14 @@ export function ObjectExercisePage() {
       {/* Pravá polovina – 3D nebo 2D zobrazení */}
       <div
         style={{
-          width: '50%',
+          width: isMobile ? '100%' : '50%',
+          height: isMobile ? '60%' : 'auto',
           position: 'relative',
-          padding: gap,
+          padding: isMobile ? gap / 2 : gap,
           display: 'flex',
           alignItems: 'stretch',
           justifyContent: 'stretch',
+          overflow: 'hidden',
         }}
       >
         <div

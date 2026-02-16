@@ -229,7 +229,7 @@ export function Crossroads() {
                 marginBottom: '20px',
               }}
             >
-              3D tělesa, rovinné útvary, interaktivní tutoriály a procvičování výpočtů objemu, povrchu, obvodu a obsahu.
+              3D tělesa, rovinné útvary, interaktivní návody a procvičování výpočtů objemu, povrchu, obvodu a obsahu.
             </p>
             <div
               style={{
