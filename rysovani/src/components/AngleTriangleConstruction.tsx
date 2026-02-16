@@ -347,7 +347,7 @@ export function AngleTriangleConstruction({ onBack, darkMode, onDarkModeChange }
   useEffect(() => {
     if (isAnimating && animProgress < 1 && !waitingForInput) {
       animationFrameRef.current = requestAnimationFrame(() => {
-        setAnimProgress(prev => Math.min(prev + 0.025, 1));
+        setAnimProgress(prev => Math.min(prev + 0.009, 1));
       });
     } else if (animProgress >= 1) {
       setIsAnimating(false);

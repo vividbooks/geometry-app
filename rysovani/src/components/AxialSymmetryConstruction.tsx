@@ -197,7 +197,7 @@ export function AxialSymmetryConstruction({ onBack, darkMode, onDarkModeChange }
           return 1;
         }
         
-        let increment = 0.025;
+        let increment = 0.009;
         
         return Math.min(prev + increment, 1);
       });

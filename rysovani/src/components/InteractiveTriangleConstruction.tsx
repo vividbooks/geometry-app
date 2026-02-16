@@ -267,12 +267,12 @@ export function InteractiveTriangleConstruction({ onBack, darkMode, onDarkModeCh
   useEffect(() => {
     if (isAnimating && animProgress < 1 && !waitingForInput) {
       animationFrameRef.current = requestAnimationFrame(() => {
-        let increment = 0.025;
+        let increment = 0.009;
         
         if (currentStep === 1 || currentStep === 3) {
-          increment = 0.008;
+          increment = 0.003;
         } else if (currentStep === 2 || currentStep === 4) {
-          increment = 0.015;
+          increment = 0.006;
         }
         
         setAnimProgress(prev => Math.min(prev + increment, 1));

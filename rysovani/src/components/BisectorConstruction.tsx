@@ -240,12 +240,12 @@ export function BisectorConstruction({ onBack, darkMode, onDarkModeChange }: Bis
     if (isAnimating && animProgress < 1) {
       animationFrameRef.current = requestAnimationFrame(() => {
         // Různé rychlosti animace podle kroků
-        let increment = 0.025; // Výchozí rychlost
+        let increment = 0.009; // Výchozí rychlost
         
         if (currentStep === 1 || currentStep === 3) {
-          increment = 0.008;
+          increment = 0.003;
         } else if (currentStep === 2 || currentStep === 4) {
-          increment = 0.015;
+          increment = 0.006;
         }
         
         setAnimProgress(prev => Math.min(prev + increment, 1));
