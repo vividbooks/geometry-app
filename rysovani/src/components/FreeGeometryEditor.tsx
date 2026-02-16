@@ -20,6 +20,7 @@ import {
   Hand,
   FlipVertical,
   Pencil,
+  Highlighter,
   Ruler,
   Moon,
   Sun,
@@ -47,7 +48,7 @@ import Papir from '../imports/Papir';
 
 // --- TYPY ---
 
-type ToolType = 'move' | 'point' | 'segment' | 'line' | 'ray' | 'circle' | 'angle' | 'distance' | 'perpendicular' | 'pan' | 'paper' | 'freehand';
+type ToolType = 'move' | 'point' | 'segment' | 'line' | 'ray' | 'circle' | 'angle' | 'distance' | 'perpendicular' | 'pan' | 'paper' | 'freehand' | 'highlighter';
 
 interface GeoPoint {
   id: string;
@@ -62,6 +63,7 @@ interface FreehandPath {
   points: {x: number, y: number}[];
   color: string;
   width: number;
+  isHighlight?: boolean;
 }
 
 interface GeoShape {
@@ -563,7 +565,8 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
       label: 'Bod a Kreslení',
       tools: [
         { id: 'point', label: 'Bod', icon: Dot },
-        { id: 'freehand', label: 'Volné pero', icon: Pencil }
+        { id: 'freehand', label: 'Volné pero', icon: Pencil },
+        { id: 'highlighter', label: 'Zvýraznění', icon: Highlighter }
       ]
     },
     {
@@ -1628,8 +1631,8 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
       return;
     }
 
-    // 5. NÁSTROJ: VOLNÉ PERO
-    if (activeTool === 'freehand') {
+    // 5. NÁSTROJ: VOLNÉ PERO / ZVÝRAZŇOVAČ
+    if (activeTool === 'freehand' || activeTool === 'highlighter') {
        currentPathRef.current = [{ x: wx, y: wy }];
        return;
     }
@@ -2088,7 +2091,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     }
 
     // Drawing logic
-    if (activeTool === 'freehand' && currentPathRef.current) {
+    if ((activeTool === 'freehand' || activeTool === 'highlighter') && currentPathRef.current) {
        currentPathRef.current.push({ x: wx, y: wy });
     }
     
@@ -2194,13 +2197,15 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
       }));
     }
     
-    if (activeTool === 'freehand' && currentPathRef.current) {
-        if (currentPathRef.current.length >= 1) { // Changed > 1 to >= 1 to allow dots
+    if ((activeTool === 'freehand' || activeTool === 'highlighter') && currentPathRef.current) {
+        if (currentPathRef.current.length >= 1) {
+            const isHL = activeTool === 'highlighter';
             setFreehandPaths(prev => [...prev, {
                 id: crypto.randomUUID(),
                 points: currentPathRef.current!,
-                color: '#3b82f6', // Default blue like points
-                width: 2
+                color: isHL ? 'rgba(250, 204, 21, 0.4)' : '#3b82f6',
+                width: isHL ? 20 : 2,
+                isHighlight: isHL || undefined,
             }]);
         }
         currentPathRef.current = null;
@@ -2611,19 +2616,15 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     ctx.translate(offset.x, offset.y);
     ctx.scale(scale, scale);
 
-    // 0. Vykreslení volných čar (Freehand) - pod ostatními tvary
+    // 0a. Zvýrazňovač (highlighter) - pod vším ostatním
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     
     freehandPaths.forEach(path => {
-        if (path.points.length < 2) return;
+        if (!path.isHighlight || path.points.length < 2) return;
         ctx.beginPath();
         ctx.strokeStyle = path.color;
-        ctx.lineWidth = path.width; // Měřítko ovlivňuje tloušťku, ale chceme konstantní vizuální tloušťku? Ne, v geometrii se tloušťka obvykle škáluje nebo je fixní v px. Zde fixní ve světě.
-        // Ale pro "fixní tloušťku na obrazovce" bychom museli dělit scalem.
-        // Zkusíme fixní tloušťku v "pixelové logice" -> tzn. dělit scale.
         ctx.lineWidth = path.width / scale;
-        
         ctx.moveTo(path.points[0].x, path.points[0].y);
         for (let i = 1; i < path.points.length; i++) {
             ctx.lineTo(path.points[i].x, path.points[i].y);
@@ -2631,12 +2632,44 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
         ctx.stroke();
     });
 
-    if (currentPathRef.current && currentPathRef.current.length >= 1) {
+    // Aktivní zvýrazňovač (kreslení)
+    if (activeTool === 'highlighter' && currentPathRef.current && currentPathRef.current.length >= 1) {
+        const path = currentPathRef.current;
+        ctx.beginPath();
+        ctx.strokeStyle = darkMode ? 'rgba(250, 204, 21, 0.4)' : 'rgba(250, 204, 21, 0.4)';
+        ctx.lineWidth = 20 / scale;
+        if (path.length === 1) {
+            ctx.fillStyle = 'rgba(250, 204, 21, 0.4)';
+            ctx.arc(path[0].x, path[0].y, 10/scale, 0, Math.PI * 2);
+            ctx.fill();
+        } else {
+            ctx.moveTo(path[0].x, path[0].y);
+            for (let i = 1; i < path.length; i++) {
+                ctx.lineTo(path[i].x, path[i].y);
+            }
+            ctx.stroke();
+        }
+    }
+
+    // 0b. Volné pero (freehand) - pod tvary ale nad zvýrazňovačem
+    freehandPaths.forEach(path => {
+        if (path.isHighlight || path.points.length < 2) return;
+        ctx.beginPath();
+        ctx.strokeStyle = path.color;
+        ctx.lineWidth = path.width / scale;
+        ctx.moveTo(path.points[0].x, path.points[0].y);
+        for (let i = 1; i < path.points.length; i++) {
+            ctx.lineTo(path.points[i].x, path.points[i].y);
+        }
+        ctx.stroke();
+    });
+
+    // Aktivní pero (kreslení)
+    if (activeTool === 'freehand' && currentPathRef.current && currentPathRef.current.length >= 1) {
         const path = currentPathRef.current;
         ctx.beginPath();
         ctx.strokeStyle = darkMode ? '#7dcfff' : '#3b82f6';
         ctx.lineWidth = 2 / scale;
-        
         if (path.length === 1) {
              ctx.fillStyle = darkMode ? '#7dcfff' : '#3b82f6';
              ctx.arc(path[0].x, path[0].y, 1/scale, 0, Math.PI * 2);
