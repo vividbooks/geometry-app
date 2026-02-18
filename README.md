@@ -8,4 +8,19 @@
   Run `npm i` to install the dependencies.
 
   Run `npm run dev` to start the development server.
+
+  ## Auth gate configuration
+
+  The app now enforces a startup login check compatible with Vividbooks cross-subdomain auth:
+
+  - Reads `login-code` cookie (and optional `teacherId` cookie)
+  - Calls `GET https://api.vividbooks.com/v1/login` with `User-Code` and optional `Teacher-Id` headers
+  - Allows app access only when `User-Type` response header is authenticated
+  - Redirects to the configured login URL for missing/invalid sessions
+
+  Optional Vite environment variables:
+
+  - `VITE_ENABLE_AUTH_GATE=true` (set `false` to disable)
+  - `VITE_AUTH_CHECK_URL=https://api.vividbooks.com/v1/login`
+  - `VITE_AUTH_REDIRECT_URL=https://app.vividbooks.com`
   

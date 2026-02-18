@@ -9,6 +9,7 @@ import { FlatObjectPage } from './components/viewer/FlatObjectPage';
 import { RysovaniPage } from './components/rysovani/RysovaniPage';
 import { TutorialPage } from './components/tutorial/TutorialPage';
 import { getObjectDef } from './data/objects';
+import { AuthGate } from './components/auth/AuthGate';
 
 /** Wrapper that routes to 3D or 2D page */
 function SmartObjectPage() {
@@ -20,18 +21,20 @@ function SmartObjectPage() {
 
 export default function App() {
   return (
-    <BrowserRouter basename={import.meta.env.BASE_URL}>
-      <Routes>
-        <Route path="/" element={<Crossroads />} />
-        <Route path="/rysovani-app" element={<Landing mode="rysovani-app" />} />
-        <Route path="/telesa-app" element={<Landing mode="telesa-app" />} />
-        <Route path="/rysovani" element={<RysovaniPage />} />
-        <Route path="/tutorial/:tutorialId" element={<TutorialPage />} />
-        <Route path="/cviceni" element={<CviceniPage />} />
-        <Route path="/cviceni/:objectId/:taskType" element={<CviceniSetupPage />} />
-        <Route path="/:objectId/cviceni/:taskType" element={<ObjectExercisePage />} />
-        <Route path="/:objectId" element={<SmartObjectPage />} />
-      </Routes>
-    </BrowserRouter>
+    <AuthGate>
+      <BrowserRouter basename={import.meta.env.BASE_URL}>
+        <Routes>
+          <Route path="/" element={<Crossroads />} />
+          <Route path="/rysovani-app" element={<Landing mode="rysovani-app" />} />
+          <Route path="/telesa-app" element={<Landing mode="telesa-app" />} />
+          <Route path="/rysovani" element={<RysovaniPage />} />
+          <Route path="/tutorial/:tutorialId" element={<TutorialPage />} />
+          <Route path="/cviceni" element={<CviceniPage />} />
+          <Route path="/cviceni/:objectId/:taskType" element={<CviceniSetupPage />} />
+          <Route path="/:objectId/cviceni/:taskType" element={<ObjectExercisePage />} />
+          <Route path="/:objectId" element={<SmartObjectPage />} />
+        </Routes>
+      </BrowserRouter>
+    </AuthGate>
   );
 }
