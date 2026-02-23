@@ -4,8 +4,8 @@
   import path from 'path';
 
   export default defineConfig({
-    // Use relative base so built HTML works when opened from build/ or deployed to any path (e.g. GitHub Pages)
-    base: '/geometry-app/',
+    // Root base for rysovani.vividbooks.com (subdomain = served from /)
+    base: '/',
     plugins: [react()],
     css: {
       transformer: 'lightningcss',
