@@ -1106,7 +1106,7 @@ export function AngleTriangleConstruction({ onBack, darkMode, onDarkModeChange }
     if (currentStep >= 2 && angleAlpha) {
       const alphaRad = (angleAlpha * Math.PI) / 180;
       const rayAAngle = baseAngle + alphaRad;
-      const rayLength = 800;
+      const rayLength = 2400;
       
       const stepProgress = currentStep === 2 ? progress : 1;
       drawRay(bufferCtx, pointA, rayAAngle, rayLength, rayColor, 4, stepProgress);
@@ -1205,7 +1205,7 @@ export function AngleTriangleConstruction({ onBack, darkMode, onDarkModeChange }
     if (currentStep >= 4 && angleBeta) {
       const betaRad = (angleBeta * Math.PI) / 180;
       const rayBAngle = baseAngle + Math.PI - betaRad;
-      const rayLength = 800;
+      const rayLength = 2400;
       
       const stepProgress = currentStep === 4 ? progress : 1;
       drawRay(bufferCtx, pointB, rayBAngle, rayLength, rayColor, 4, stepProgress);
@@ -1852,15 +1852,7 @@ export function AngleTriangleConstruction({ onBack, darkMode, onDarkModeChange }
         <div className={`text-base font-medium mb-3 ${darkMode ? 'text-[#565f89]' : 'text-gray-400'}`}>
           Krok {currentStep + 1} / {stepNotations.length}
         </div>
-        <div className="flex items-center gap-3">
-          <span className="flex items-center justify-center w-10 h-10 rounded-full text-sm font-bold shrink-0" style={{ backgroundColor: stepNotations[currentStep]?.type === 'circle' ? '#f43f5e' : stepNotations[currentStep]?.type === 'segment' ? '#10b981' : stepNotations[currentStep]?.type === 'line' ? '#8b5cf6' : stepNotations[currentStep]?.type === 'angle' ? '#f97316' : '#3b82f6', color: '#fff' }}>
-            {stepNotations[currentStep]?.type === 'circle' ? '○' : stepNotations[currentStep]?.type === 'segment' ? '—' : stepNotations[currentStep]?.type === 'line' ? '↔' : stepNotations[currentStep]?.type === 'angle' ? '∠' : '•'}
-          </span>
-          <span className="text-xl font-medium" style={{ fontFamily: '"Times New Roman", Georgia, serif', fontStyle: 'italic' }}>
-            {currentStep + 1}. {stepNotations[currentStep]?.notation}
-          </span>
-        </div>
-        <div className={`text-base mt-2.5 ${darkMode ? 'text-[#565f89]' : 'text-gray-500'}`}>
+        <div className={`text-lg font-medium ${darkMode ? 'text-[#c0caf5]' : 'text-gray-800'}`}>
           {stepInfo.description}
         </div>
       </div>

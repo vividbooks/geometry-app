@@ -93,7 +93,7 @@ export function ExerciseTile({ object, taskType }: Props) {
         <Tile3DPreview object={object} height={140} backgroundColor={object.color} />
       )}
       {/* Dolní část – stejná barva jako horní */}
-      <div className="flex flex-col flex-1" style={{ padding: '20px', backgroundColor: object.color }}>
+      <div className="flex flex-col flex-1" style={{ padding: '16px 20px', backgroundColor: object.color }}>
         <span
           style={{
             display: 'inline-block',
@@ -109,17 +109,14 @@ export function ExerciseTile({ object, taskType }: Props) {
         >
           {{ objem: 'Objem', povrch: 'Povrch', obvod: 'Obvod', obsah: 'Obsah' }[taskType]}
         </span>
-        <h3 style={{ fontSize: '18px', fontWeight: 400, color: '#4e5871', marginBottom: '6px' }}>
-          {title}
-        </h3>
-        <p style={{ fontSize: '13px', fontWeight: 400, color: '#4e5871', opacity: 0.7, lineHeight: '20px', marginBottom: '16px' }}>
-          {{ objem: 'Vypočítejte objem.', povrch: 'Vypočítejte povrch.', obvod: 'Vypočítejte obvod.', obsah: 'Vypočítejte obsah.' }[taskType]}
-        </p>
-        <div className="flex items-center justify-end" style={{ marginTop: 'auto' }}>
+        <div className="flex items-center justify-between">
+          <h3 style={{ fontSize: '18px', fontWeight: 400, color: '#4e5871', margin: 0 }}>
+            {object.name}
+          </h3>
           <ArrowRight
             className="arrow-icon"
             size={16}
-            style={{ color: '#4d49f3', opacity: 0, transition: 'all 200ms' }}
+            style={{ color: '#4d49f3', opacity: 0, transition: 'all 200ms', flexShrink: 0 }}
           />
         </div>
       </div>

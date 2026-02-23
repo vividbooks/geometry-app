@@ -124,8 +124,18 @@ export function ObjectExercisePage() {
     return null;
   }, [def, urlParamsRandom, urlRows, searchParams]);
 
+  // Exercise may use different params than viewer (e.g. triangle: base+height instead of a,b,c)
+  const exParamDefs = def?.exerciseParamDefs ?? def?.parameterDefs ?? [];
+
+  const genParams = useCallback(() => {
+    if (!def) return {};
+    if (def.exerciseGenerateParams) return def.exerciseGenerateParams();
+    if (def.generateParams) return def.generateParams();
+    return generateRandomParams(exParamDefs);
+  }, [def, exParamDefs]);
+
   const [params, setParams] = useState<Record<string, number>>(() =>
-    initialParamsFromUrl ?? (def ? generateRandomParams(def.parameterDefs) : {})
+    initialParamsFromUrl ?? (def ? genParams() : {})
   );
   const [unfoldProgress, setUnfoldProgress] = useState(0);
   const [isWireframe, setIsWireframe] = useState(false);
@@ -135,10 +145,10 @@ export function ObjectExercisePage() {
 
   const resetTask = useCallback(() => {
     if (!def) return;
-    setParams(generateRandomParams(def.parameterDefs));
+    setParams(genParams());
     setChecked(false);
     setCorrect(false);
-  }, [def]);
+  }, [def, genParams]);
 
   useEffect(() => {
     if (!def) return;
@@ -155,7 +165,9 @@ export function ObjectExercisePage() {
     setAnswerMode(urlAnswerMode);
   }, [urlAnswerMode]);
 
-  const mathProperties = def ? def.computeProperties(params) : [];
+  const mathProperties = def
+    ? (def.exerciseComputeProperties ?? def.computeProperties)(params)
+    : [];
   const TASK_LABEL_MAP: Record<string, string> = { objem: 'Objem', povrch: 'Povrch', obvod: 'Obvod', obsah: 'Obsah' };
   const UNIT_MAP: Record<string, string> = { objem: 'cm³', povrch: 'cm²', obvod: 'cm', obsah: 'cm²' };
   const taskLabel = TASK_LABEL_MAP[taskType] ?? 'Objem';
@@ -231,7 +243,7 @@ export function ObjectExercisePage() {
       >
         <div className="flex items-center gap-2" style={{ flexShrink: 0, padding: isMobile ? 8 : 12 }}>
           <button
-            onClick={() => navigate('/')}
+            onClick={() => navigate(def?.path || '/')}
             className="flex items-center justify-center text-slate-600 hover:text-slate-900 transition-colors"
             style={{
               width: isMobile ? 36 : 40,
@@ -240,7 +252,7 @@ export function ObjectExercisePage() {
               background: '#f8fafc',
               border: '1px solid #e2e8f0',
             }}
-            title="Zpět na rozcestník"
+            title="Zpět na těleso"
           >
             <ArrowLeft className={isMobile ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
           </button>
@@ -268,7 +280,7 @@ export function ObjectExercisePage() {
               objectName={def.name}
               shapeBadge={def.badge}
               params={params}
-              parameterDefs={def.parameterDefs}
+              parameterDefs={exParamDefs}
               taskType={taskType}
               unit={unit}
               answerMode={answerMode}
@@ -377,14 +389,15 @@ export function ObjectExercisePage() {
             boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
           }}
         >
-          {def?.is2D && def.computeVertices2D ? (
+          {def?.is2D && (def.exerciseComputeVertices2D ?? def.computeVertices2D) ? (
             <Flat2DViewer
-              vertices={def.computeVertices2D(params)}
+              vertices={(def.exerciseComputeVertices2D ?? def.computeVertices2D!)(params)}
               params={params}
-              paramIds={def.parameterDefs.map((d) => d.id)}
+              paramIds={exParamDefs.map((d) => d.id)}
               fillColor={def.color}
               backgroundColor="#E0E7FF"
               isCircle={objectId === 'kruh2d'}
+              triangleHeightMode={def.exerciseShowHeight}
             />
           ) : (
             <Canvas3DViewer

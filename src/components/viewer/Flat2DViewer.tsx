@@ -10,6 +10,8 @@ interface Props {
   backgroundColor?: string;
   /** Je to kruh? */
   isCircle?: boolean;
+  /** Zobrazit výšku trojúhelníku (základna a + výška va) */
+  triangleHeightMode?: boolean;
 }
 
 /**
@@ -23,6 +25,7 @@ export function Flat2DViewer({
   fillColor = '#c7d2fe',
   backgroundColor = '#E0E7FF',
   isCircle = false,
+  triangleHeightMode = false,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [dims, setDims] = useState({ w: 600, h: 400 });
@@ -101,8 +104,74 @@ export function Flat2DViewer({
       ctx.fill();
     }
 
+    const drawLabel = (lx: number, ly: number, label: string) => {
+      ctx.font = '600 13px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const tm = ctx.measureText(label);
+      const bw = tm.width + 12;
+      const bh = 20;
+      ctx.fillStyle = 'rgba(255,255,255,0.92)';
+      ctx.strokeStyle = 'rgba(67, 56, 202, 0.3)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      if (typeof ctx.roundRect === 'function') ctx.roundRect(lx - bw / 2, ly - bh / 2, bw, bh, 4);
+      else ctx.rect(lx - bw / 2, ly - bh / 2, bw, bh);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#312e81';
+      ctx.fillText(label, lx, ly);
+    };
+
     // Draw dimension labels
-    if (!isCircle) {
+    if (triangleHeightMode && vertices.length === 3) {
+      // Triangle height mode: draw height line + label only base and height
+      const a  = params.a  ?? 8;
+      const va = params.va ?? 6;
+      const dx = params.dx ?? (a / 2);
+
+      // Apex = vertices[2] = (dx, va), foot = (dx, 0)
+      const apex  = vertices[2];
+      const footX = apex.x; // = dx
+      const footY = 0;
+
+      // Draw dashed height line (foot → apex)
+      ctx.save();
+      ctx.setLineDash([6, 4]);
+      ctx.strokeStyle = '#6366f1';
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.moveTo(tx(footX), ty(footY));
+      ctx.lineTo(tx(apex.x), ty(apex.y));
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+
+      // Right-angle mark at foot — square towards interior of base
+      const sq = 7 / scale; // square size in world coords
+      const goRight = footX < a / 2; // draw mark towards centre of base
+      const sqDir = goRight ? 1 : -1;
+      ctx.strokeStyle = '#6366f1';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(tx(footX + sqDir * sq), ty(footY));
+      ctx.lineTo(tx(footX + sqDir * sq), ty(footY + sq));
+      ctx.lineTo(tx(footX),              ty(footY + sq));
+      ctx.stroke();
+
+      // Base label (below base midpoint)
+      const baseMidX = tx((vertices[0].x + vertices[1].x) / 2);
+      const baseMidY = ty(0) + 22;
+      const aLabel = Number.isInteger(a) ? `${a} cm` : `${a.toFixed(1)} cm`;
+      drawLabel(baseMidX, baseMidY, aLabel);
+
+      // Height label — place to the side opposite the base interior
+      const hMidX = tx(footX) + (goRight ? -36 : 36);
+      const hMidY = (ty(footY) + ty(apex.y)) / 2;
+      const vaLabel = Number.isInteger(va) ? `${va} cm` : `${va.toFixed(1)} cm`;
+      drawLabel(hMidX, hMidY, vaLabel);
+
+    } else if (!isCircle) {
       ctx.font = '600 13px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -123,20 +192,7 @@ export function Flat2DViewer({
         const off = 18;
         const lx = mx + (dx / len) * off;
         const ly = my - (dy / len) * off;
-
-        const tm = ctx.measureText(label);
-        const bw = tm.width + 12;
-        const bh = 20;
-        ctx.fillStyle = 'rgba(255,255,255,0.92)';
-        ctx.strokeStyle = 'rgba(67, 56, 202, 0.3)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        if (typeof ctx.roundRect === 'function') ctx.roundRect(lx - bw / 2, ly - bh / 2, bw, bh, 4);
-        else ctx.rect(lx - bw / 2, ly - bh / 2, bw, bh);
-        ctx.fill();
-        ctx.stroke();
-        ctx.fillStyle = '#312e81';
-        ctx.fillText(label, lx, ly);
+        drawLabel(lx, ly, label);
       }
     } else {
       // Circle: show radius line + label
@@ -178,7 +234,7 @@ export function Flat2DViewer({
       ctx.fillStyle = '#312e81';
       ctx.fillText(label, lx, ly);
     }
-  }, [vertices, params, paramIds, fillColor, backgroundColor, isCircle]);
+  }, [vertices, params, paramIds, fillColor, backgroundColor, isCircle, triangleHeightMode]);
 
   useEffect(() => {
     const canvas = canvasRef.current;

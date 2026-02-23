@@ -31,7 +31,8 @@ import {
   Loader2,
   Link,
   Printer,
-  Grid2X2
+  Grid2X2,
+  Eraser
 } from 'lucide-react';
 import { useIsMobile } from './ui/use-mobile';
 import { Slider } from './ui/slider';
@@ -49,7 +50,7 @@ import Papir from '../imports/Papir';
 
 // --- TYPY ---
 
-type ToolType = 'move' | 'point' | 'segment' | 'line' | 'ray' | 'circle' | 'angle' | 'distance' | 'perpendicular' | 'pan' | 'paper' | 'freehand' | 'highlighter';
+type ToolType = 'move' | 'point' | 'segment' | 'line' | 'ray' | 'circle' | 'angle' | 'distance' | 'perpendicular' | 'pan' | 'paper' | 'freehand' | 'highlighter' | 'eraser';
 
 interface GeoPoint {
   id: string;
@@ -161,7 +162,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
   // State
   const [deviceType, setDeviceType] = useState<'board' | 'computer' | null>(deviceTypeProp ?? null);
   const [isTabletMode, setIsTabletMode] = useState(deviceTypeProp === 'board');
-  const [activeTool, setActiveTool] = useState<ToolType>('point');
+  const [activeTool, setActiveTool] = useState<ToolType>('move');
   const [points, setPoints] = useState<GeoPoint[]>([]);
   const [shapes, setShapes] = useState<GeoShape[]>([]);
   const [freehandPaths, setFreehandPaths] = useState<FreehandPath[]>([]);
@@ -285,6 +286,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
   
   // Výběr tvarů, laso a group drag
   const [selectedShapeIds, setSelectedShapeIds] = useState<string[]>([]);
+  const [selectedFreehandIds, setSelectedFreehandIds] = useState<string[]>([]);
   const [hoveredShapeForMove, setHoveredShapeForMove] = useState<string | null>(null);
   const marqueeRef = useRef<{startX: number, startY: number, endX: number, endY: number} | null>(null);
   const groupDragRef = useRef<{ startWx: number; startWy: number; pointSnapshots: {id: string; x: number; y: number}[] } | null>(null);
@@ -623,8 +625,12 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.key === 'Delete' || e.key === 'Backspace') && (selection || selectedShapeIds.length > 0)) {
-        if (selectedShapeIds.length > 0) {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && (selection || selectedShapeIds.length > 0 || selectedFreehandIds.length > 0)) {
+        if (selectedFreehandIds.length > 0) {
+          const idsToDelete = new Set(selectedFreehandIds);
+          setFreehandPaths(prev => prev.filter(p => !idsToDelete.has(p.id)));
+          setSelectedFreehandIds([]);
+        } else if (selectedShapeIds.length > 0) {
           // Smazat vybrané tvary a jejich definiční body
           const shapeIdsToDelete = new Set(selectedShapeIds);
           const pointIdsToDelete = new Set<string>();
@@ -648,6 +654,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
         setActiveTool('move');
         setSelectedPointId(null);
         setSelectedShapeIds([]);
+        setSelectedFreehandIds([]);
         setActiveGroup(null);
         setAngleInput(prev => ({ ...prev, visible: false }));
         setAngleTabletState({ step: 'idle', selectedLineId: null, currentPos: null, baseAngle: 0 });
@@ -666,7 +673,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selection, historyIndex, history, selectedShapeIds, shapes, points]);
+  }, [selection, historyIndex, history, selectedShapeIds, selectedFreehandIds, shapes, points, freehandPaths]);
 
   const triggerEffect = (x: number, y: number, color: string = '#3b82f6') => {
     setVisualEffects(prev => [...prev, {
@@ -775,13 +782,18 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
           description = `Vytvoření bodu ${newPoint.label}`;
           actionType = 'create-point';
         }
-      } else if (points.length < prev.points.length) {
-        const deletedPoint = prev.points.find(p => !points.some(pt => pt.id === p.id));
-        description = `Smazání bodu ${deletedPoint?.label || ''}`;
+      } else if (shapes.length < prev.shapes.length && points.length < prev.points.length) {
+        // Shape + its anchor points deleted together (eraser or delete with cleanup)
+        const deletedShape = prev.shapes.find(s => !shapes.some(sh => sh.id === s.id));
+        description = `Smazání tvaru ${deletedShape?.label || ''}`;
         actionType = 'delete';
       } else if (shapes.length < prev.shapes.length) {
         const deletedShape = prev.shapes.find(s => !shapes.some(sh => sh.id === s.id));
         description = `Smazání tvaru ${deletedShape?.label || ''}`;
+        actionType = 'delete';
+      } else if (points.length < prev.points.length) {
+        const deletedPoint = prev.points.find(p => !points.some(pt => pt.id === p.id));
+        description = `Smazání bodu ${deletedPoint?.label || ''}`;
         actionType = 'delete';
       } else if (freehandPaths.length > prev.freehandPaths.length) {
         description = 'Kreslení perem';
@@ -1102,55 +1114,60 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     y: (sy - offset.y) / scale
   });
 
-  const getSnappingPoint = (wx: number, wy: number, threshold = 20) => {
-    const effectiveThreshold = isTabletMode ? threshold * 1.5 : threshold;
+  const SNAP_PX = isTabletMode ? 76 : 52; // snap radius in screen pixels
+
+  const getSnappingPoint = (wx: number, wy: number, threshold = SNAP_PX) => {
+    const threshWorld = threshold / scale;
     let closest: GeoPoint | null = null;
-    let minDist = effectiveThreshold / scale;
+    let minDist = threshWorld;
 
     for (const p of points) {
       const isCircleHandle = shapes.some(s => s.type === 'circle' && s.definition.p2Id === p.id);
-      const currentThreshold = isCircleHandle ? 15 / scale : minDist;
-      
-      const distToPoint = Math.sqrt(Math.pow(p.x - wx, 2) + Math.pow(p.y - wy, 2));
-      
-      const labelX = p.x + 20;
-      const labelY = p.y - 20;
-      const distToLabel = Math.sqrt(Math.pow(labelX - wx, 2) + Math.pow(labelY - wy, 2));
-      const labelRadius = 18;
-      
-      let isNearPoint = false;
-      if (distToPoint < currentThreshold) {
-        isNearPoint = true;
-      } else if (!isCircleHandle && distToLabel < labelRadius) {
-        isNearPoint = true;
-      }
-      
-      if (isNearPoint && distToPoint < minDist) {
+      const snapDist = isCircleHandle ? Math.min(threshWorld, 14 / scale) : threshWorld;
+      const distToPoint = Math.sqrt((p.x - wx) ** 2 + (p.y - wy) ** 2);
+      const distScreen = distToPoint * scale;
+
+      const labelOffW = 20 / scale;
+      const distToLabel = Math.sqrt((p.x + labelOffW - wx) ** 2 + (p.y - labelOffW - wy) ** 2);
+
+      const isNear = distToPoint < snapDist ||
+        (!isCircleHandle && distToLabel < 16 / scale);
+
+      console.log(`[SNAP] point ${p.label}(${p.x.toFixed(1)},${p.y.toFixed(1)}) dist=${distScreen.toFixed(1)}px threshold=${threshold}px isNear=${isNear}`);
+
+      if (isNear && distToPoint < minDist) {
         minDist = distToPoint;
         closest = p;
-      } else if (isNearPoint && !isCircleHandle && distToLabel < labelRadius) {
-        closest = p;
-        minDist = 0;
       }
     }
     return closest;
   };
 
-  // Unified snap: first try existing points, then intersection points
-  const getSnapPosition = (wx: number, wy: number, threshold = 25): { x: number; y: number } | null => {
+  // Unified snap: always pick whichever target (existing point OR intersection) is geometrically closer
+  const getSnapPosition = (wx: number, wy: number, threshold = SNAP_PX): { x: number; y: number } | null => {
     const pointSnap = getSnappingPoint(wx, wy, threshold);
-    if (pointSnap) return { x: pointSnap.x, y: pointSnap.y };
     const intSnap = findNearestIntersection(wx, wy, threshold);
-    if (intSnap) return intSnap;
-    return null;
+
+    const dPoint = pointSnap ? Math.sqrt((pointSnap.x - wx) ** 2 + (pointSnap.y - wy) ** 2) * scale : Infinity;
+    const dInt   = intSnap   ? Math.sqrt((intSnap.x   - wx) ** 2 + (intSnap.y   - wy) ** 2) * scale : Infinity;
+
+    console.log(`[SNAP] getSnapPosition: cursor world(${wx.toFixed(1)},${wy.toFixed(1)}) scale=${scale.toFixed(2)} threshold=${threshold}px | pointSnap=${pointSnap?.label ?? 'none'} dist=${dPoint.toFixed(1)}px | intSnap=${intSnap ? `(${intSnap.x.toFixed(1)},${intSnap.y.toFixed(1)})` : 'none'} dist=${dInt.toFixed(1)}px`);
+
+    if (!pointSnap && !intSnap) return null;
+    if (!intSnap) return { x: pointSnap!.x, y: pointSnap!.y };
+    if (!pointSnap) return intSnap;
+
+    return dInt < dPoint ? intSnap : { x: pointSnap.x, y: pointSnap.y };
   };
 
   // Helper: najde nejbližší průsečík dvou čar/kružnic v okolí bodu
-  const findNearestIntersection = (wx: number, wy: number, threshold = 30): {x: number, y: number} | null => {
+  const findNearestIntersection = (wx: number, wy: number, threshold = SNAP_PX): {x: number, y: number} | null => {
     const lineShapes = shapes.filter(s => ['line', 'segment', 'ray'].includes(s.type));
     const circleShapes = shapes.filter(s => s.type === 'circle');
-    const effectiveThreshold = isTabletMode ? threshold * 1.5 : threshold;
+    const effectiveThreshold = threshold; // already accounts for tablet mode via SNAP_PX
     const thresh = effectiveThreshold / scale;
+
+    console.log(`[INT] findNearestIntersection at world(${wx.toFixed(1)},${wy.toFixed(1)}) thresh=${thresh.toFixed(1)}world (${threshold}px/scale=${scale.toFixed(2)}) | ${lineShapes.length} lines, ${circleShapes.length} circles`);
     let bestDist = thresh;
     let bestPoint: {x: number, y: number} | null = null;
 
@@ -1163,27 +1180,34 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
         const a2 = s1.definition.p2Id ? points.find(p => p.id === s1.definition.p2Id) : null;
         const b1 = points.find(p => p.id === s2.definition.p1Id);
         const b2 = s2.definition.p2Id ? points.find(p => p.id === s2.definition.p2Id) : null;
-        if (!a1 || !a2 || !b1 || !b2) continue;
+        if (!a1 || !a2 || !b1 || !b2) {
+          console.log(`[INT] skipping line pair ${i},${j}: missing points a1=${!!a1} a2=${!!a2} b1=${!!b1} b2=${!!b2} s1.p2Id=${s1.definition.p2Id} s2.p2Id=${s2.definition.p2Id}`);
+          continue;
+        }
 
         const dx1 = a2.x - a1.x, dy1 = a2.y - a1.y;
         const dx2 = b2.x - b1.x, dy2 = b2.y - b1.y;
         const denom = dx1 * dy2 - dy1 * dx2;
-        if (Math.abs(denom) < 1e-10) continue;
+        if (Math.abs(denom) < 1e-10) { console.log(`[INT] parallel lines ${i},${j}`); continue; }
 
         const t = ((b1.x - a1.x) * dy2 - (b1.y - a1.y) * dx2) / denom;
         const u = ((b1.x - a1.x) * dy1 - (b1.y - a1.y) * dx1) / denom;
 
-        if (s1.type === 'segment' && (t < 0 || t > 1)) continue;
-        if (s1.type === 'ray' && t < 0) continue;
-        if (s2.type === 'segment' && (u < 0 || u > 1)) continue;
-        if (s2.type === 'ray' && u < 0) continue;
-
         const ix = a1.x + t * dx1;
         const iy = a1.y + t * dy1;
-        const dist = Math.sqrt((ix - wx) ** 2 + (iy - wy) ** 2);
-        if (dist < bestDist) {
-          bestDist = dist;
+        const distWorld = Math.sqrt((ix - wx) ** 2 + (iy - wy) ** 2);
+        const distScreen = distWorld * scale;
+        console.log(`[INT] lines ${i}(${s1.type}),${j}(${s2.type}) t=${t.toFixed(3)} u=${u.toFixed(3)} intersection=(${ix.toFixed(1)},${iy.toFixed(1)}) distScreen=${distScreen.toFixed(1)}px threshScreen=${threshold}px`);
+
+        if (s1.type === 'segment' && (t < 0 || t > 1)) { console.log(`[INT]   -> skipped (s1 segment, t out of range)`); continue; }
+        if (s1.type === 'ray' && t < 0) { console.log(`[INT]   -> skipped (s1 ray, t<0)`); continue; }
+        if (s2.type === 'segment' && (u < 0 || u > 1)) { console.log(`[INT]   -> skipped (s2 segment, u out of range)`); continue; }
+        if (s2.type === 'ray' && u < 0) { console.log(`[INT]   -> skipped (s2 ray, u<0)`); continue; }
+
+        if (distWorld < bestDist) {
+          bestDist = distWorld;
           bestPoint = { x: ix, y: iy };
+          console.log(`[INT]   -> BEST intersection so far at (${ix.toFixed(1)},${iy.toFixed(1)})`);
         }
       }
     }
@@ -1263,6 +1287,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
       }
     }
 
+    console.log(`[INT] result: ${bestPoint ? `(${bestPoint.x.toFixed(1)},${bestPoint.y.toFixed(1)})` : 'null'}`);
     return bestPoint;
   };
 
@@ -1331,6 +1356,8 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     if (!rect) return;
     const wx = (e.clientX - rect.left - offset.x) / scale;
     const wy = (e.clientY - rect.top - offset.y) / scale;
+
+    console.log(`[CLICK] screen(${(e.clientX - rect.left).toFixed(0)},${(e.clientY - rect.top).toFixed(0)}) → world(${wx.toFixed(1)},${wy.toFixed(1)}) scale=${scale.toFixed(2)} offset=(${offset.x.toFixed(0)},${offset.y.toFixed(0)}) rect=(${rect.left.toFixed(0)},${rect.top.toFixed(0)} ${rect.width.toFixed(0)}×${rect.height.toFixed(0)})`);
 
     // Compass mode - handle center/handle dragging or repositioning
     if (circleInput.visible && circleInput.center) {
@@ -1498,14 +1525,59 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
             }
           }
           setSelection(null);
+          setSelectedFreehandIds([]);
         } else {
-          // Empty space click: start rectangle marquee selection
-          setSelection(null);
-          if (!(e.ctrlKey || e.metaKey)) {
+          // Zkusit vybrat volnou kresbu / zvýrazňovač
+          const clickedFreehandId = getFreehandPathAtPoint(wx, wy);
+          if (clickedFreehandId) {
+            if (e.ctrlKey || e.metaKey) {
+              setSelectedFreehandIds(prev =>
+                prev.includes(clickedFreehandId)
+                  ? prev.filter(id => id !== clickedFreehandId)
+                  : [...prev, clickedFreehandId]
+              );
+            } else {
+              setSelectedFreehandIds([clickedFreehandId]);
+            }
+            setSelection(null);
             setSelectedShapeIds([]);
+          } else {
+            // Empty space click: start rectangle marquee selection
+            setSelection(null);
+            setSelectedFreehandIds([]);
+            if (!(e.ctrlKey || e.metaKey)) {
+              setSelectedShapeIds([]);
+            }
+            groupDragRef.current = null;
+            marqueeRef.current = { startX: wx, startY: wy, endX: wx, endY: wy };
           }
-          groupDragRef.current = null;
-          marqueeRef.current = { startX: wx, startY: wy, endX: wx, endY: wy };
+        }
+      }
+      return;
+    }
+
+    // 1b. NÁSTROJ: GUMA (ERASER) — smaže bod nebo tvar pod kurzorem
+    if (activeTool === 'eraser') {
+      // Prefer snapped point (click on point deletes it)
+      if (snapped) {
+        deletePoint(snapped.id);
+        return;
+      }
+      // Otherwise delete the hovered shape (keep labeled points)
+      const shapeId = hoveredShapeForMove ?? getHoveredShapeAtPoint(wx, wy);
+      if (shapeId) {
+        const erasedShape = shapes.find(s => s.id === shapeId);
+        setShapes(prev => prev.filter(s => s.id !== shapeId));
+        if (erasedShape) {
+          const remainingShapes = shapes.filter(s => s.id !== shapeId);
+          const usedByOthers = new Set<string>();
+          remainingShapes.forEach(s => s.points.forEach(pid => usedByOthers.add(pid)));
+          setPoints(prev => prev.filter(p => {
+            if (!erasedShape.points.includes(p.id)) return true;
+            if (usedByOthers.has(p.id)) return true;
+            if (p.label) return true;
+            return false;
+          }));
         }
       }
       return;
@@ -1513,31 +1585,38 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
 
     // 2. NÁSTROJ: BOD (POINT)
     if (activeTool === 'point') {
-      if (snapped && (snapped.hidden || !snapped.label)) {
+      // Always check intersection — it might be closer than any existing point
+      const intersection = findNearestIntersection(wx, wy);
+      const dInt = intersection ? Math.sqrt((intersection.x - wx) ** 2 + (intersection.y - wy) ** 2) : Infinity;
+      const dSnap = snapped ? Math.sqrt((snapped.x - wx) ** 2 + (snapped.y - wy) ** 2) : Infinity;
+      const useIntersection = intersection && dInt < dSnap;
+
+      if (!useIntersection && snapped && (snapped.hidden || !snapped.label)) {
         // Klik na skrytý/neoznačený bod (např. definiční bod přímky) — povýšit na viditelný
         const assignedLabel = promoteToVisiblePoint(snapped.id);
         triggerEffect(snapped.x, snapped.y, '#3b82f6');
         if (assignedLabel) {
           addConstructionStep('point', assignedLabel, assignedLabel, `Bod ${assignedLabel}`, [snapped.id]);
         }
-      } else if (!snapped) {
-        // Zkusit přichytit k průsečíku dvou čar
-        const intersection = findNearestIntersection(wx, wy);
-        const px = intersection ? intersection.x : wx;
-        const py = intersection ? intersection.y : wy;
-        // Vytvořit nový bod
-        const newPoint: GeoPoint = {
-          id: crypto.randomUUID(),
-          x: px,
-          y: py,
-          label: getNextPointLabel()
-        };
-        setPoints(prev => [...prev, newPoint]);
-        triggerEffect(px, py, '#3b82f6'); // Effect
-        // Zápis konstrukce
-        addConstructionStep('point', newPoint.label, newPoint.label, `Bod ${newPoint.label}`, [newPoint.id]);
+      } else if (useIntersection || !snapped) {
+        // Přichytit k průsečíku nebo kliknout na volné místo
+        const px = useIntersection ? intersection!.x : wx;
+        const py = useIntersection ? intersection!.y : wy;
+        // Check if a labeled point is already very close to this position
+        const alreadyThere = points.some(p => p.label && Math.sqrt((p.x - px) ** 2 + (p.y - py) ** 2) * scale < 6);
+        if (!alreadyThere) {
+          const newPoint: GeoPoint = {
+            id: crypto.randomUUID(),
+            x: px,
+            y: py,
+            label: getNextPointLabel()
+          };
+          setPoints(prev => [...prev, newPoint]);
+          triggerEffect(px, py, '#3b82f6');
+          addConstructionStep('point', newPoint.label, newPoint.label, `Bod ${newPoint.label}`, [newPoint.id]);
+        }
       }
-      // Pokud snapped je viditelný bod s labelem — nic nedělat (bod již existuje)
+      // Pokud snapped je viditelný bod s labelem a není tu bližší průsečík — nic nedělat
       return;
     }
 
@@ -1588,8 +1667,8 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
             const perpDy = dx;
             const len = Math.sqrt(perpDx*perpDx + perpDy*perpDy) || 1;
             
-            // Snap to existing point, then intersection, then raw position
-            const snapPos = snapped ? { x: snapped.x, y: snapped.y } : getSnapPosition(wx, wy, 25);
+            // Snap to existing point or intersection
+            const snapPos = getSnapPosition(wx, wy);
             const pX = snapPos ? snapPos.x : wx;
             const pY = snapPos ? snapPos.y : wy;
             
@@ -1961,6 +2040,29 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     };
   };
 
+  // Detekce volné kresby / zvýrazňovače pod kurzorem
+  const getFreehandPathAtPoint = (wx: number, wy: number): string | null => {
+    const TOLERANCE = 10 / scale;
+    for (let i = freehandPaths.length - 1; i >= 0; i--) {
+      const path = freehandPaths[i];
+      const halfWidth = path.width / 2 / scale + TOLERANCE;
+      for (let j = 0; j < path.points.length - 1; j++) {
+        const p1 = path.points[j];
+        const p2 = path.points[j + 1];
+        const dx = p2.x - p1.x;
+        const dy = p2.y - p1.y;
+        const len2 = dx * dx + dy * dy;
+        if (len2 === 0) continue;
+        const t = Math.max(0, Math.min(1, ((wx - p1.x) * dx + (wy - p1.y) * dy) / len2));
+        const projX = p1.x + t * dx;
+        const projY = p1.y + t * dy;
+        const dist = Math.sqrt((wx - projX) ** 2 + (wy - projY) ** 2);
+        if (dist <= halfWidth) return path.id;
+      }
+    }
+    return null;
+  };
+
   // Detekce nejbližšího tvaru pod kurzorem (pro výběr kliknutím)
   const getHoveredShapeAtPoint = (wx: number, wy: number, threshold = 15): string | null => {
     let closestId: string | null = null;
@@ -2075,15 +2177,26 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     setHoveredPointId(snapped ? snapped.id : null);
     mousePosRef.current = { x: wx, y: wy };
 
-    // Intersection snap indicator (only when no point is snapped and tool is relevant)
-    if (!snapped && ['point', 'circle', 'segment', 'line', 'angle', 'perpendicular'].includes(activeTool)) {
-      nearestIntersectionRef.current = findNearestIntersection(wx, wy);
+    // Intersection snap indicator — show even when a point is nearby (distance-based priority)
+    if (['point', 'circle', 'segment', 'line', 'angle', 'perpendicular', 'ray', 'bisector'].includes(activeTool)) {
+      const intSnap = findNearestIntersection(wx, wy);
+      if (intSnap && snapped) {
+        // Only show intersection indicator if intersection is closer than the snapped point
+        const dInt = Math.sqrt((intSnap.x - wx) ** 2 + (intSnap.y - wy) ** 2);
+        const dPoint = Math.sqrt((snapped.x - wx) ** 2 + (snapped.y - wy) ** 2);
+        nearestIntersectionRef.current = dInt < dPoint ? intSnap : null;
+      } else {
+        nearestIntersectionRef.current = intSnap;
+      }
     } else {
       nearestIntersectionRef.current = null;
     }
 
-    // Shape hover pro nástroj Výběr (detekce tvaru pod kurzorem)
-    if (activeTool === 'move' && !draggedPointId && !groupDragRef.current && !marqueeRef.current) {
+    // Shape hover pro nástroj Výběr a Guma (detekce tvaru pod kurzorem)
+    if (activeTool === 'eraser') {
+      // Eraser always detects shapes regardless of nearby points
+      setHoveredShapeForMove(getHoveredShapeAtPoint(wx, wy));
+    } else if (activeTool === 'move' && !draggedPointId && !groupDragRef.current && !marqueeRef.current) {
       const hovered = snapped ? null : getHoveredShapeAtPoint(wx, wy);
       setHoveredShapeForMove(hovered);
     } else if (activeTool !== 'move') {
@@ -2284,7 +2397,16 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
           }
         });
         
+        // Select freehand paths whose any point falls inside the marquee
+        const foundFreehandIds: string[] = [];
+        freehandPaths.forEach(path => {
+          if (path.points.some(p => pointInRect(p.x, p.y))) {
+            foundFreehandIds.push(path.id);
+          }
+        });
+
         setSelectedShapeIds(foundShapeIds);
+        setSelectedFreehandIds(foundFreehandIds);
         if (foundPointIds.length > 0 && foundShapeIds.length === 0) {
           setSelection(foundPointIds[0]);
         }
@@ -2618,7 +2740,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     return () => {
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
     };
-  }, [animState, points, shapes, freehandPaths, scale, offset, canvasSize, darkMode, selectedPointId, hoveredPointId, hoveredShape, activeTool, visualEffects, angleInput, circleInput, recordingState.showPlayer, showMeasurements, showGrid, perpTabletState, circleTabletState, isTabletMode, angleTabletState, selectedShapeIds, hoveredShapeForMove]);
+  }, [animState, points, shapes, freehandPaths, scale, offset, canvasSize, darkMode, selectedPointId, hoveredPointId, hoveredShape, activeTool, visualEffects, angleInput, circleInput, recordingState.showPlayer, showMeasurements, showGrid, perpTabletState, circleTabletState, isTabletMode, angleTabletState, selectedShapeIds, hoveredShapeForMove, selectedFreehandIds]);
 
 
   // --- RENDEROVÁNÍ ---
@@ -2654,6 +2776,17 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     
     freehandPaths.forEach(path => {
         if (!path.isHighlight || path.points.length < 2) return;
+        // Selection outline
+        if (selectedFreehandIds.includes(path.id)) {
+          ctx.beginPath();
+          ctx.strokeStyle = '#3b82f6';
+          ctx.lineWidth = (path.width + 6) / scale;
+          ctx.globalAlpha = 0.5;
+          ctx.moveTo(path.points[0].x, path.points[0].y);
+          for (let i = 1; i < path.points.length; i++) ctx.lineTo(path.points[i].x, path.points[i].y);
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+        }
         ctx.beginPath();
         ctx.strokeStyle = path.color;
         ctx.lineWidth = path.width / scale;
@@ -2686,6 +2819,17 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     // 0b. Volné pero (freehand) - pod tvary ale nad zvýrazňovačem
     freehandPaths.forEach(path => {
         if (path.isHighlight || path.points.length < 2) return;
+        // Selection outline
+        if (selectedFreehandIds.includes(path.id)) {
+          ctx.beginPath();
+          ctx.strokeStyle = '#3b82f6';
+          ctx.lineWidth = (path.width + 6) / scale;
+          ctx.globalAlpha = 0.5;
+          ctx.moveTo(path.points[0].x, path.points[0].y);
+          for (let i = 1; i < path.points.length; i++) ctx.lineTo(path.points[i].x, path.points[i].y);
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+        }
         ctx.beginPath();
         ctx.strokeStyle = path.color;
         ctx.lineWidth = path.width / scale;
@@ -2874,14 +3018,14 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     }
 
     // 1c. Zvýraznění hoveru tvaru pro move tool
-    if (hoveredShapeForMove && activeTool === 'move' && !selectedShapeIds.includes(hoveredShapeForMove)) {
+    if (hoveredShapeForMove && (activeTool === 'move' || activeTool === 'eraser') && !selectedShapeIds.includes(hoveredShapeForMove)) {
       const shape = shapes.find(s => s.id === hoveredShapeForMove);
       if (shape) {
         const sp1 = points.find(p => p.id === shape.definition.p1Id);
         const sp2 = points.find(p => p.id === shape.definition.p2Id);
         if (sp1 && sp2) {
           ctx.save();
-          const hoverColor = darkMode ? '#7dcfff' : '#0ea5e9';
+          const hoverColor = activeTool === 'eraser' ? '#ef4444' : (darkMode ? '#7dcfff' : '#0ea5e9');
           ctx.globalAlpha = 0.6;
           ctx.shadowColor = hoverColor;
           ctx.shadowBlur = 14;
@@ -3177,34 +3321,37 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
       ctx.fillText(p.label, labelX, labelY);
     });
 
-    // 3b. Intersection snap indicator
-    if (nearestIntersectionRef.current && !animState.isActive) {
-      const ix = nearestIntersectionRef.current.x;
-      const iy = nearestIntersectionRef.current.y;
-      const crossSize = 8 / scale; // Fixed screen size
-      
-      // Pulsing diamond indicator
-      ctx.save();
-      ctx.strokeStyle = '#f59e0b'; // Amber
-      ctx.lineWidth = 2 / scale;
-      ctx.setLineDash([]);
-      
-      // Diamond shape
-      ctx.beginPath();
-      ctx.moveTo(ix, iy - crossSize);
-      ctx.lineTo(ix + crossSize, iy);
-      ctx.lineTo(ix, iy + crossSize);
-      ctx.lineTo(ix - crossSize, iy);
-      ctx.closePath();
-      ctx.stroke();
-      
-      // Small center dot
-      ctx.beginPath();
-      ctx.arc(ix, iy, 2.5 / scale, 0, Math.PI * 2);
-      ctx.fillStyle = '#f59e0b';
-      ctx.fill();
-      
-      ctx.restore();
+    // 3b. Intersection snap indicator (active only — when cursor is near)
+    if (!animState.isActive) {
+
+      // Draw active intersection marker only (when cursor is near)
+      const activeIntX = nearestIntersectionRef.current?.x;
+      const activeIntY = nearestIntersectionRef.current?.y;
+      if (activeIntX !== undefined && activeIntY !== undefined) {
+        ctx.save();
+        ctx.setLineDash([]);
+        const sz = 8 / scale;
+        ctx.lineWidth = 2 / scale;
+        ctx.strokeStyle = '#f59e0b';
+
+        ctx.beginPath();
+        ctx.moveTo(activeIntX - sz, activeIntY);
+        ctx.lineTo(activeIntX + sz, activeIntY);
+        ctx.moveTo(activeIntX, activeIntY - sz);
+        ctx.lineTo(activeIntX, activeIntY + sz);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(activeIntX, activeIntY, 9 / scale, 0, Math.PI * 2);
+        ctx.lineWidth = 1.5 / scale;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(activeIntX, activeIntY, 2.5 / scale, 0, Math.PI * 2);
+        ctx.fillStyle = '#f59e0b';
+        ctx.fill();
+        ctx.restore();
+      }
     }
 
     // 4a. TABLET: circle ghost rendering (independent of mousePosRef - touch devices don't have continuous mouse position)
@@ -4247,6 +4394,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
       if (hoveredShapeForMove) return selectedShapeIds.includes(hoveredShapeForMove) ? 'move' : 'pointer';
       return hoveredPointId ? 'move' : 'default';
     }
+    if (activeTool === 'eraser') return hoveredShapeForMove ? 'cell' : 'default';
     return 'crosshair';
   };
 
@@ -4616,7 +4764,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
              <div className="h-8"></div>
 
              {/* Bottom: Rename + Trash when selected */}
-             {(selection || selectedShapeIds.length > 0) && (
+             {(selection || selectedShapeIds.length > 0) && !selectedFreehandIds.length && (
              <button
                  onClick={() => setShowRenameModal(true)}
                  onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setShowRenameModal(true); }}
@@ -4627,11 +4775,31 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
              </button>
              )}
 
+             {/* Eraser tool button */}
+             <button
+               onClick={() => setActiveTool(activeTool === 'eraser' ? 'move' : 'eraser')}
+               onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setActiveTool(activeTool === 'eraser' ? 'move' : 'eraser'); }}
+               className={`w-12 h-12 flex items-center justify-center rounded-xl transition-all duration-300 relative group/eraser ${
+                 activeTool === 'eraser'
+                   ? 'bg-[#1e1b4b] text-white'
+                   : 'text-black hover:bg-gray-200'
+               }`}
+             >
+               <Eraser className="w-5 h-5" />
+               <div className="absolute left-full ml-3 px-3 py-1.5 bg-black/80 text-white text-xs rounded-lg whitespace-nowrap opacity-0 group-hover/eraser:opacity-100 transition-opacity pointer-events-none">
+                 Guma — klikni na tvar pro smazání
+               </div>
+             </button>
+
              {/* Trash / Delete selection */}
-             {(selection || selectedShapeIds.length > 0) ? (
+             {(selection || selectedShapeIds.length > 0 || selectedFreehandIds.length > 0) ? (
              <button
                  onClick={() => {
-                   if (selectedShapeIds.length > 0) {
+                   if (selectedFreehandIds.length > 0) {
+                     const idsToDelete = new Set(selectedFreehandIds);
+                     setFreehandPaths(prev => prev.filter(p => !idsToDelete.has(p.id)));
+                     setSelectedFreehandIds([]);
+                   } else if (selectedShapeIds.length > 0) {
                      const shapeIdsToDelete = new Set(selectedShapeIds);
                      const pointIdsToDelete = new Set<string>();
                      shapes.forEach(s => { if (shapeIdsToDelete.has(s.id)) s.points.forEach(pid => pointIdsToDelete.add(pid)); });
@@ -4648,7 +4816,11 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
                  onTouchEnd={(e) => {
                    e.preventDefault();
                    e.stopPropagation();
-                   if (selectedShapeIds.length > 0) {
+                   if (selectedFreehandIds.length > 0) {
+                     const idsToDelete = new Set(selectedFreehandIds);
+                     setFreehandPaths(prev => prev.filter(p => !idsToDelete.has(p.id)));
+                     setSelectedFreehandIds([]);
+                   } else if (selectedShapeIds.length > 0) {
                      const shapeIdsToDelete = new Set(selectedShapeIds);
                      const pointIdsToDelete = new Set<string>();
                      shapes.forEach(s => { if (shapeIdsToDelete.has(s.id)) s.points.forEach(pid => pointIdsToDelete.add(pid)); });
@@ -4665,7 +4837,6 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
                  className="w-12 flex flex-col items-center justify-center rounded-xl bg-red-50 text-red-500 hover:bg-red-100 transition-colors group/trash relative py-2"
              >
                  <Trash2 className="w-5 h-5" />
-                 <span className="text-[9px] font-bold mt-0.5 leading-tight">výběr</span>
              </button>
              ) : (
              <button

@@ -10,10 +10,14 @@ import { SPHERE_PARAMS, computeSphereFaces, computeSphereProperties } from '../c
 
 import { SQUARE_PARAMS, computeSquareFaces, computeSquareProperties, computeSquareVertices } from '../components/geometry/square';
 import { RECTANGLE_PARAMS, computeRectangleFaces, computeRectangleProperties, computeRectangleVertices } from '../components/geometry/rectangle';
-import { TRIANGLE_PARAMS, computeTriangleFaces, computeTriangleProperties, computeTriangleVertices } from '../components/geometry/triangle';
+import {
+  TRIANGLE_PARAMS, computeTriangleFaces, computeTriangleProperties, computeTriangleVertices, generateTriangleParams,
+  TRIANGLE_EXERCISE_PARAMS, computeTriangleExerciseVertices, computeTriangleExerciseProperties, generateTriangleExerciseParams,
+} from '../components/geometry/triangle';
 import { CIRCLE2D_PARAMS, computeCircle2DFaces, computeCircle2DProperties, computeCircle2DVertices } from '../components/geometry/circle2d';
 import { TRAPEZOID_PARAMS, computeTrapezoidFaces, computeTrapezoidProperties, computeTrapezoidVertices } from '../components/geometry/trapezoid';
 import { RHOMBUS_PARAMS, computeRhombusFaces, computeRhombusProperties, computeRhombusVertices } from '../components/geometry/rhombus';
+import { PARALLELOGRAM_PARAMS, computeParallelogramFaces, computeParallelogramProperties, computeParallelogramVertices } from '../components/geometry/parallelogram';
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -37,6 +41,15 @@ export interface ObjectDef {
   is2D?: boolean;
   /** Výpočet 2D vrcholů pro rovinné útvary */
   computeVertices2D?: (params: Record<string, number>) => { x: number; y: number }[];
+  /** Custom param generator (e.g. to guarantee valid triangles) */
+  generateParams?: () => Record<string, number>;
+  /** Exercise-specific overrides (may differ from viewer params) */
+  exerciseParamDefs?: ParameterDef[];
+  exerciseComputeProperties?: (params: Record<string, number>) => MathProperty[];
+  exerciseComputeVertices2D?: (params: Record<string, number>) => { x: number; y: number }[];
+  exerciseGenerateParams?: () => Record<string, number>;
+  /** Show height line in the 2D exercise viewer */
+  exerciseShowHeight?: boolean;
 }
 
 export interface CategoryDef {
@@ -235,6 +248,12 @@ export const objects: ObjectDef[] = [
     hasUnfold: false,
     is2D: true,
     computeVertices2D: computeTriangleVertices,
+    generateParams: generateTriangleParams,
+    exerciseParamDefs: TRIANGLE_EXERCISE_PARAMS,
+    exerciseComputeProperties: computeTriangleExerciseProperties,
+    exerciseComputeVertices2D: computeTriangleExerciseVertices,
+    exerciseGenerateParams: generateTriangleExerciseParams,
+    exerciseShowHeight: true,
   },
   {
     id: 'kruh2d',
@@ -286,6 +305,23 @@ export const objects: ObjectDef[] = [
     hasUnfold: false,
     is2D: true,
     computeVertices2D: computeRhombusVertices,
+  },
+  {
+    id: 'kosodelnik',
+    name: 'Kosodélník',
+    path: '/kosodelnik',
+    category: 'rovinne',
+    grade: '7. ročník',
+    description: 'Rovnoběžník se dvěma páry stejně dlouhých stran. Obsah = základna · výška.',
+    badge: 'Kosodélník',
+    color: '#fef9c3',
+    iconName: 'RectangleHorizontal',
+    parameterDefs: PARALLELOGRAM_PARAMS,
+    computeFaces: computeParallelogramFaces,
+    computeProperties: computeParallelogramProperties,
+    hasUnfold: false,
+    is2D: true,
+    computeVertices2D: computeParallelogramVertices,
   },
 ];
 

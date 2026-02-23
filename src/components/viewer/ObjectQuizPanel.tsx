@@ -12,7 +12,6 @@ import {
   ThemeIcon,
   Box,
   SimpleGrid,
-  SegmentedControl,
 } from '@mantine/core';
 import { Calculator, CheckCircle2, XCircle } from 'lucide-react';
 import type { ParameterDef } from '../geometry/shared';
@@ -171,23 +170,6 @@ export function ObjectQuizPanel({
               );
             })}
           </SimpleGrid>
-        </div>
-
-        {/* Režim odpovědi: Číslo | Možnosti A–D */}
-        <div>
-          <Text size="xs" c="dimmed" fw={500} mb={6}>
-            Způsob odpovědi
-          </Text>
-          <SegmentedControl
-            value={answerMode}
-            onChange={(v) => onAnswerModeChange(v as 'number' | 'choices')}
-            data={[
-              { label: 'Psát číslo', value: 'number' },
-              { label: 'Možnosti A–D', value: 'choices' },
-            ]}
-            radius="md"
-            size="sm"
-          />
         </div>
 
         {/* Odpověď – číslo nebo A–D */}

@@ -51,20 +51,6 @@ export function Crossroads() {
       >
         Geometrie online
       </h1>
-      <p
-        style={{
-          color: '#4e5871',
-          fontSize: '17px',
-          lineHeight: '26px',
-          fontWeight: 400,
-          marginBottom: '48px',
-          textAlign: 'center',
-          maxWidth: '520px',
-        }}
-      >
-        Interaktivní výuka geometrie pro 2.–8. třídu. Vyber si aplikaci.
-      </p>
-
       {/* Two cards */}
       <div
         style={{

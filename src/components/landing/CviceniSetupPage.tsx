@@ -101,12 +101,12 @@ export function CviceniSetupPage() {
     <div style={{ maxWidth: 560, margin: '0 auto', padding: 24, paddingBottom: 80 }}>
       <button
         type="button"
-        onClick={() => navigate('/')}
+        onClick={() => navigate(def.path)}
         className="flex items-center gap-2 text-slate-600 hover:text-slate-900 mb-6"
         style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14 }}
       >
         <ArrowLeft className="h-4 w-4" />
-        Zpět na rozcestník
+        Zpět na {def.name.toLowerCase()}
       </button>
 
       <h1 style={{ fontSize: 24, fontWeight: 600, color: '#0f172a', marginBottom: 24 }}>

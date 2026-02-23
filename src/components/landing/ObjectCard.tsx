@@ -52,26 +52,20 @@ export function ObjectCard({ object }: Props) {
       )}
 
       {/* Dolní část – stejná barva jako horní */}
-      <div className="flex flex-col flex-1" style={{ padding: '20px', backgroundColor: object.color }}>
-        <h3 style={{ fontSize: '18px', fontWeight: 400, color: '#4e5871', marginBottom: '6px' }}>
+      <div className="flex items-center justify-between" style={{ padding: '14px 20px', backgroundColor: object.color }}>
+        <h3 style={{ fontSize: '18px', fontWeight: 400, color: '#4e5871', margin: 0 }}>
           {object.name}
         </h3>
-        <p style={{ fontSize: '13px', fontWeight: 400, color: '#4e5871', opacity: 0.7, lineHeight: '20px', marginBottom: '16px' }}>
-          {object.description}
-        </p>
-
-        {/* Footer */}
-        <div className="flex items-center justify-end" style={{ marginTop: 'auto' }}>
-          <ArrowRight
-            className="arrow-icon"
-            size={16}
-            style={{
-              color: '#4d49f3',
-              opacity: 0.5,
-              transition: 'all 200ms',
-            }}
-          />
-        </div>
+        <ArrowRight
+          className="arrow-icon"
+          size={16}
+          style={{
+            color: '#4d49f3',
+            opacity: 0.5,
+            transition: 'all 200ms',
+            flexShrink: 0,
+          }}
+        />
       </div>
     </div>
   );
