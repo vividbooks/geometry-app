@@ -21,9 +21,17 @@ import {
 import TabuleIllustration from '../../../rysovani/src/imports/Group23925';
 import PocitacIllustration from '../../../rysovani/src/imports/Group23926';
 
+const EXCLUDED_EXERCISES: Partial<Record<string, TaskType[]>> = {
+  kuzel: ['povrch'],
+  koule: ['objem', 'povrch'],
+};
+
 const exercises = objects.flatMap((obj) => {
   const types: TaskType[] = obj.is2D ? ['obvod', 'obsah'] : ['objem', 'povrch'];
-  return types.map((taskType) => ({ object: obj, taskType }));
+  const excluded = EXCLUDED_EXERCISES[obj.id] ?? [];
+  return types
+    .filter((t) => !excluded.includes(t))
+    .map((taskType) => ({ object: obj, taskType }));
 });
 
 type ViewFilter = 'rysovani' | 'konstrukce' | 'telesa' | 'rovinne' | 'cviceni';
@@ -466,13 +474,16 @@ const MODE_CONFIG: Record<LandingMode, { title: string; filters: ViewFilter[]; d
 };
 
 export function Landing({ mode }: { mode: LandingMode }) {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const config = MODE_CONFIG[mode];
   const tabFromUrl = searchParams.get('tab');
-  const initialTab = (tabFromUrl && config.filters.includes(tabFromUrl as ViewFilter))
+  const activeFilter: ViewFilter = (tabFromUrl && config.filters.includes(tabFromUrl as ViewFilter))
     ? tabFromUrl as ViewFilter
     : config.defaultFilter;
-  const [activeFilter, setActiveFilter] = useState<ViewFilter>(initialTab);
+
+  const setActiveFilter = (tab: ViewFilter) => {
+    setSearchParams({ tab }, { replace: false });
+  };
 
   // Cvičení sub-filters
   const [exObjFilter, setExObjFilter] = useState<string>('all');

@@ -110,7 +110,9 @@ export function ObjectExercisePage() {
   const def = getObjectDef(objectId || '');
   const taskType = parseTaskType(taskTypeParam);
 
-  const urlAnswerMode = searchParams.get('answerMode') === 'choices' ? 'choices' : 'number';
+  const CHOICES_ONLY_IDS = ['kruh2d', 'valec', 'kuzel'];
+  const forcedChoices = CHOICES_ONLY_IDS.includes(objectId ?? '');
+  const urlAnswerMode: AnswerMode = forcedChoices || searchParams.get('answerMode') === 'choices' ? 'choices' : 'number';
   const urlRows = searchParams.get('rows');
   const urlParamsRandom = searchParams.get('params') === 'random';
 
@@ -124,15 +126,20 @@ export function ObjectExercisePage() {
     return null;
   }, [def, urlParamsRandom, urlRows, searchParams]);
 
-  // Exercise may use different params than viewer (e.g. triangle: base+height instead of a,b,c)
-  const exParamDefs = def?.exerciseParamDefs ?? def?.parameterDefs ?? [];
+  // Per-task overrides take priority over generic exercise* fields
+  const taskOverride = def?.exerciseTaskOverrides?.[taskType];
+  const exParamDefs = taskOverride?.paramDefs ?? def?.exerciseParamDefs ?? def?.parameterDefs ?? [];
+  const exComputeProperties = taskOverride?.computeProperties ?? def?.exerciseComputeProperties ?? def?.computeProperties;
+  const exComputeVertices2D = taskOverride?.computeVertices2D ?? def?.exerciseComputeVertices2D ?? def?.computeVertices2D;
+  const exShowHeight = taskOverride?.showHeight ?? def?.exerciseShowHeight;
 
   const genParams = useCallback(() => {
     if (!def) return {};
+    if (taskOverride?.generateParams) return taskOverride.generateParams();
     if (def.exerciseGenerateParams) return def.exerciseGenerateParams();
     if (def.generateParams) return def.generateParams();
     return generateRandomParams(exParamDefs);
-  }, [def, exParamDefs]);
+  }, [def, taskOverride, exParamDefs]);
 
   const [params, setParams] = useState<Record<string, number>>(() =>
     initialParamsFromUrl ?? (def ? genParams() : {})
@@ -165,9 +172,7 @@ export function ObjectExercisePage() {
     setAnswerMode(urlAnswerMode);
   }, [urlAnswerMode]);
 
-  const mathProperties = def
-    ? (def.exerciseComputeProperties ?? def.computeProperties)(params)
-    : [];
+  const mathProperties = def ? (exComputeProperties ?? def.computeProperties)(params) : [];
   const TASK_LABEL_MAP: Record<string, string> = { objem: 'Objem', povrch: 'Povrch', obvod: 'Obvod', obsah: 'Obsah' };
   const UNIT_MAP: Record<string, string> = { objem: 'cm³', povrch: 'cm²', obvod: 'cm', obsah: 'cm²' };
   const taskLabel = TASK_LABEL_MAP[taskType] ?? 'Objem';
@@ -190,12 +195,14 @@ export function ObjectExercisePage() {
     [correctNum]
   );
 
+  const exComputeFaces = taskOverride?.computeFaces ?? def?.computeFaces;
+
   const computeFaces = useCallback(
     (progress: number): FaceData[] => {
-      if (!def) return [];
-      return def.computeFaces(params, progress);
+      if (!def || !exComputeFaces) return [];
+      return exComputeFaces(params, progress);
     },
-    [def, params]
+    [def, exComputeFaces, params]
   );
 
   const hasUnfold = def?.hasUnfold ?? false;
@@ -356,15 +363,15 @@ export function ObjectExercisePage() {
             boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
           }}
         >
-          {def?.is2D && (def.exerciseComputeVertices2D ?? def.computeVertices2D) ? (
+          {def?.is2D && exComputeVertices2D ? (
             <Flat2DViewer
-              vertices={(def.exerciseComputeVertices2D ?? def.computeVertices2D!)(params)}
+              vertices={exComputeVertices2D(params)}
               params={params}
               paramIds={exParamDefs.map((d) => d.id)}
               fillColor={def.color}
               backgroundColor="#E0E7FF"
               isCircle={objectId === 'kruh2d'}
-              triangleHeightMode={def.exerciseShowHeight}
+              triangleHeightMode={exShowHeight}
             />
           ) : (
             <Canvas3DViewer

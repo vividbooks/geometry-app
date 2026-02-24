@@ -50,8 +50,13 @@ export function CviceniSetupPage() {
   const taskType = parseTaskType(taskTypeParam);
   const def = getObjectDef(objectId || '');
 
+  const CHOICES_ONLY_IDS = ['kruh2d', 'valec', 'kuzel'];
+  const forcedChoices = CHOICES_ONLY_IDS.includes(objectId ?? '');
+
   const [paramMode, setParamMode] = useState<'random' | 'custom'>('random');
-  const [answerMode, setAnswerMode] = useState<'number' | 'choices'>('number');
+  const [answerMode, setAnswerMode] = useState<'number' | 'choices'>(
+    forcedChoices ? 'choices' : 'number'
+  );
   const [customRows, setCustomRows] = useState<Record<string, number>[]>(() =>
     def ? [def.parameterDefs.reduce((acc, d) => ({ ...acc, [d.id]: d.defaultValue }), {} as Record<string, number>)] : []
   );
@@ -241,43 +246,49 @@ export function CviceniSetupPage() {
       </div>
 
       {/* 2) ABC / Napsat číslo */}
-      <div style={{ marginBottom: 24 }}>
-        <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#475569', marginBottom: 8 }}>
-          Způsob odpovědi
-        </label>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            type="button"
-            onClick={() => setAnswerMode('number')}
-            style={{
-              padding: '10px 20px',
-              borderRadius: 8,
-              border: answerMode === 'number' ? '2px solid #4d49f3' : '1px solid #e2e8f0',
-              background: answerMode === 'number' ? '#eef2ff' : '#fff',
-              color: answerMode === 'number' ? '#4d49f3' : '#64748b',
-              fontWeight: 500,
-              cursor: 'pointer',
-            }}
-          >
-            Napsat číslo
-          </button>
-          <button
-            type="button"
-            onClick={() => setAnswerMode('choices')}
-            style={{
-              padding: '10px 20px',
-              borderRadius: 8,
-              border: answerMode === 'choices' ? '2px solid #4d49f3' : '1px solid #e2e8f0',
-              background: answerMode === 'choices' ? '#eef2ff' : '#fff',
-              color: answerMode === 'choices' ? '#4d49f3' : '#64748b',
-              fontWeight: 500,
-              cursor: 'pointer',
-            }}
-          >
-            Možnosti A–D
-          </button>
+      {forcedChoices ? (
+        <div style={{ marginBottom: 24, padding: '10px 14px', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 8, fontSize: 13, color: '#166534' }}>
+          Pro tento útvar jsou k dispozici pouze možnosti A–D.
         </div>
-      </div>
+      ) : (
+        <div style={{ marginBottom: 24 }}>
+          <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#475569', marginBottom: 8 }}>
+            Způsob odpovědi
+          </label>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => setAnswerMode('number')}
+              style={{
+                padding: '10px 20px',
+                borderRadius: 8,
+                border: answerMode === 'number' ? '2px solid #4d49f3' : '1px solid #e2e8f0',
+                background: answerMode === 'number' ? '#eef2ff' : '#fff',
+                color: answerMode === 'number' ? '#4d49f3' : '#64748b',
+                fontWeight: 500,
+                cursor: 'pointer',
+              }}
+            >
+              Napsat číslo
+            </button>
+            <button
+              type="button"
+              onClick={() => setAnswerMode('choices')}
+              style={{
+                padding: '10px 20px',
+                borderRadius: 8,
+                border: answerMode === 'choices' ? '2px solid #4d49f3' : '1px solid #e2e8f0',
+                background: answerMode === 'choices' ? '#eef2ff' : '#fff',
+                color: answerMode === 'choices' ? '#4d49f3' : '#64748b',
+                fontWeight: 500,
+                cursor: 'pointer',
+              }}
+            >
+              Možnosti A–D
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 3) Zahájit */}
       <button

@@ -1,7 +1,6 @@
 import { BrowserRouter, Navigate, Routes, Route, useParams } from 'react-router-dom';
 import { Crossroads } from './components/landing/Crossroads';
 import { Landing } from './components/landing/Landing';
-import { CviceniPage } from './components/landing/CviceniPage';
 import { CviceniSetupPage } from './components/landing/CviceniSetupPage';
 import { ObjectPage } from './components/viewer/ObjectPage';
 import { ObjectExercisePage } from './components/viewer/ObjectExercisePage';
@@ -33,7 +32,7 @@ export default function App() {
           <Route path="/telesa-app" element={<Navigate to="/menu-telesa" replace />} />
           <Route path="/rysovani" element={<RysovaniPage />} />
           <Route path="/tutorial/:tutorialId" element={<TutorialPage />} />
-          <Route path="/cviceni" element={<CviceniPage />} />
+          <Route path="/cviceni" element={<Navigate to="/menu-telesa?tab=cviceni" replace />} />
           <Route path="/cviceni/:objectId/:taskType" element={<CviceniSetupPage />} />
           <Route path="/:objectId/cviceni/:taskType" element={<ObjectExercisePage />} />
           <Route path="/:objectId" element={<SmartObjectPage />} />

@@ -56,6 +56,38 @@ export function computePyramidFaces(
   return faces;
 }
 
+// ── Objem exercise variant: base area (Sp) + height (h) ─────────────────────
+
+export const PYRAMID_VOLUME_PARAMS: ParameterDef[] = [
+  { id: 'Sp', label: 'Obsah podstavy (Sp)', min: 4, max: 144, step: 1, defaultValue: 36, unit: 'cm²' },
+  { id: 'h',  label: 'Výška (h)',            min: 2, max: 20,  step: 1, defaultValue: 9,  unit: 'cm' },
+];
+
+export function computePyramidVolumeProperties(params: Record<string, number>): MathProperty[] {
+  const Sp = params.Sp ?? 36;
+  const h  = params.h  ?? 9;
+  const volume = (1 / 3) * Sp * h;
+  const fmt = (v: number) => Math.round(v * 100) / 100;
+  return [
+    { label: 'Objem', value: `${fmt(volume)} cm³`, color: 'purple' },
+  ];
+}
+
+/** Renders a square pyramid whose base has area Sp and height h */
+export function computePyramidVolumeFaces(params: Record<string, number>, unfoldProgress: number): FaceData[] {
+  const Sp = params.Sp ?? 36;
+  const h  = params.h  ?? 9;
+  const edgeLength = Math.sqrt(Sp);
+  return computePyramidFaces({ sides: 4, edgeLength, height: h }, unfoldProgress);
+}
+
+export function generatePyramidVolumeParams(): Record<string, number> {
+  const edge = 4 + Math.floor(Math.random() * 8); // 4–11
+  const Sp = edge * edge;
+  const h = 3 + Math.floor(Math.random() * 10); // 3–12
+  return { Sp, h };
+}
+
 export function computePyramidProperties(params: Record<string, number>): MathProperty[] {
   const sides = Math.round(params.sides || 4);
   const edgeLength = params.edgeLength || 10;

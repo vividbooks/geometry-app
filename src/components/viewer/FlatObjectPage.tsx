@@ -20,7 +20,7 @@ const TRIANGLE_PRESETS: { label: string; params: Record<string, number> }[] = [
   { label: 'Pravoúhlý',    params: { a: 5, b: 3, c: 4 } },
   { label: 'Rovnoramenný', params: { a: 6, b: 6, c: 8 } },
   { label: 'Ostroúhlý',    params: { a: 6, b: 7, c: 8 } },
-  { label: 'Tupoúhlý',     params: { a: 9, b: 4, c: 8 } },
+  { label: 'Tupoúhlý',     params: { a: 10, b: 4, c: 8 } },
   { label: 'Obecný',       params: { a: 8, b: 6, c: 7 } },
 ];
 
@@ -192,15 +192,7 @@ export function FlatObjectPage() {
             margin: `${marginFromEdge}px ${marginFromEdge}px 0 ${marginFromEdge}px`,
           }}
         >
-          <button
-            onClick={() => navigate(-1)}
-            className="flex items-center justify-center text-slate-600 hover:text-slate-900 transition-colors"
-            style={{ flexShrink: 0, width: 40, height: 40, margin: 12, borderRadius: '50%', background: '#f8fafc', border: '1px solid #e2e8f0' }}
-            title="Zpět"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </button>
-          <div style={{ flex: 1, overflowY: 'auto', padding: '0 12px 12px' }}>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '12px 12px 12px' }}>
             <ObjectControls
               objectId={objectId}
               objectName={def.name}
@@ -282,15 +274,7 @@ export function FlatObjectPage() {
           borderRadius: '12px 12px 0 0',
         }}
       >
-        <button
-          onClick={() => navigate(-1)}
-          className="flex items-center justify-center text-slate-600 hover:text-slate-900 transition-colors"
-          style={{ flexShrink: 0, width: 40, height: 40, margin: 12, borderRadius: '50%', background: '#f8fafc', border: '1px solid #e2e8f0' }}
-          title="Zpět"
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </button>
-        <div style={{ flex: 1, overflowY: 'auto', padding: '0 12px 12px' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '12px 12px 12px' }}>
           <ObjectControls
             objectId={objectId}
             objectName={def.name}
