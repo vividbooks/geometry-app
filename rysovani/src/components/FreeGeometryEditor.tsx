@@ -267,6 +267,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
   const circleTabletRadiusRef = useRef<number>(150); // Real-time radius tracking pro smooth rendering
   const circleTabletHandlePosRef = useRef<{x: number, y: number} | null>(null); // Real-time handle position pro smooth rendering
   const nearestIntersectionRef = useRef<{x: number, y: number} | null>(null); // Intersection snap indicator for visual feedback
+  const dragSnapPreviewRef = useRef<{x: number, y: number} | null>(null); // Snap preview during point drag
   const pendingCircleCenterRef = useRef<string | null>(null); // ID of point created as circle center (removed if circle not completed)
   const mouseMoveThrottleRef = useRef(false); // Throttle flag for conditional throttling
   const lastTouchTimeRef = useRef<number>(0); // Timestamp posledniho touch eventu pro prevenci double-tap
@@ -2245,27 +2246,30 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
       return;
     }
 
-    // Drag logic (single point) — snap to shapes (lines/circles) and intersections, NOT to other labeled points
+    // Drag logic (single point) — point follows cursor, snap preview shown as orange dot
     if (activeTool === 'move' && draggedPointId) {
       const excludeIds = new Set([draggedPointId]);
       const shapeSnap = snapToNearestShape(wx, wy, SNAP_PX, excludeIds);
       const intSnap = findNearestIntersection(wx, wy, SNAP_PX);
-      let nx = wx, ny = wy;
+      let snapPrev: {x: number, y: number} | null = null;
       if (shapeSnap && intSnap) {
         const dShape = Math.sqrt((shapeSnap.x - wx) ** 2 + (shapeSnap.y - wy) ** 2);
         const dInt   = Math.sqrt((intSnap.x   - wx) ** 2 + (intSnap.y   - wy) ** 2);
-        const best = dInt < dShape ? intSnap : shapeSnap;
-        nx = best.x; ny = best.y;
+        snapPrev = dInt < dShape ? intSnap : shapeSnap;
       } else if (shapeSnap) {
-        nx = shapeSnap.x; ny = shapeSnap.y;
+        snapPrev = shapeSnap;
       } else if (intSnap) {
-        nx = intSnap.x; ny = intSnap.y;
+        snapPrev = intSnap;
       }
+      dragSnapPreviewRef.current = snapPrev;
+      // Point follows cursor (snaps to preview on mouseup)
       setPoints(prev => prev.map(p =>
         p.id === draggedPointId
-          ? { ...p, x: nx, y: ny }
+          ? { ...p, x: wx, y: wy }
           : p
       ));
+    } else {
+      dragSnapPreviewRef.current = null;
     }
 
     // Marquee rectangle selection (move tool drag on empty space)
@@ -2367,6 +2371,14 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
       setCircleInput(prev => ({ ...prev, isDraggingHandle: false, isDraggingCenter: false }));
     }
     
+    // On release: snap dragged point to preview position if available
+    if (draggedPointId && dragSnapPreviewRef.current) {
+      const snap = dragSnapPreviewRef.current;
+      setPoints(prev => prev.map(p =>
+        p.id === draggedPointId ? { ...p, x: snap.x, y: snap.y } : p
+      ));
+    }
+    dragSnapPreviewRef.current = null;
     setDraggedPointId(null);
     if (activeTool === 'pan') {
         isPanning.current = false;
@@ -3391,6 +3403,34 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
 
         ctx.beginPath();
         ctx.arc(activeIntX, activeIntY, 2.5 / scale, 0, Math.PI * 2);
+        ctx.fillStyle = '#f59e0b';
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // Draw drag snap preview indicator (orange dot on line/circle when dragging a point)
+      const dragSnap = dragSnapPreviewRef.current;
+      if (dragSnap) {
+        ctx.save();
+        ctx.setLineDash([]);
+        const sz = 8 / scale;
+        ctx.lineWidth = 2 / scale;
+        ctx.strokeStyle = '#f59e0b';
+
+        ctx.beginPath();
+        ctx.moveTo(dragSnap.x - sz, dragSnap.y);
+        ctx.lineTo(dragSnap.x + sz, dragSnap.y);
+        ctx.moveTo(dragSnap.x, dragSnap.y - sz);
+        ctx.lineTo(dragSnap.x, dragSnap.y + sz);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(dragSnap.x, dragSnap.y, 9 / scale, 0, Math.PI * 2);
+        ctx.lineWidth = 1.5 / scale;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(dragSnap.x, dragSnap.y, 2.5 / scale, 0, Math.PI * 2);
         ctx.fillStyle = '#f59e0b';
         ctx.fill();
         ctx.restore();
