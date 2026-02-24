@@ -3,9 +3,9 @@
   import react from '@vitejs/plugin-react-swc';
   import path from 'path';
 
-  export default defineConfig({
-    // Subpath for rysovani.vividbooks.com/rysovani-app (GitHub Pages)
-    base: '/rysovani-app/',
+  export default defineConfig(({ mode }) => ({
+    // Dev: /geometry-app/ (local Vividbooks platform), Prod: /rysovani-app/ (GitHub Pages)
+    base: mode === 'development' ? '/geometry-app/' : '/rysovani-app/',
     plugins: [react()],
     css: {
       transformer: 'lightningcss',
@@ -79,4 +79,4 @@
       port: 3000,
       open: true,
     },
-  });
+  }));
