@@ -1126,15 +1126,12 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
       const isCircleHandle = shapes.some(s => s.type === 'circle' && s.definition.p2Id === p.id);
       const snapDist = isCircleHandle ? Math.min(threshWorld, 14 / scale) : threshWorld;
       const distToPoint = Math.sqrt((p.x - wx) ** 2 + (p.y - wy) ** 2);
-      const distScreen = distToPoint * scale;
 
       const labelOffW = 20 / scale;
       const distToLabel = Math.sqrt((p.x + labelOffW - wx) ** 2 + (p.y - labelOffW - wy) ** 2);
 
       const isNear = distToPoint < snapDist ||
         (!isCircleHandle && distToLabel < 16 / scale);
-
-      console.log(`[SNAP] point ${p.label}(${p.x.toFixed(1)},${p.y.toFixed(1)}) dist=${distScreen.toFixed(1)}px threshold=${threshold}px isNear=${isNear}`);
 
       if (isNear && distToPoint < minDist) {
         minDist = distToPoint;
@@ -1151,8 +1148,6 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
 
     const dPoint = pointSnap ? Math.sqrt((pointSnap.x - wx) ** 2 + (pointSnap.y - wy) ** 2) * scale : Infinity;
     const dInt   = intSnap   ? Math.sqrt((intSnap.x   - wx) ** 2 + (intSnap.y   - wy) ** 2) * scale : Infinity;
-
-    console.log(`[SNAP] getSnapPosition: cursor world(${wx.toFixed(1)},${wy.toFixed(1)}) scale=${scale.toFixed(2)} threshold=${threshold}px | pointSnap=${pointSnap?.label ?? 'none'} dist=${dPoint.toFixed(1)}px | intSnap=${intSnap ? `(${intSnap.x.toFixed(1)},${intSnap.y.toFixed(1)})` : 'none'} dist=${dInt.toFixed(1)}px`);
 
     if (!pointSnap && !intSnap) return null;
     if (!intSnap) return { x: pointSnap!.x, y: pointSnap!.y };
@@ -1209,7 +1204,6 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     const effectiveThreshold = threshold; // already accounts for tablet mode via SNAP_PX
     const thresh = effectiveThreshold / scale;
 
-    console.log(`[INT] findNearestIntersection at world(${wx.toFixed(1)},${wy.toFixed(1)}) thresh=${thresh.toFixed(1)}world (${threshold}px/scale=${scale.toFixed(2)}) | ${lineShapes.length} lines, ${circleShapes.length} circles`);
     let bestDist = thresh;
     let bestPoint: {x: number, y: number} | null = null;
 
@@ -1222,15 +1216,12 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
         const a2 = s1.definition.p2Id ? points.find(p => p.id === s1.definition.p2Id) : null;
         const b1 = points.find(p => p.id === s2.definition.p1Id);
         const b2 = s2.definition.p2Id ? points.find(p => p.id === s2.definition.p2Id) : null;
-        if (!a1 || !a2 || !b1 || !b2) {
-          console.log(`[INT] skipping line pair ${i},${j}: missing points a1=${!!a1} a2=${!!a2} b1=${!!b1} b2=${!!b2} s1.p2Id=${s1.definition.p2Id} s2.p2Id=${s2.definition.p2Id}`);
-          continue;
-        }
+        if (!a1 || !a2 || !b1 || !b2) continue;
 
         const dx1 = a2.x - a1.x, dy1 = a2.y - a1.y;
         const dx2 = b2.x - b1.x, dy2 = b2.y - b1.y;
         const denom = dx1 * dy2 - dy1 * dx2;
-        if (Math.abs(denom) < 1e-10) { console.log(`[INT] parallel lines ${i},${j}`); continue; }
+        if (Math.abs(denom) < 1e-10) continue;
 
         const t = ((b1.x - a1.x) * dy2 - (b1.y - a1.y) * dx2) / denom;
         const u = ((b1.x - a1.x) * dy1 - (b1.y - a1.y) * dx1) / denom;
@@ -1238,18 +1229,15 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
         const ix = a1.x + t * dx1;
         const iy = a1.y + t * dy1;
         const distWorld = Math.sqrt((ix - wx) ** 2 + (iy - wy) ** 2);
-        const distScreen = distWorld * scale;
-        console.log(`[INT] lines ${i}(${s1.type}),${j}(${s2.type}) t=${t.toFixed(3)} u=${u.toFixed(3)} intersection=(${ix.toFixed(1)},${iy.toFixed(1)}) distScreen=${distScreen.toFixed(1)}px threshScreen=${threshold}px`);
 
-        if (s1.type === 'segment' && (t < 0 || t > 1)) { console.log(`[INT]   -> skipped (s1 segment, t out of range)`); continue; }
-        if (s1.type === 'ray' && t < 0) { console.log(`[INT]   -> skipped (s1 ray, t<0)`); continue; }
-        if (s2.type === 'segment' && (u < 0 || u > 1)) { console.log(`[INT]   -> skipped (s2 segment, u out of range)`); continue; }
-        if (s2.type === 'ray' && u < 0) { console.log(`[INT]   -> skipped (s2 ray, u<0)`); continue; }
+        if (s1.type === 'segment' && (t < 0 || t > 1)) continue;
+        if (s1.type === 'ray' && t < 0) continue;
+        if (s2.type === 'segment' && (u < 0 || u > 1)) continue;
+        if (s2.type === 'ray' && u < 0) continue;
 
         if (distWorld < bestDist) {
           bestDist = distWorld;
           bestPoint = { x: ix, y: iy };
-          console.log(`[INT]   -> BEST intersection so far at (${ix.toFixed(1)},${iy.toFixed(1)})`);
         }
       }
     }
@@ -1329,7 +1317,6 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
       }
     }
 
-    console.log(`[INT] result: ${bestPoint ? `(${bestPoint.x.toFixed(1)},${bestPoint.y.toFixed(1)})` : 'null'}`);
     return bestPoint;
   };
 
