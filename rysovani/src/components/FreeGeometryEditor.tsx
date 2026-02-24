@@ -1116,12 +1116,13 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
 
   const SNAP_PX = isTabletMode ? 76 : 52; // snap radius in screen pixels
 
-  const getSnappingPoint = (wx: number, wy: number, threshold = SNAP_PX) => {
+  const getSnappingPoint = (wx: number, wy: number, threshold = SNAP_PX, excludeId?: string) => {
     const threshWorld = threshold / scale;
     let closest: GeoPoint | null = null;
     let minDist = threshWorld;
 
     for (const p of points) {
+      if (excludeId && p.id === excludeId) continue;
       const isCircleHandle = shapes.some(s => s.type === 'circle' && s.definition.p2Id === p.id);
       const snapDist = isCircleHandle ? Math.min(threshWorld, 14 / scale) : threshWorld;
       const distToPoint = Math.sqrt((p.x - wx) ** 2 + (p.y - wy) ** 2);
@@ -1144,8 +1145,8 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
   };
 
   // Unified snap: always pick whichever target (existing point OR intersection) is geometrically closer
-  const getSnapPosition = (wx: number, wy: number, threshold = SNAP_PX): { x: number; y: number } | null => {
-    const pointSnap = getSnappingPoint(wx, wy, threshold);
+  const getSnapPosition = (wx: number, wy: number, threshold = SNAP_PX, excludeId?: string): { x: number; y: number } | null => {
+    const pointSnap = getSnappingPoint(wx, wy, threshold, excludeId);
     const intSnap = findNearestIntersection(wx, wy, threshold);
 
     const dPoint = pointSnap ? Math.sqrt((pointSnap.x - wx) ** 2 + (pointSnap.y - wy) ** 2) * scale : Infinity;
@@ -2216,11 +2217,14 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
       return;
     }
 
-    // Drag logic (single point)
+    // Drag logic (single point) — snap to intersections and other points while dragging
     if (activeTool === 'move' && draggedPointId) {
-      setPoints(prev => prev.map(p => 
-        p.id === draggedPointId 
-          ? { ...p, x: wx, y: wy } 
+      const dragSnap = getSnapPosition(wx, wy, SNAP_PX, draggedPointId);
+      const nx = dragSnap ? dragSnap.x : wx;
+      const ny = dragSnap ? dragSnap.y : wy;
+      setPoints(prev => prev.map(p =>
+        p.id === draggedPointId
+          ? { ...p, x: nx, y: ny }
           : p
       ));
     }
