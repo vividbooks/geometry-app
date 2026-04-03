@@ -50,7 +50,7 @@ import Papir from '../imports/Papir';
 
 // --- TYPY ---
 
-type ToolType = 'move' | 'point' | 'segment' | 'line' | 'ray' | 'circle' | 'angle' | 'distance' | 'perpendicular' | 'pan' | 'paper' | 'freehand' | 'highlighter' | 'eraser';
+type ToolType = 'move' | 'point' | 'segment' | 'line' | 'lineDashed' | 'ray' | 'circle' | 'angle' | 'distance' | 'perpendicular' | 'pan' | 'paper' | 'freehand' | 'highlighter' | 'highlighterStraight' | 'eraser';
 
 interface GeoPoint {
   id: string;
@@ -70,7 +70,7 @@ interface FreehandPath {
 
 interface GeoShape {
   id: string;
-  type: 'segment' | 'line' | 'ray' | 'circle';
+  type: 'segment' | 'line' | 'lineDashed' | 'ray' | 'circle' | 'circleArc';
   label: string;
   points: string[]; // IDs bodů, na kterých tvar závisí
   definition: {
@@ -78,17 +78,21 @@ interface GeoShape {
     p2Id?: string; // Pro kružnici je to bod na obvodu
     angle?: number; // Pro polopřímku zadanou úhlem
     length?: number; // Volitelně délka
+    /** Úhel výseče v rad (circleArc) — část obvodu kolem směru k p2 */
+    arcSpan?: number;
   };
 }
 
 interface AnimationState {
   isActive: boolean;
-  type: 'segment' | 'line' | 'ray' | 'circle' | 'angle' | null;
+  type: 'segment' | 'line' | 'lineDashed' | 'ray' | 'circle' | 'circleArc' | 'angle' | null;
   startTime: number;
   p1: { x: number, y: number } | null;
   p2: { x: number, y: number } | null;
   angle?: number; // Cílový úhel pro animaci úhloměru
   baseAngle?: number; // Základní úhel (natočení nuly)
+  /** Výsek kružnice (circleArc) — celkový úhel v rad */
+  arcSpan?: number;
   progress: number;
 }
 
@@ -121,7 +125,7 @@ interface FreeGeometryEditorProps {
 
 interface RecordedStep {
   id: string;
-  actionType: 'create-point' | 'create-segment' | 'create-line' | 'create-ray' | 'create-circle' | 'create-angle' | 'move-point' | 'delete' | 'freehand';
+  actionType: 'create-point' | 'create-segment' | 'create-line' | 'create-line-dashed' | 'create-ray' | 'create-circle' | 'create-angle' | 'move-point' | 'delete' | 'freehand';
   description: string;
   notation?: string; // LaTeX notation for construction log
   snapshot: {
@@ -147,6 +151,87 @@ interface RecordingState {
   showPlayer: boolean;
 }
 
+/** Vzdálenost bodu k úsečce vw (včetně projekce na konec). */
+function distToSegment(
+  p: { x: number; y: number },
+  v: { x: number; y: number },
+  w: { x: number; y: number }
+) {
+  const l2 = (w.x - v.x) ** 2 + (w.y - v.y) ** 2;
+  if (l2 === 0) return { dist: Math.sqrt((p.x - v.x) ** 2 + (p.y - v.y) ** 2), proj: v, t: 0 };
+  let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2;
+  t = Math.max(0, Math.min(1, t));
+  const proj = { x: v.x + t * (w.x - v.x), y: v.y + t * (w.y - v.y) };
+  return {
+    dist: Math.sqrt((p.x - proj.x) ** 2 + (p.y - proj.y) ** 2),
+    proj,
+    t
+  };
+}
+
+/** Vzdálenost bodu k přímce (nekonečné) procházející v–w. */
+function distPointToLine(
+  p: { x: number; y: number },
+  v: { x: number; y: number },
+  w: { x: number; y: number }
+): number {
+  const dx = w.x - v.x;
+  const dy = w.y - v.y;
+  const len2 = dx * dx + dy * dy;
+  if (len2 < 1e-18) return Math.hypot(p.x - v.x, p.y - v.y);
+  return Math.abs(dy * p.x - dx * p.y + w.x * v.y - w.y * v.x) / Math.sqrt(len2);
+}
+
+/** Vzdálenost bodu k polopřímce z v přes w (nekonečně). */
+function distPointToRay(
+  p: { x: number; y: number },
+  v: { x: number; y: number },
+  w: { x: number; y: number }
+): number {
+  const dx = w.x - v.x;
+  const dy = w.y - v.y;
+  const len2 = dx * dx + dy * dy;
+  if (len2 < 1e-18) return Math.hypot(p.x - v.x, p.y - v.y);
+  let t = ((p.x - v.x) * dx + (p.y - v.y) * dy) / len2;
+  if (t < 0) t = 0;
+  const proj = { x: v.x + t * dx, y: v.y + t * dy };
+  return Math.hypot(p.x - proj.x, p.y - proj.y);
+}
+
+/** Úhlová vzdálenost v rozsahu [0, π]. */
+function angleDist(a: number, b: number): number {
+  let d = Math.abs(a - b);
+  while (d > Math.PI * 2) d -= Math.PI * 2;
+  if (d > Math.PI) d = Math.PI * 2 - d;
+  return d;
+}
+
+/** Střed výseče kolem směru p1→p2 (úhel v canvas souřadnicích). */
+function circleArcAngles(
+  p1: { x: number; y: number },
+  p2: { x: number; y: number },
+  arcSpanRad: number
+) {
+  const r = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+  const θ = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+  const half = arcSpanRad / 2;
+  return { r, start: θ - half, end: θ + half };
+}
+
+/** Koncový bod oblouku s větší y (dole na plátně) — pozice táhla velikosti u výseku. */
+function circleArcRadiusHandlePos(
+  p1: { x: number; y: number },
+  p2: { x: number; y: number },
+  arcSpanRad: number
+): { x: number; y: number } {
+  const { r, start, end } = circleArcAngles(p1, p2, arcSpanRad);
+  const ex = p1.x + r * Math.cos(end);
+  const ey = p1.y + r * Math.sin(end);
+  const sx = p1.x + r * Math.cos(start);
+  const sy = p1.y + r * Math.sin(start);
+  return ey >= sy ? { x: ex, y: ey } : { x: sx, y: sy };
+}
+
 // --- HLAVNÍ KOMPONENTA ---
 
 export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceType: deviceTypeProp, sharedRecording }: FreeGeometryEditorProps) {
@@ -154,10 +239,33 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const animationFrameRef = useRef<number>();
+  /** Animace posunu středu popisku při změně cílové pozice (ease-out). */
+  const labelAnimByPointIdRef = useRef<
+    Map<string, { from: { x: number; y: number }; to: { x: number; y: number }; startMs: number }>
+  >(new Map());
+  /** Stejná animace pro popisky tvarů (přímka, kružnice, …). */
+  const shapeLabelAnimByShapeIdRef = useRef<
+    Map<string, { from: { x: number; y: number }; to: { x: number; y: number }; startMs: number }>
+  >(new Map());
 
   // Detekce vykon zar zenia - optimalizace pro stare tablety
   const devicePerformance = useMemo(() => detectDevicePerformance(), []);
   const isLowPerformance = devicePerformance === 'low';
+
+  /** Pravítko / kružítko / úhloměr: +10 % času samotného tahu, +20 % času po dokončení tahu (nástroj déle zůstane vidět). */
+  const constructionAnimMs = useMemo(() => {
+    if (isLowPerformance) {
+      return { total: 1100, fadeIn: 200, draw: 660, post: 240 };
+    }
+    return { total: 2200, fadeIn: 400, draw: 1320, post: 480 };
+  }, [isLowPerformance]);
+
+  const animPhase = useMemo(() => {
+    const t = constructionAnimMs.total;
+    const pIn = constructionAnimMs.fadeIn / t;
+    const pDrawEnd = (constructionAnimMs.fadeIn + constructionAnimMs.draw) / t;
+    return { pIn, pDrawEnd, totalMs: constructionAnimMs.total };
+  }, [constructionAnimMs]);
 
   // State
   const [deviceType, setDeviceType] = useState<'board' | 'computer' | null>(deviceTypeProp ?? null);
@@ -213,7 +321,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     handleAngle: 0, // úhel handle od středu (radiány)
     isDraggingCenter: false,
     isDraggingHandle: false,
-    mode: 'circle' as 'point' | 'circle',
+    mode: 'circle' as 'point' | 'circle' | 'arc',
   });
 
   const [segmentInput, setSegmentInput] = useState({
@@ -292,11 +400,24 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
   // Výběr tvarů, laso a group drag
   const [selectedShapeIds, setSelectedShapeIds] = useState<string[]>([]);
   const [selectedFreehandIds, setSelectedFreehandIds] = useState<string[]>([]);
+
+  /** Po narýsování nového objektu zrušit výběr — nový tvar/bod nemá být „aktivní“. */
+  const clearSelectionAfterPlacement = useCallback(() => {
+    setSelection(null);
+    setSelectedShapeIds([]);
+    setSelectedFreehandIds([]);
+  }, []);
+
   const [hoveredShapeForMove, setHoveredShapeForMove] = useState<string | null>(null);
   const marqueeRef = useRef<{startX: number, startY: number, endX: number, endY: number} | null>(null);
   const groupDragRef = useRef<{ startWx: number; startWy: number; pointSnapshots: {id: string; x: number; y: number}[] } | null>(null);
 
   const PIXELS_PER_CM = 50; // Základní jednotka: 50px = 1cm (odpovídá mřížce)
+  /** Kolmý odstup popisku písmena od čáry/kružnice — ve světě = px / scale (jako u bodů) */
+  const SHAPE_LABEL_PAD_SCREEN_PX = 18;
+  /** Výsek z režimu Kružítko–rozměr: cca 5 % obvodu (+5 %) kolem zvoleného směru (bod na obvodu). */
+  const COMPASS_ARC_FRACTION = 0.05 * 1.05;
+  const COMPASS_ARC_SPAN_RAD = 2 * Math.PI * COMPASS_ARC_FRACTION;
 
   // Historie pro undo/redo
   const [history, setHistory] = useState<{points: GeoPoint[], shapes: GeoShape[], freehandPaths: FreehandPath[], constructionSteps: ConstructionStep[], constructionCounter: number}[]>([]);
@@ -498,6 +619,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
       case 'create-point': return <Dot className="size-4" />;
       case 'create-segment': return <Minus className="size-4" />;
       case 'create-line': return <ArrowUpDown className="size-4" />;
+      case 'create-line-dashed': return <ArrowUpDown className="size-4" />;
       case 'create-ray': return <ArrowRight className="size-4" />;
       case 'create-circle': return <Circle className="size-4" />;
       case 'create-angle': return <span className="text-xs font-bold">∠</span>;
@@ -547,6 +669,11 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
         <path d="M12 2C7.03 2 3 6.03 3 11v8" />
         <path d="M21 11c0-4.97-4.03-9-9-9" />
       </svg>
+    ),
+    DashedLine: () => (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round">
+        <line x1="3" y1="12" x2="21" y2="12" strokeDasharray="5 4" />
+      </svg>
     )
   };
 
@@ -572,7 +699,8 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
       tools: [
         { id: 'point', label: 'Bod', icon: Dot },
         { id: 'freehand', label: 'Volné pero', icon: Pencil },
-        { id: 'highlighter', label: 'Zvýraznění', icon: Highlighter }
+        { id: 'highlighter', label: 'Zvýraznění', icon: Highlighter },
+        { id: 'highlighterStraight', label: 'Zvýraznění podle pravítka', icon: Ruler }
       ]
     },
     {
@@ -583,7 +711,8 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
         { id: 'segment', label: 'Úsečka', icon: Minus },
         { id: 'line', label: 'Přímka', icon: Minus },
         { id: 'perpendicular', label: 'Kolmice', icon: Minus },
-        { id: '__popup__segment_fixed', label: 'Úsečka o rozměru', icon: Ruler }
+        { id: '__popup__segment_fixed', label: 'Úsečka o rozměru', icon: Ruler },
+        { id: 'lineDashed', label: 'Čárkovaná čára', icon: Icons.DashedLine }
       ]
     },
     {
@@ -658,6 +787,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
       if (e.key === 'Escape') {
         setActiveTool('move');
         setSelectedPointId(null);
+        setSelection(null);
         setSelectedShapeIds([]);
         setSelectedFreehandIds([]);
         setActiveGroup(null);
@@ -757,23 +887,25 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
       if (shapes.length > prev.shapes.length && points.length > prev.points.length) {
         // Vytváří se tvar + body současně -> zaznamenat pouze tvar
         const newShape = shapes[shapes.length - 1];
-        const typeNames: Record<string, string> = { segment: 'úsečky', line: 'přímky', ray: 'polopřímky', circle: 'kružnice', angle: 'úhlu' };
+        const typeNames: Record<string, string> = { segment: 'úsečky', line: 'přímky', lineDashed: 'čárkované přímky', ray: 'polopřímky', circle: 'kružnice', angle: 'úhlu' };
         description = `Vytvoření ${typeNames[newShape.type] || newShape.type} ${newShape.label}`;
         if (newShape.type === 'segment') actionType = 'create-segment';
         else if (newShape.type === 'line') actionType = 'create-line';
+        else if (newShape.type === 'lineDashed') actionType = 'create-line-dashed';
         else if (newShape.type === 'ray') actionType = 'create-ray';
-        else if (newShape.type === 'circle') actionType = 'create-circle';
+        else if (newShape.type === 'circle' || newShape.type === 'circleArc') actionType = 'create-circle';
         else if (newShape.type === 'angle') actionType = 'create-angle';
         else actionType = 'create-segment';
       } else if (shapes.length > prev.shapes.length) {
         // Pouze tvar (bez nových bodů)
         const newShape = shapes[shapes.length - 1];
-        const typeNames: Record<string, string> = { segment: 'úsečky', line: 'přímky', ray: 'polopřímky', circle: 'kružnice', angle: 'úhlu' };
+        const typeNames: Record<string, string> = { segment: 'úsečky', line: 'přímky', lineDashed: 'čárkované přímky', ray: 'polopřímky', circle: 'kružnice', angle: 'úhlu' };
         description = `Vytvoření ${typeNames[newShape.type] || newShape.type} ${newShape.label}`;
         if (newShape.type === 'segment') actionType = 'create-segment';
         else if (newShape.type === 'line') actionType = 'create-line';
+        else if (newShape.type === 'lineDashed') actionType = 'create-line-dashed';
         else if (newShape.type === 'ray') actionType = 'create-ray';
-        else if (newShape.type === 'circle') actionType = 'create-circle';
+        else if (newShape.type === 'circle' || newShape.type === 'circleArc') actionType = 'create-circle';
         else if (newShape.type === 'angle') actionType = 'create-angle';
         else actionType = 'create-segment';
       } else if (points.length > prev.points.length) {
@@ -992,8 +1124,8 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     return 'A' + (points.length + 1);
   };
 
-  const getNextShapeLabel = (type: 'segment' | 'line' | 'circle') => {
-    if (type === 'circle') {
+  const getNextShapeLabel = (type: 'segment' | 'line' | 'lineDashed' | 'circle' | 'circleArc' | 'ray') => {
+    if (type === 'circle' || type === 'circleArc') {
       const labels = ['k', 'l', 'm', 'n', 'o'];
       for (const char of labels) {
         if (!shapes.some(s => s.label === char)) return char;
@@ -1017,7 +1149,8 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     notation: string,
     latex: string,
     description: string,
-    objectIds: string[] = []
+    objectIds: string[] = [],
+    descriptionLatex?: string
   ) => {
     constructionStepCounter.current += 1;
     const step: ConstructionStep = {
@@ -1027,7 +1160,8 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
       notation,
       latex,
       description,
-      objectIds
+      objectIds,
+      ...(descriptionLatex ? { descriptionLatex } : {})
     };
     setConstructionSteps(prev => [...prev, step]);
   };
@@ -1058,12 +1192,30 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     return p?.label || null;
   };
 
-  // Helper: vzdálenost v cm
+  // Helper: vzdálenost v cm (desetinná čárka — stejně jako měření na plátně)
   const distanceCm = (x1: number, y1: number, x2: number, y2: number): string => {
     const px = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
     const cm = px / PIXELS_PER_CM;
-    return cm % 1 === 0 ? cm.toFixed(0) : cm.toFixed(1);
+    const s = cm % 1 === 0 ? cm.toFixed(0) : cm.toFixed(1);
+    return s.replace('.', ',');
   };
+
+  /** V LaTeX / KaTeX použít desetinnou čárku jako `3{,}5`, aby se neoddělovala jako interpunkce */
+  const decimalForLatex = (displayCm: string): string =>
+    displayCm.includes(',') ? displayCm.replace(',', '{,}') : displayCm;
+
+  const latexIt = (s: string) => `\\textit{${s}}`;
+  const descLatexPerpendicular = (q: string, p: string) =>
+    `\\text{Kolmice } ${latexIt(q)} \\text{ k přímce } ${latexIt(p)}`;
+  const descLatexPoint = (label: string) => `\\text{Bod } ${latexIt(label)}`;
+  const descLatexLine = (lineLabel: string, lA: string, lB: string, dashed: boolean) =>
+    dashed
+      ? `\\text{Čárkovaná přímka } ${latexIt(lineLabel)} \\text{ procházející body } ${latexIt(lA)}\\text{, }${latexIt(lB)}`
+      : `\\text{Přímka } ${latexIt(lineLabel)} \\text{ procházející body } ${latexIt(lA)}\\text{, }${latexIt(lB)}`;
+  const descLatexLineShort = (lineLabel: string, dashed: boolean) =>
+    dashed
+      ? `\\text{Čárkovaná přímka } ${latexIt(lineLabel)}`
+      : `\\text{Přímka } ${latexIt(lineLabel)}`;
 
   // --- POHYB A ZOOM ---
   useEffect(() => {
@@ -1114,32 +1266,249 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     return () => container.removeEventListener('wheel', onWheel);
   }, []);
 
+  // Odstranit animační stav popisků u smazaných bodů
+  useEffect(() => {
+    const ids = new Set(points.map(pt => pt.id));
+    const map = labelAnimByPointIdRef.current;
+    for (const id of map.keys()) {
+      if (!ids.has(id)) map.delete(id);
+    }
+  }, [points]);
+
+  useEffect(() => {
+    const ids = new Set(shapes.map(s => s.id));
+    const map = shapeLabelAnimByShapeIdRef.current;
+    for (const id of map.keys()) {
+      if (!ids.has(id)) map.delete(id);
+    }
+  }, [shapes]);
+
   const screenToWorld = (sx: number, sy: number) => ({
     x: (sx - offset.x) / scale,
     y: (sy - offset.y) / scale
   });
 
+  /** Cílový střed popisku: poloměr o ~30 px na obrazovce menší než dřív (min. 12 px), pak násobek dál od bodu; úhel dle odsazení od čar/kružnic/volné kresby. */
+  const getPointLabelAnchor = useCallback(
+    (p: GeoPoint): { x: number; y: number } => {
+      const LABEL_ANCHOR_BASE_PX = 20;
+      const LABEL_ANCHOR_CLOSER_PX = 30;
+      const LABEL_ANCHOR_MIN_RADIUS_PX = 12;
+      const LABEL_ANCHOR_FARTHER = 1.65;
+      const screenRadiusPx =
+        Math.max(
+          LABEL_ANCHOR_MIN_RADIUS_PX,
+          Math.sqrt(2) * LABEL_ANCHOR_BASE_PX - LABEL_ANCHOR_CLOSER_PX
+        ) * LABEL_ANCHOR_FARTHER;
+      const R = screenRadiusPx / scale;
+      const off = screenRadiusPx / Math.sqrt(2) / scale;
+      if (!p.label) return { x: p.x + off, y: p.y - off };
+
+      const NUM = 8;
+      const baseAngle = Math.atan2(-1, 1);
+      const EXT = 100000;
+
+      const minDistToGeometry = (cx: number, cy: number): number => {
+        let minD = Infinity;
+
+        shapes.forEach(shape => {
+          const p1 = points.find(pt => pt.id === shape.definition.p1Id);
+          const p2 = points.find(pt => pt.id === shape.definition.p2Id);
+          if (!p1 || !p2) return;
+
+          if (shape.type === 'circle' || shape.type === 'circleArc') {
+            const r = Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2);
+            const distFromCenter = Math.sqrt((cx - p1.x) ** 2 + (cy - p1.y) ** 2);
+            const distToCircle = Math.abs(distFromCenter - r);
+            minD = Math.min(minD, distToCircle);
+          } else {
+            let start: { x: number; y: number } = p1;
+            let end: { x: number; y: number } = p2;
+            if (shape.type === 'line' || shape.type === 'lineDashed' || shape.type === 'ray') {
+              const dx = p2.x - p1.x;
+              const dy = p2.y - p1.y;
+              const len = Math.sqrt(dx * dx + dy * dy);
+              if (len > 0.001) {
+                if (shape.type === 'line' || shape.type === 'lineDashed') {
+                  start = { x: p1.x - (dx / len) * EXT, y: p1.y - (dy / len) * EXT };
+                }
+                end = { x: p1.x + (dx / len) * EXT, y: p1.y + (dy / len) * EXT };
+              }
+            }
+            const res = distToSegment({ x: cx, y: cy }, start, end);
+            minD = Math.min(minD, res.dist);
+          }
+        });
+
+        for (const path of freehandPaths) {
+          for (let j = 0; j < path.points.length - 1; j++) {
+            const a = path.points[j];
+            const b = path.points[j + 1];
+            const res = distToSegment({ x: cx, y: cy }, a, b);
+            minD = Math.min(minD, res.dist);
+          }
+        }
+
+        return minD === Infinity ? 1e9 : minD;
+      };
+
+      let best = -1;
+      let bx = p.x + off;
+      let by = p.y - off;
+
+      for (let i = 0; i < NUM; i++) {
+        const ang = baseAngle + (i * 2 * Math.PI) / NUM;
+        const ax = p.x + Math.cos(ang) * R;
+        const ay = p.y + Math.sin(ang) * R;
+        const score = minDistToGeometry(ax, ay);
+        if (score > best) {
+          best = score;
+          bx = ax;
+          by = ay;
+        }
+      }
+      return { x: bx, y: by };
+    },
+    [scale, shapes, points, freehandPaths]
+  );
+
+  const LABEL_ANIM_MS = 220;
+
+  /** Vykreslení + klik: aktuální střed popisku (plynulý přechod při změně cíle). */
+  const getPointLabelDrawPosition = useCallback(
+    (p: GeoPoint): { x: number; y: number } => {
+      const target = getPointLabelAnchor(p);
+      if (isLowPerformance) return target;
+
+      const now = performance.now();
+      const map = labelAnimByPointIdRef.current;
+      const EPS2 = 0.12 * 0.12;
+      let anim = map.get(p.id);
+      const targetMoved =
+        !anim ||
+        (anim.to.x - target.x) ** 2 + (anim.to.y - target.y) ** 2 > EPS2;
+
+      if (targetMoved) {
+        let from = target;
+        if (anim) {
+          const te = Math.min(1, (now - anim.startMs) / LABEL_ANIM_MS);
+          const easePrev = 1 - Math.pow(1 - te, 3);
+          from = {
+            x: anim.from.x + (anim.to.x - anim.from.x) * easePrev,
+            y: anim.from.y + (anim.to.y - anim.from.y) * easePrev
+          };
+        }
+        anim = { from, to: target, startMs: now };
+        map.set(p.id, anim);
+      }
+
+      anim = map.get(p.id)!;
+      const t = Math.min(1, (now - anim.startMs) / LABEL_ANIM_MS);
+      const ease = 1 - Math.pow(1 - t, 3);
+      return {
+        x: anim.from.x + (anim.to.x - anim.from.x) * ease,
+        y: anim.from.y + (anim.to.y - anim.from.y) * ease
+      };
+    },
+    [getPointLabelAnchor, isLowPerformance]
+  );
+
+  /**
+   * Plynulý posun středu popisku tvaru (stejné cubic ease jako u bodů).
+   * U kružnice se cíl mění každý snímek při tažení táhla — nesmí se každý frame restartovat animace
+   * (malý EPS); při malé změně jen aktualizujeme `to`, při velkém skoku (jiná strana / skok) nový běh.
+   */
+  const getShapeLabelDrawPosition = useCallback(
+    (shapeId: string, target: { x: number; y: number }): { x: number; y: number } => {
+      if (isLowPerformance) return target;
+      const now = performance.now();
+      const map = shapeLabelAnimByShapeIdRef.current;
+      /** Skok větší než ~24 px na obrazovce mezi snímky = nová animace (ne při plynulém tažení). */
+      const bigJumpWorld = 24 / scale;
+      const BIG_JUMP2 = bigJumpWorld * bigJumpWorld;
+
+      let anim = map.get(shapeId);
+      if (!anim) {
+        anim = { from: target, to: target, startMs: now };
+        map.set(shapeId, anim);
+      } else {
+        const d2 = (anim.to.x - target.x) ** 2 + (anim.to.y - target.y) ** 2;
+        if (d2 < 1e-14) {
+          /* beze změny */
+        } else if (d2 <= BIG_JUMP2) {
+          anim = { ...anim, to: target };
+          map.set(shapeId, anim);
+        } else {
+          const te = Math.min(1, (now - anim.startMs) / LABEL_ANIM_MS);
+          const easePrev = 1 - Math.pow(1 - te, 3);
+          const from = {
+            x: anim.from.x + (anim.to.x - anim.from.x) * easePrev,
+            y: anim.from.y + (anim.to.y - anim.from.y) * easePrev
+          };
+          anim = { from, to: target, startMs: now };
+          map.set(shapeId, anim);
+        }
+      }
+
+      anim = map.get(shapeId)!;
+      const t = Math.min(1, (now - anim.startMs) / LABEL_ANIM_MS);
+      const ease = 1 - Math.pow(1 - t, 3);
+      return {
+        x: anim.from.x + (anim.to.x - anim.from.x) * ease,
+        y: anim.from.y + (anim.to.y - anim.from.y) * ease
+      };
+    },
+    [isLowPerformance, scale]
+  );
+
   const SNAP_PX = isTabletMode ? 76 : 52; // snap radius in screen pixels
 
-  const getSnappingPoint = (wx: number, wy: number, threshold = SNAP_PX, excludeId?: string) => {
+  const getSnappingPoint = (wx: number, wy: number, threshold = SNAP_PX, excludeId?: string, skipHiddenPoints = false) => {
     const threshWorld = threshold / scale;
     let closest: GeoPoint | null = null;
     let minDist = threshWorld;
 
     for (const p of points) {
       if (excludeId && p.id === excludeId) continue;
-      const isCircleHandle = shapes.some(s => s.type === 'circle' && s.definition.p2Id === p.id);
+      if (skipHiddenPoints && p.hidden) continue;
+      const pGeom =
+        draggedPointIdRef.current === p.id && draggedPointPosRef.current
+          ? { ...p, x: draggedPointPosRef.current.x, y: draggedPointPosRef.current.y }
+          : p;
+      const circleHandleShape = shapes.find(
+        s => (s.type === 'circle' || s.type === 'circleArc') && s.definition.p2Id === p.id
+      );
+      const isCircleHandle = !!circleHandleShape;
       const snapDist = isCircleHandle ? Math.min(threshWorld, 14 / scale) : threshWorld;
-      const distToPoint = Math.sqrt((p.x - wx) ** 2 + (p.y - wy) ** 2);
+      let hitX = pGeom.x;
+      let hitY = pGeom.y;
+      if (circleHandleShape?.type === 'circleArc') {
+        const cenRaw = points.find(pt => pt.id === circleHandleShape.definition.p1Id);
+        if (cenRaw) {
+          const cenGeom =
+            draggedPointIdRef.current === cenRaw.id && draggedPointPosRef.current
+              ? { ...cenRaw, x: draggedPointPosRef.current.x, y: draggedPointPosRef.current.y }
+              : cenRaw;
+          const span = circleHandleShape.definition.arcSpan ?? COMPASS_ARC_SPAN_RAD;
+          const hp = circleArcRadiusHandlePos(cenGeom, pGeom, span);
+          hitX = hp.x;
+          hitY = hp.y;
+        }
+      }
+      const distToPoint = Math.sqrt((hitX - wx) ** 2 + (hitY - wy) ** 2);
 
-      const labelOffW = 20 / scale;
-      const distToLabel = Math.sqrt((p.x + labelOffW - wx) ** 2 + (p.y - labelOffW - wy) ** 2);
+      const labelAnchor = p.label ? getPointLabelDrawPosition(p) : null;
+      const distToLabel = labelAnchor
+        ? Math.sqrt((labelAnchor.x - wx) ** 2 + (labelAnchor.y - wy) ** 2)
+        : Infinity;
 
-      const isNear = distToPoint < snapDist ||
-        (!isCircleHandle && distToLabel < 16 / scale);
+      const labelHit = !isCircleHandle && !!p.label && distToLabel < 16 / scale;
+      const isNear = distToPoint < snapDist || labelHit;
+      // Klik na popisek: střed bodu může být dál než snap — porovnávat min(od bodu, od popisku), jinak se bod nevybere a „uhne“ to
+      const effectiveDist = labelHit ? Math.min(distToPoint, distToLabel) : distToPoint;
 
-      if (isNear && distToPoint < minDist) {
-        minDist = distToPoint;
+      if (isNear && effectiveDist < minDist) {
+        minDist = effectiveDist;
         closest = p;
       }
     }
@@ -1147,8 +1516,8 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
   };
 
   // Unified snap: always pick whichever target (existing point OR intersection) is geometrically closer
-  const getSnapPosition = (wx: number, wy: number, threshold = SNAP_PX, excludeId?: string): { x: number; y: number } | null => {
-    const pointSnap = getSnappingPoint(wx, wy, threshold, excludeId);
+  const getSnapPosition = (wx: number, wy: number, threshold = SNAP_PX, excludeId?: string, skipHiddenPoints = false): { x: number; y: number } | null => {
+    const pointSnap = getSnappingPoint(wx, wy, threshold, excludeId, skipHiddenPoints);
     const intSnap = findNearestIntersection(wx, wy, threshold);
 
     const dPoint = pointSnap ? Math.sqrt((pointSnap.x - wx) ** 2 + (pointSnap.y - wy) ** 2) * scale : Infinity;
@@ -1159,6 +1528,18 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     if (!pointSnap) return intSnap;
 
     return dInt < dPoint ? intSnap : { x: pointSnap.x, y: pointSnap.y };
+  };
+
+  /**
+   * Stejné jako getSnapPosition, ale pokud je kurzor u existujícího bodu, vždy použije přesně jeho souřadnice.
+   * (U kolmice jinak často vyhrál průsečík linek těsně u vrcholu a kolmice „uskočila“ místo projití bodem.)
+   */
+  const getSnapPositionPreferPoint = (wx: number, wy: number, threshold = SNAP_PX, excludeId?: string, skipHiddenPoints = false): { x: number; y: number } | null => {
+    const pointSnap = getSnappingPoint(wx, wy, threshold, excludeId, skipHiddenPoints);
+    if (pointSnap) {
+      return { x: pointSnap.x, y: pointSnap.y };
+    }
+    return getSnapPosition(wx, wy, threshold, excludeId, skipHiddenPoints);
   };
 
   // Helper: najde nejbližší bod NA tvaru (čára, úsečka, polopřímka, kružnice) v okolí bodu.
@@ -1183,7 +1564,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
       const p1 = points.find(p => p.id === s.definition.p1Id);
       if (!p1) continue;
 
-      if (s.type === 'circle') {
+      if (s.type === 'circle' || s.type === 'circleArc') {
         const p2 = s.definition.p2Id ? points.find(p => p.id === s.definition.p2Id) : null;
         if (!p2) continue;
         const r = Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2);
@@ -1220,8 +1601,8 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
 
   // Helper: najde nejbližší průsečík dvou čar/kružnic v okolí bodu
   const findNearestIntersection = (wx: number, wy: number, threshold = SNAP_PX): {x: number, y: number} | null => {
-    const lineShapes = shapes.filter(s => ['line', 'segment', 'ray'].includes(s.type));
-    const circleShapes = shapes.filter(s => s.type === 'circle');
+    const lineShapes = shapes.filter(s => ['line', 'lineDashed', 'segment', 'ray'].includes(s.type));
+    const circleShapes = shapes.filter(s => s.type === 'circle' || s.type === 'circleArc');
     const effectiveThreshold = threshold; // already accounts for tablet mode via SNAP_PX
     const thresh = effectiveThreshold / scale;
 
@@ -1406,8 +1787,6 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     const wx = (e.clientX - rect.left - offset.x) / scale;
     const wy = (e.clientY - rect.top - offset.y) / scale;
 
-    console.log(`[CLICK] screen(${(e.clientX - rect.left).toFixed(0)},${(e.clientY - rect.top).toFixed(0)}) → world(${wx.toFixed(1)},${wy.toFixed(1)}) scale=${scale.toFixed(2)} offset=(${offset.x.toFixed(0)},${offset.y.toFixed(0)}) rect=(${rect.left.toFixed(0)},${rect.top.toFixed(0)} ${rect.width.toFixed(0)}×${rect.height.toFixed(0)})`);
-
     // Compass mode - handle center/handle dragging or repositioning
     if (circleInput.visible && circleInput.center) {
       const r = circleInput.radius * PIXELS_PER_CM;
@@ -1453,7 +1832,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
           if (angleTabletState.step === 'selectLine') {
             // Krok 1: Výběr linky (s přichytáváním na body)
             const baseShape = shapes.find(s => s.id === hoveredShape.id);
-            if (baseShape && ['line', 'segment', 'ray'].includes(baseShape.type)) {
+            if (baseShape && ['line', 'lineDashed', 'segment', 'ray'].includes(baseShape.type)) {
               let initPos = hoveredShape.proj;
               const snap = getSnapPosition(hoveredShape.proj.x, hoveredShape.proj.y, 25);
               if (snap) initPos = snap;
@@ -1629,6 +2008,11 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
             return false;
           }));
         }
+        return;
+      }
+      const freehandId = getFreehandPathAtPoint(wx, wy);
+      if (freehandId) {
+        setFreehandPaths(prev => prev.filter(p => p.id !== freehandId));
       }
       return;
     }
@@ -1651,7 +2035,8 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
         if (hiddenAtIntersection) {
           const assignedLabel = promoteToVisiblePoint(hiddenAtIntersection.id);
           triggerEffect(px, py, '#3b82f6');
-          if (assignedLabel) addConstructionStep('point', assignedLabel, assignedLabel, `Bod ${assignedLabel}`, [hiddenAtIntersection.id]);
+          if (assignedLabel) addConstructionStep('point', assignedLabel, assignedLabel, `Bod ${assignedLabel}`, [hiddenAtIntersection.id], descLatexPoint(assignedLabel));
+          clearSelectionAfterPlacement();
           promotedHidden = true;
         }
       } else if (lineSnap) {
@@ -1661,7 +2046,8 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
         if (hiddenAtLine) {
           const assignedLabel = promoteToVisiblePoint(hiddenAtLine.id);
           triggerEffect(px, py, '#3b82f6');
-          if (assignedLabel) addConstructionStep('point', assignedLabel, assignedLabel, `Bod ${assignedLabel}`, [hiddenAtLine.id]);
+          if (assignedLabel) addConstructionStep('point', assignedLabel, assignedLabel, `Bod ${assignedLabel}`, [hiddenAtLine.id], descLatexPoint(assignedLabel));
+          clearSelectionAfterPlacement();
           promotedHidden = true;
         }
       }
@@ -1678,7 +2064,8 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
           };
           setPoints(prev => [...prev, newPoint]);
           triggerEffect(px, py, '#3b82f6');
-          addConstructionStep('point', newPoint.label, newPoint.label, `Bod ${newPoint.label}`, [newPoint.id]);
+          addConstructionStep('point', newPoint.label, newPoint.label, `Bod ${newPoint.label}`, [newPoint.id], descLatexPoint(newPoint.label));
+          clearSelectionAfterPlacement();
         }
       }
       return;
@@ -1692,9 +2079,9 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
           // Krok 1: Výběr linky (s přichytáváním na body)
           if (hoveredShape) {
             const baseShape = shapes.find(s => s.id === hoveredShape.id);
-            if (baseShape && ['line', 'segment', 'ray'].includes(baseShape.type)) {
+            if (baseShape && ['line', 'lineDashed', 'segment', 'ray'].includes(baseShape.type)) {
               let initPos = hoveredShape.proj;
-              const snap = getSnapPosition(hoveredShape.proj.x, hoveredShape.proj.y, 25);
+              const snap = getSnapPositionPreferPoint(hoveredShape.proj.x, hoveredShape.proj.y, 25, undefined, true);
               if (snap) initPos = snap;
               setPerpTabletState({
                 step: 'positioning',
@@ -1712,7 +2099,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
       // PC mód - původní logika (jeden klik)
       if (hoveredShape) {
         const baseShape = shapes.find(s => s.id === hoveredShape.id);
-        if (baseShape && ['line', 'segment', 'ray'].includes(baseShape.type)) {
+        if (baseShape && ['line', 'lineDashed', 'segment', 'ray'].includes(baseShape.type)) {
             
             const bp1 = points.find(p => p.id === baseShape.definition.p1Id);
             const bp2 = baseShape.definition.p2Id ? points.find(p => p.id === baseShape.definition.p2Id) : null;
@@ -1731,10 +2118,10 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
             const perpDy = dx;
             const len = Math.sqrt(perpDx*perpDx + perpDy*perpDy) || 1;
             
-            // Snap to existing point or intersection
-            const snapPos = getSnapPosition(wx, wy);
-            const pX = snapPos ? snapPos.x : wx;
-            const pY = snapPos ? snapPos.y : wy;
+            // Snap: viditelné body + průsečíky; skryté konstrukční body ne (jinak „ukradnou“ kolmici od projekce na přímku).
+            const snapPos = getSnapPositionPreferPoint(wx, wy, SNAP_PX, undefined, true);
+            const pX = snapPos ? snapPos.x : hoveredShape.proj.x;
+            const pY = snapPos ? snapPos.y : hoveredShape.proj.y;
             
             const newP1Id = crypto.randomUUID();
             const newP2Id = crypto.randomUUID();
@@ -1781,26 +2168,47 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
             setShapes(prev => [...prev, newLine]);
             triggerEffect(pX, pY, '#3b82f6');
             // Zápis konstrukce - kolmice
-            addConstructionStep('perpendicular', `${newLine.label} ⊥ ${baseShape.label}`, `${newLine.label} \\perp ${baseShape.label}`, `Kolmice ${newLine.label} k přímce ${baseShape.label}`, [newLine.id]);
+            addConstructionStep(
+              'perpendicular',
+              `${newLine.label} ⊥ ${baseShape.label}`,
+              `${newLine.label} \\perp ${baseShape.label}`,
+              `Kolmice ${newLine.label} k přímce ${baseShape.label}`,
+              [newLine.id],
+              descLatexPerpendicular(newLine.label, baseShape.label)
+            );
             setActiveTool('move'); // Reset nástroje po dokončení
+            clearSelectionAfterPlacement();
         }
       }
       return;
     }
 
-    // 5. NÁSTROJ: VOLNÉ PERO / ZVÝRAZŇOVAČ
-    if (activeTool === 'freehand' || activeTool === 'highlighter') {
-       if (activeTool === 'highlighter' && e.shiftKey && lastHighlightPointRef.current) {
-         // Shift+click: straight line from last point to here
+    // 5. NÁSTROJ: VOLNÉ PERO / ZVÝRAZŇOVAČ / ZVÝRAZŇOVAČ (pravítko — jako trvalý Shift)
+    if (activeTool === 'freehand' || activeTool === 'highlighter' || activeTool === 'highlighterStraight') {
+       const straightHighlight =
+         activeTool === 'highlighterStraight' ||
+         (activeTool === 'highlighter' && e.shiftKey);
+       if (straightHighlight && lastHighlightPointRef.current) {
          const start = lastHighlightPointRef.current;
-         setFreehandPaths(prev => [...prev, {
-           id: crypto.randomUUID(),
-           points: [start, { x: wx, y: wy }],
-           color: 'rgba(250, 204, 21, 0.4)',
-           width: 20,
-           isHighlight: true,
-         }]);
+         const end = { x: wx, y: wy };
+         const dx = end.x - start.x;
+         const dy = end.y - start.y;
+         if (dx * dx + dy * dy > 1e-12) {
+           setFreehandPaths(prev => [...prev, {
+             id: crypto.randomUUID(),
+             points: [start, end],
+             color: 'rgba(250, 204, 21, 0.4)',
+             width: 20,
+             isHighlight: true,
+           }]);
+           lastHighlightPointRef.current = end;
+         }
+         clearSelectionAfterPlacement();
+         return;
+       }
+       if (activeTool === 'highlighterStraight') {
          lastHighlightPointRef.current = { x: wx, y: wy };
+         clearSelectionAfterPlacement();
          return;
        }
        currentPathRef.current = [{ x: wx, y: wy }];
@@ -1810,8 +2218,20 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     // 4. NÁSTROJE TVARŮ (ÚSEČKA, PŘÍMKA, KRUŽNICE, ÚHEL)
     // V tablet módu úhloměr nepoužívá 2-bodový workflow
     if (activeTool === 'angle' && isTabletMode) return;
-    if (['segment', 'line', 'circle', 'angle'].includes(activeTool)) {
-      let targetPointId = snapped?.id;
+    if (['segment', 'line', 'lineDashed', 'circle', 'angle'].includes(activeTool)) {
+      // Nejprve bod vs. průsečík jako u getSnapPosition (ne jen getSnappingPoint u kurzoru — jinak u průsečíku
+      // vyhrál jiný bod / popisek). Existující bod jen pokud cíl přichytávání leží na něm (skryté body OK).
+      const snapPos = getSnapPosition(wx, wy, SNAP_PX);
+      const SNAP_MATCH_ON_POINT_PX = 2;
+      let snappedShape: GeoPoint | null = null;
+      if (snapPos) {
+        const p = getSnappingPoint(snapPos.x, snapPos.y, SNAP_PX);
+        if (p) {
+          const dPx = Math.hypot((p.x - snapPos.x) * scale, (p.y - snapPos.y) * scale);
+          if (dPx <= SNAP_MATCH_ON_POINT_PX) snappedShape = p;
+        }
+      }
+      let targetPointId = snappedShape?.id;
 
       // Pokud klikneme do prázdna, vytvoříme bod automaticky
       // KROMĚ: druhého kliku s aktivním fixním poloměrem (ten vytvoří bod sám)
@@ -1822,13 +2242,12 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
           (activeTool === 'circle' && isTabletMode && selectedPointId === null); // Tablet circle first click handled by its own section with intersection snapping
         
         if (!skipAutoPoint) {
-          const isHidden = activeTool === 'line';
+          const isHidden = activeTool === 'line' || activeTool === 'lineDashed';
           // Pro kružnici: pokud je už vybraný první bod (střed), druhý bod (na obvodu) nemá label
           const isCircleRadiusPoint = activeTool === 'circle' && selectedPointId !== null;
-          // Zkusit přichytit k průsečíku dvou čar
-          const intersection = findNearestIntersection(wx, wy);
-          const ptX = intersection ? intersection.x : wx;
-          const ptY = intersection ? intersection.y : wy;
+          const intFallback = snapPos ? null : findNearestIntersection(wx, wy);
+          const ptX = snapPos ? snapPos.x : (intFallback?.x ?? wx);
+          const ptY = snapPos ? snapPos.y : (intFallback?.y ?? wy);
           const newPoint: GeoPoint = {
             id: crypto.randomUUID(),
             x: ptX,
@@ -1869,10 +2288,9 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
           
           // Pokud není snapped na existující bod, vytvoříme nový
           if (!centerId) {
-            // Zkusit přichytit k průsečíku dvou čar
-            const intersection = findNearestIntersection(wx, wy);
-            const cX = intersection ? intersection.x : wx;
-            const cY = intersection ? intersection.y : wy;
+            const intFallback = snapPos ? null : findNearestIntersection(wx, wy);
+            const cX = snapPos ? snapPos.x : (intFallback?.x ?? wx);
+            const cY = snapPos ? snapPos.y : (intFallback?.y ?? wy);
             const newCenterPoint: GeoPoint = {
               id: crypto.randomUUID(),
               x: cX,
@@ -1983,7 +2401,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
         }
 
         if (activeTool === 'circle') pendingCircleCenterRef.current = null;
-        startConstructionAnimation(activeTool as 'segment'|'line'|'circle'|'ray', p1, p2);
+        startConstructionAnimation(activeTool as 'segment'|'line'|'lineDashed'|'circle'|'ray', p1, p2);
         setSelectedPointId(null);
       }
     }
@@ -2091,19 +2509,6 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     }
   };
 
-  const distToSegment = (p: {x:number, y:number}, v: {x:number, y:number}, w: {x:number, y:number}) => {
-    const l2 = (w.x - v.x) ** 2 + (w.y - v.y) ** 2;
-    if (l2 === 0) return { dist: Math.sqrt((p.x - v.x) ** 2 + (p.y - v.y) ** 2), proj: v, t: 0 };
-    let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2;
-    t = Math.max(0, Math.min(1, t));
-    const proj = { x: v.x + t * (w.x - v.x), y: v.y + t * (w.y - v.y) };
-    return {
-        dist: Math.sqrt((p.x - proj.x) ** 2 + (p.y - proj.y) ** 2),
-        proj: proj,
-        t: t
-    };
-  };
-
   // Detekce volné kresby / zvýrazňovače pod kurzorem
   const getFreehandPathAtPoint = (wx: number, wy: number): string | null => {
     const TOLERANCE = 10 / scale;
@@ -2137,7 +2542,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
       const p2 = points.find(p => p.id === shape.definition.p2Id);
       if (!p1 || !p2) return;
 
-      if (shape.type === 'circle') {
+      if (shape.type === 'circle' || shape.type === 'circleArc') {
         const r = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
         const distFromCenter = Math.sqrt(Math.pow(wx - p1.x, 2) + Math.pow(wy - p1.y, 2));
         const distToCircle = Math.abs(distFromCenter - r);
@@ -2148,13 +2553,13 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
       } else {
         let start: {x:number,y:number} = p1;
         let end: {x:number,y:number} = p2;
-        if (shape.type === 'line' || shape.type === 'ray') {
+        if (shape.type === 'line' || shape.type === 'lineDashed' || shape.type === 'ray') {
           const dx = p2.x - p1.x;
           const dy = p2.y - p1.y;
           const len = Math.sqrt(dx * dx + dy * dy);
           if (len > 0.001) {
             const EXT = 100000;
-            if (shape.type === 'line') start = { x: p1.x - dx / len * EXT, y: p1.y - dy / len * EXT };
+            if (shape.type === 'line' || shape.type === 'lineDashed') start = { x: p1.x - dx / len * EXT, y: p1.y - dy / len * EXT };
             end = { x: p1.x + dx / len * EXT, y: p1.y + dy / len * EXT };
           }
         }
@@ -2196,7 +2601,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
         let minD = isInPositioningMode ? Infinity : baseThreshold / scale;
 
         shapes.forEach(shape => {
-            if (shape.type === 'segment' || shape.type === 'line' || shape.type === 'ray') {
+            if (shape.type === 'segment' || shape.type === 'line' || shape.type === 'lineDashed' || shape.type === 'ray') {
                 // V positioning módu kolmice snappuj pouze na vybranou linku
                 if (activeTool === 'perpendicular' && isTabletMode && perpTabletState.step === 'positioning') {
                     if (shape.id !== perpTabletState.selectedLineId) return;
@@ -2211,13 +2616,13 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
                     let start = p1;
                     let end = p2;
                     // Pro ray a line musíme "prodloužit" segment pro detekci
-                    if (shape.type === 'line' || shape.type === 'ray') {
+                    if (shape.type === 'line' || shape.type === 'lineDashed' || shape.type === 'ray') {
                          const dx = p2.x - p1.x;
                          const dy = p2.y - p1.y;
                          const len = Math.sqrt(dx*dx + dy*dy);
                          if (len > 0.001) {
                              const EXT = 100000;
-                             if (shape.type === 'line') start = { x: p1.x - dx/len * EXT, y: p1.y - dy/len * EXT } as any;
+                             if (shape.type === 'line' || shape.type === 'lineDashed') start = { x: p1.x - dx/len * EXT, y: p1.y - dy/len * EXT } as any;
                              end = { x: p1.x + dx/len * EXT, y: p1.y + dy/len * EXT } as any;
                          }
                     }
@@ -2254,7 +2659,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
         nearestIntersectionRef.current = null;
         nearestLineSnapRef.current = snapToNearestShape(wx, wy);
       }
-    } else if (['circle', 'segment', 'line', 'angle', 'perpendicular', 'ray', 'bisector'].includes(activeTool)) {
+    } else if (['circle', 'segment', 'line', 'lineDashed', 'angle', 'perpendicular', 'ray', 'bisector'].includes(activeTool)) {
       // Intersection snap indicator — show even when a point is nearby (distance-based priority)
       const intSnap = findNearestIntersection(wx, wy);
       if (intSnap && snapped) {
@@ -2333,8 +2738,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     if (activeTool === 'perpendicular' && isTabletMode && perpTabletState.step === 'positioning') {
       if (perpTabletState.selectedLineId && hoveredShape && hoveredShape.id === perpTabletState.selectedLineId) {
         let pos = hoveredShape.proj;
-        // Snap to nearby point on the line
-        const snapPerp = getSnapPosition(hoveredShape.proj.x, hoveredShape.proj.y, 25);
+        const snapPerp = getSnapPositionPreferPoint(hoveredShape.proj.x, hoveredShape.proj.y, 25, undefined, true);
         if (snapPerp) {
           pos = snapPerp;
         }
@@ -2457,6 +2861,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
                 width: isHL ? 20 : 2,
                 isHighlight: isHL || undefined,
             }]);
+            clearSelectionAfterPlacement();
             // Save last point for shift+click straight lines
             if (isHL) {
               const pts = currentPathRef.current!;
@@ -2489,7 +2894,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
           const p2 = points.find(p => p.id === shape.definition.p2Id);
           if (!p1 || !p2) return;
           
-          if (shape.type === 'circle') {
+          if (shape.type === 'circle' || shape.type === 'circleArc') {
             if (pointInRect(p1.x, p1.y)) {
               foundShapeIds.push(shape.id);
             }
@@ -2634,22 +3039,23 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
 
   // --- ANIMACE ---
   const startConstructionAnimation = (
-    type: 'segment' | 'line' | 'circle' | 'ray', 
-    p1: {x: number, y: number, id: string}, 
-    p2: {x: number, y: number, id: string}
+    type: 'segment' | 'line' | 'lineDashed' | 'circle' | 'circleArc' | 'ray',
+    p1: { x: number; y: number; id: string },
+    p2: { x: number; y: number; id: string },
+    arcSpanRad?: number
   ) => {
     // Uložit vizualizaci pro přehrávání
     const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
     const radius = Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2);
-    
-    if (type === 'segment' || type === 'line' || type === 'ray') {
+
+    if (type === 'segment' || type === 'line' || type === 'lineDashed' || type === 'ray') {
       pendingToolVisualizationRef.current = {
         type: 'ruler',
         p1: { x: p1.x, y: p1.y },
         p2: { x: p2.x, y: p2.y },
         angle
       };
-    } else if (type === 'circle') {
+    } else if (type === 'circle' || type === 'circleArc') {
       pendingToolVisualizationRef.current = {
         type: 'compass',
         p1: { x: p1.x, y: p1.y },
@@ -2658,14 +3064,15 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
         radius
       };
     }
-    
+
     setAnimState({
       isActive: true,
-      type: type,
+      type,
       startTime: performance.now(),
       p1,
       p2,
-      progress: 0
+      progress: 0,
+      arcSpan: type === 'circleArc' ? (arcSpanRad ?? COMPASS_ARC_SPAN_RAD) : undefined
     });
   };
 
@@ -2685,7 +3092,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
 
       if (animState.isActive && animState.p1 && animState.p2) {
         // Rychlost animace - rychlej   na pomal ch za zen ch pro lep   responsivitu
-        const duration = isLowPerformance ? 1000 : 2000; // ms (zkr ceno pro star  za zen )
+        const duration = constructionAnimMs.total;
         const elapsed = time - animState.startTime;
         const rawProgress = Math.min(elapsed / duration, 1);
         
@@ -2698,6 +3105,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
           
           if (!isPlayback) {
             setActiveTool('move'); // Reset nástroje po dokončení animace
+            clearSelectionAfterPlacement();
           }
           
           let newShape: GeoShape | null = null;
@@ -2762,16 +3170,30 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
             };
 
           } else if (!isPlayback) {
-             newShape = {
-              id: crypto.randomUUID(),
-              type: animState.type as any,
-              label: getNextShapeLabel(animState.type as any),
-              points: [(animState.p1 as any).id, (animState.p2 as any).id],
-              definition: {
-                p1Id: (animState.p1 as any).id,
-                p2Id: (animState.p2 as any).id
-              }
-            };
+            if (animState.type === 'circleArc') {
+              newShape = {
+                id: crypto.randomUUID(),
+                type: 'circleArc',
+                label: getNextShapeLabel('circleArc'),
+                points: [(animState.p1 as any).id, (animState.p2 as any).id],
+                definition: {
+                  p1Id: (animState.p1 as any).id,
+                  p2Id: (animState.p2 as any).id,
+                  arcSpan: animState.arcSpan ?? COMPASS_ARC_SPAN_RAD
+                }
+              };
+            } else {
+              newShape = {
+                id: crypto.randomUUID(),
+                type: animState.type as any,
+                label: getNextShapeLabel(animState.type as any),
+                points: [(animState.p1 as any).id, (animState.p2 as any).id],
+                definition: {
+                  p1Id: (animState.p1 as any).id,
+                  p2Id: (animState.p2 as any).id
+                }
+              };
+            }
           }
           
           if (newShape && !isPlayback) {
@@ -2784,7 +3206,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
             const p1data = animState.p1 as any;
             const p2data = animState.p2 as any;
             // For circles: reposition radius point to 45° (down-right) from center
-            if (newShape.type === 'circle') {
+            if (newShape.type === 'circle' || newShape.type === 'circleArc') {
               const r = Math.sqrt((p2data.x - p1data.x) ** 2 + (p2data.y - p1data.y) ** 2);
               setPoints(prev => prev.map(pt =>
                 pt.id === p2data.id
@@ -2799,9 +3221,10 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
               addConstructionStep(
                 'segment',
                 `${lA}${lB}; |${lA}${lB}| = ${d} cm`,
-                `${lA}${lB} \\;;\\; |${lA}${lB}| = ${d} \\text{ cm}`,
+                `${lA}${lB} \\;;\\; |${lA}${lB}| = ${decimalForLatex(d)} \\text{ cm}`,
                 `Úsečka ${lA}${lB} o délce ${d} cm`,
-                [newShape.id]
+                [newShape.id],
+                `\\text{Úsečka } ${latexIt(lA)}${latexIt(lB)} \\text{ o délce } ${decimalForLatex(d)} \\text{ cm}`
               );
             } else if (newShape.type === 'line') {
               const lA = getPointLabel(p1data.id);
@@ -2810,16 +3233,38 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
               const notation = hasLabels ? `${newShape.label} = ${lA}${lB}` : `přímka ${newShape.label}`;
               const latex = hasLabels ? `${newShape.label} = ${lA}${lB}` : `\\text{přímka } ${newShape.label}`;
               const desc = hasLabels ? `Přímka ${newShape.label} procházející body ${lA}, ${lB}` : `Přímka ${newShape.label}`;
-              addConstructionStep('line', notation, latex, desc, [newShape.id]);
+              const descLatex = hasLabels ? descLatexLine(newShape.label, lA, lB, false) : descLatexLineShort(newShape.label, false);
+              addConstructionStep('line', notation, latex, desc, [newShape.id], descLatex);
+            } else if (newShape.type === 'lineDashed') {
+              const lA = getPointLabel(p1data.id);
+              const lB = getPointLabel(p2data.id);
+              const hasLabels = lA !== '?' && lB !== '?' && lA !== '' && lB !== '';
+              const notation = hasLabels ? `${newShape.label} = ${lA}${lB}` : `čárkovaná přímka ${newShape.label}`;
+              const latex = hasLabels ? `${newShape.label} = ${lA}${lB}` : `\\text{čárkovaná přímka } ${newShape.label}`;
+              const desc = hasLabels ? `Čárkovaná přímka ${newShape.label} procházející body ${lA}, ${lB}` : `Čárkovaná přímka ${newShape.label}`;
+              const descLatexD = hasLabels ? descLatexLine(newShape.label, lA, lB, true) : descLatexLineShort(newShape.label, true);
+              addConstructionStep('lineDashed', notation, latex, desc, [newShape.id], descLatexD);
             } else if (newShape.type === 'circle') {
               const lS = getPointLabel(p1data.id);
               const r = distanceCm(p1data.x, p1data.y, p2data.x, p2data.y);
               addConstructionStep(
                 'circle',
                 `${newShape.label}(${lS}; ${r} cm)`,
-                `${newShape.label}(${lS};\\, ${r} \\text{ cm})`,
+                `${newShape.label}(${lS};\\, ${decimalForLatex(r)} \\text{ cm})`,
                 `Kružnice ${newShape.label} se středem ${lS} a poloměrem ${r} cm`,
-                [newShape.id]
+                [newShape.id],
+                `\\text{Kružnice } ${latexIt(newShape.label)} \\text{ se středem } ${latexIt(lS)} \\text{ a poloměrem } ${decimalForLatex(r)} \\text{ cm}`
+              );
+            } else if (newShape.type === 'circleArc') {
+              const lS = getPointLabel(p1data.id);
+              const r = distanceCm(p1data.x, p1data.y, p2data.x, p2data.y);
+              addConstructionStep(
+                'circle',
+                `${newShape.label}(${lS}; výsek ${r} cm)`,
+                `${newShape.label}(${lS};\\, \\text{výsek } ${decimalForLatex(r)} \\text{ cm})`,
+                `Výsek kružnice ${newShape.label} se středem ${lS}, poloměrem ${r} cm`,
+                [newShape.id],
+                `\\text{Výsek kružnice } ${latexIt(newShape.label)} \\text{ se středem } ${latexIt(lS)} \\text{, } poloměrem ${decimalForLatex(r)} \\text{ cm}`
               );
             } else if (newShape.type === 'ray') {
               const lV = getPointLabel(p1data.id);
@@ -2829,7 +3274,8 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
                 `∠ = ${angleVal}°, polopřímka z ${lV}`,
                 `\\angle = ${angleVal}^{\\circ},\\; \\text{polopřímka z } ${lV}`,
                 `Vynesení úhlu ${angleVal}° z bodu ${lV}`,
-                [newShape.id]
+                [newShape.id],
+                `\\text{Vynesení úhlu } ${angleVal}^{\\circ} \\text{ z bodu } ${latexIt(lV)}`
               );
             }
           }
@@ -2841,7 +3287,8 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
             startTime: 0,
             p1: null,
             p2: null,
-            progress: 0
+            progress: 0,
+            arcSpan: undefined
           });
         }
       }
@@ -2859,7 +3306,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     return () => {
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
     };
-  }, [animState, points, shapes, freehandPaths, scale, offset, canvasSize, darkMode, selectedPointId, hoveredPointId, hoveredShape, activeTool, visualEffects, angleInput, circleInput, recordingState.showPlayer, showMeasurements, showGrid, perpTabletState, circleTabletState, isTabletMode, angleTabletState, selectedShapeIds, hoveredShapeForMove, selectedFreehandIds, draggedPointId]);
+  }, [animState, points, shapes, freehandPaths, scale, offset, canvasSize, darkMode, selectedPointId, hoveredPointId, hoveredShape, activeTool, visualEffects, angleInput, circleInput, recordingState.showPlayer, showMeasurements, showGrid, perpTabletState, circleTabletState, isTabletMode, angleTabletState, selectedShapeIds, hoveredShapeForMove, selectedFreehandIds, draggedPointId, constructionAnimMs]);
 
 
   // --- RENDEROVÁNÍ ---
@@ -2876,6 +3323,9 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
       }
       return p;
     };
+
+    /** UI prvky (táhla, šipky) v px obrazovky → světové jednotky; po ctx.scale(zoom) stejná velikost jako u bodů */
+    const sx = (screenPx: number) => screenPx / scale;
 
     // Reset - optimalizace pro star  za zen  (sn en  DPR)
     const dpr = isLowPerformance ? 1 : (window.devicePixelRatio || 1);
@@ -2943,6 +3393,27 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
         }
     }
 
+    // Náhled: zvýraznění podle pravítka (úsečka od kotvy ke kurzoru)
+    if (
+      activeTool === 'highlighterStraight' &&
+      lastHighlightPointRef.current &&
+      mousePosRef.current
+    ) {
+      const a = lastHighlightPointRef.current;
+      const b = mousePosRef.current;
+      ctx.save();
+      ctx.globalAlpha = 0.45;
+      ctx.beginPath();
+      ctx.strokeStyle = 'rgba(250, 204, 21, 0.65)';
+      ctx.lineWidth = 20 / scale;
+      ctx.setLineDash([6 / scale, 5 / scale]);
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+
     // 0b. Volné pero (freehand) - pod tvary ale nad zvýrazňovačem
     freehandPaths.forEach(path => {
         if (path.isHighlight || path.points.length < 2) return;
@@ -2986,7 +3457,105 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
         }
     }
 
-    // 1. Vykreslení hotových tvarů
+    // 1. Vykreslení hotových tvarů — jemné „uhýbání“: jen druhá strana kolmo k čáře, bez skoků podél přímky
+    const labelClearR = 14 / scale;
+
+    const shapeLabelObstruction = (c: { x: number; y: number }, excludeId: string): number => {
+      let bad = 0;
+      for (const s of shapes) {
+        if (s.id === excludeId) continue;
+        const o1 = points.find(pt => pt.id === s.definition.p1Id);
+        const o2 = points.find(pt => pt.id === s.definition.p2Id);
+        if (!o1 || !o2) continue;
+        const q1 = getLivePoint(o1);
+        const q2 = getLivePoint(o2);
+        let d = Infinity;
+        if (s.type === 'segment') d = distToSegment(c, q1, q2).dist;
+        else if (s.type === 'line' || s.type === 'lineDashed') d = distPointToLine(c, q1, q2);
+        else if (s.type === 'ray') d = distPointToRay(c, q1, q2);
+        else if (s.type === 'circle' || s.type === 'circleArc') {
+          const rr = Math.hypot(q2.x - q1.x, q2.y - q1.y);
+          const dc = Math.hypot(c.x - q1.x, c.y - q1.y);
+          d = Math.abs(dc - rr);
+        }
+        if (d < labelClearR) bad += labelClearR - d;
+      }
+      return bad;
+    };
+
+    /** Jedna kotva podél přímky, volba jen +pad / −pad kolmo (žádné skákání po t). */
+    const pickLineShapeLabelWorld = (
+      shapeId: string,
+      p1: { x: number; y: number },
+      p2: { x: number; y: number },
+      lineAng: number,
+      t: number,
+      pad: number
+    ): { x: number; y: number } => {
+      const dx = p2.x - p1.x;
+      const dy = p2.y - p1.y;
+      const ax = p1.x + t * dx;
+      const ay = p1.y + t * dy;
+      const nx = -Math.sin(lineAng);
+      const ny = Math.cos(lineAng);
+      const pos = { x: ax + nx * pad, y: ay + ny * pad };
+      const neg = { x: ax - nx * pad, y: ay - ny * pad };
+      const oPos = shapeLabelObstruction(pos, shapeId);
+      const oNeg = shapeLabelObstruction(neg, shapeId);
+      if (oNeg < oPos - 1e-6) return neg;
+      return pos;
+    };
+
+    /**
+     * Popisek kružnice: výchozí naproti táhlu, ale zkusíme úhly kolem dokola na (r+pad),
+     * aby se text nepoložil na jinou přímku/úsečku. Při špatném skóre ještě větší poloměr.
+     */
+    const pickCircleShapeLabelWorld = (
+      shapeId: string,
+      center: { x: number; y: number },
+      r: number,
+      pad: number,
+      handleAngle: number
+    ): { x: number; y: number } => {
+      const α0 = handleAngle + Math.PI;
+      const radial = r + pad;
+      const angleSteps = [0, 0.45, -0.45, 0.9, -0.9, 1.35, -1.35, 1.8, -1.8];
+      let best = { x: center.x + Math.cos(α0) * radial, y: center.y + Math.sin(α0) * radial };
+      let bestScore = Infinity;
+
+      const scoreAt = (a: number, rad: number): number => {
+        const c = {
+          x: center.x + Math.cos(a) * rad,
+          y: center.y + Math.sin(a) * rad
+        };
+        let s = shapeLabelObstruction(c, shapeId);
+        s += 0.12 * angleDist(a, α0);
+        return s;
+      };
+
+      for (const d of angleSteps) {
+        const a = α0 + d;
+        const s = scoreAt(a, radial);
+        if (s < bestScore - 1e-9) {
+          bestScore = s;
+          best = { x: center.x + Math.cos(a) * radial, y: center.y + Math.sin(a) * radial };
+        }
+      }
+
+      if (bestScore > 0.35) {
+        const outer = r + pad + 10 / scale;
+        for (const d of angleSteps) {
+          const a = α0 + d;
+          const s = scoreAt(a, outer);
+          if (s < bestScore - 1e-9) {
+            bestScore = s;
+            best = { x: center.x + Math.cos(a) * outer, y: center.y + Math.sin(a) * outer };
+          }
+        }
+      }
+      return best;
+    };
+
     shapes.forEach(shape => {
       const p1raw = points.find(p => p.id === shape.definition.p1Id);
       const p2raw = points.find(p => p.id === shape.definition.p2Id);
@@ -3002,19 +3571,46 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
             const dist = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
             const cm = (dist / PIXELS_PER_CM).toFixed(1).replace('.', ',');
             const segAngle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
-            const perpOff = 15;
+            const perpOff = 15 / scale;
             drawMeasurement(ctx, (p1.x + p2.x)/2 + (-Math.sin(segAngle) * perpOff), (p1.y + p2.y)/2 + (Math.cos(segAngle) * perpOff), `${cm} cm`, segAngle);
         }
       } else if (shape.type === 'line') {
         drawLine(ctx, p1, p2, 1, darkMode ? '#e5e7eb' : '#1f2937');
-        drawLabel(ctx, { x: p1.x + (p2.x - p1.x)*1.1, y: p1.y + (p2.y - p1.y)*1.1 }, shape.label, darkMode ? '#9ca3af' : '#6b7280');
+        {
+          const lineAng = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+          const pad = SHAPE_LABEL_PAD_SCREEN_PX / scale;
+          const target = pickLineShapeLabelWorld(shape.id, p1, p2, lineAng, 1.1, pad);
+          const pos = getShapeLabelDrawPosition(shape.id, target);
+          drawLabel(ctx, pos, shape.label, darkMode ? '#9ca3af' : '#6b7280', 0, 0);
+        }
+      } else if (shape.type === 'lineDashed') {
+        drawLine(ctx, p1, p2, 1, darkMode ? '#e5e7eb' : '#1f2937', 2, true);
+        {
+          const lineAng = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+          const pad = SHAPE_LABEL_PAD_SCREEN_PX / scale;
+          const target = pickLineShapeLabelWorld(shape.id, p1, p2, lineAng, 1.1, pad);
+          const pos = getShapeLabelDrawPosition(shape.id, target);
+          drawLabel(ctx, pos, shape.label, darkMode ? '#9ca3af' : '#6b7280', 0, 0);
+        }
       } else if (shape.type === 'ray') {
         drawRay(ctx, p1, p2, 1, darkMode ? '#e5e7eb' : '#1f2937');
-        drawLabel(ctx, { x: p1.x + (p2.x - p1.x)*0.5, y: p1.y + (p2.y - p1.y)*0.5 }, shape.label, darkMode ? '#9ca3af' : '#6b7280');
+        {
+          const lineAng = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+          const pad = SHAPE_LABEL_PAD_SCREEN_PX / scale;
+          const target = pickLineShapeLabelWorld(shape.id, p1, p2, lineAng, 0.55, pad);
+          const pos = getShapeLabelDrawPosition(shape.id, target);
+          drawLabel(ctx, pos, shape.label, darkMode ? '#9ca3af' : '#6b7280', 0, 0);
+        }
       } else if (shape.type === 'circle') {
         const r = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
         drawCircle(ctx, p1, r, 1, darkMode ? '#e5e7eb' : '#1f2937');
-        drawLabel(ctx, { x: p1.x + r * 0.7, y: p1.y - r * 0.7 }, shape.label, darkMode ? '#9ca3af' : '#6b7280');
+        {
+          const θ = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+          const pad = SHAPE_LABEL_PAD_SCREEN_PX / scale;
+          const target = pickCircleShapeLabelWorld(shape.id, p1, r, pad, θ);
+          const pos = getShapeLabelDrawPosition(shape.id, target);
+          drawLabel(ctx, pos, shape.label, darkMode ? '#9ca3af' : '#6b7280', 0, 0);
+        }
         
         // Malý kontrolní bod (handle) na obvodu pro změnu velikosti
         const isHandleHovered = p2.id === hoveredPointId;
@@ -3024,17 +3620,17 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
         // Glow efekt při hoveru
         if (isHandleHovered || isHandleDragged) {
           ctx.beginPath();
-          ctx.arc(p2.x, p2.y, 12, 0, Math.PI * 2);
+          ctx.arc(p2.x, p2.y, sx(12), 0, Math.PI * 2);
           ctx.fillStyle = darkMode ? 'rgba(122, 162, 247, 0.2)' : 'rgba(59, 130, 246, 0.2)';
           ctx.fill();
         }
         
         ctx.beginPath();
-        ctx.arc(p2.x, p2.y, isHandleHovered || isHandleDragged ? 7 : 6, 0, Math.PI * 2);
+        ctx.arc(p2.x, p2.y, sx(isHandleHovered || isHandleDragged ? 7 : 6), 0, Math.PI * 2);
         ctx.fillStyle = darkMode ? '#7aa2f7' : '#3b82f6';
         ctx.fill();
         ctx.strokeStyle = darkMode ? '#c0caf5' : '#ffffff';
-        ctx.lineWidth = 2;
+        ctx.lineWidth = sx(2);
         ctx.stroke();
         ctx.restore();
         
@@ -3045,6 +3641,68 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
              
              
              
+        }
+      } else if (shape.type === 'circleArc') {
+        const arcSpan = shape.definition.arcSpan ?? COMPASS_ARC_SPAN_RAD;
+        const r = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+        const { start, end } = circleArcAngles(p1, p2, arcSpan);
+        ctx.beginPath();
+        ctx.arc(p1.x, p1.y, r, start, end);
+        ctx.strokeStyle = darkMode ? '#e5e7eb' : '#1f2937';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        const arcHandlePos = circleArcRadiusHandlePos(p1, p2, arcSpan);
+        {
+          const midA = (start + end) / 2;
+          const pad = SHAPE_LABEL_PAD_SCREEN_PX / scale;
+          const handleAng = Math.atan2(arcHandlePos.y - p1.y, arcHandlePos.x - p1.x);
+          const base = {
+            x: p1.x + Math.cos(midA) * (r + pad),
+            y: p1.y + Math.sin(midA) * (r + pad)
+          };
+          let target = base;
+          let bestS = shapeLabelObstruction(base, shape.id);
+          const dhBase = Math.hypot(base.x - arcHandlePos.x, base.y - arcHandlePos.y);
+          if (dhBase < 24 / scale) bestS += 2;
+          for (const d of [0.3, -0.3] as const) {
+            const a = midA + d;
+            const c = {
+              x: p1.x + Math.cos(a) * (r + pad),
+              y: p1.y + Math.sin(a) * (r + pad)
+            };
+            let s = shapeLabelObstruction(c, shape.id);
+            const dh = Math.hypot(c.x - arcHandlePos.x, c.y - arcHandlePos.y);
+            if (dh < 24 / scale) s += 2;
+            if (angleDist(a, handleAng) < 0.35) s += 1;
+            if (s < bestS) {
+              bestS = s;
+              target = c;
+            }
+          }
+          const pos = getShapeLabelDrawPosition(shape.id, target);
+          drawLabel(ctx, pos, shape.label, darkMode ? '#9ca3af' : '#6b7280', 0, 0);
+        }
+        const isHandleHovered = p2.id === hoveredPointId;
+        const isHandleDragged = p2.id === draggedPointId;
+        ctx.save();
+        if (isHandleHovered || isHandleDragged) {
+          ctx.beginPath();
+          ctx.arc(arcHandlePos.x, arcHandlePos.y, sx(12), 0, Math.PI * 2);
+          ctx.fillStyle = darkMode ? 'rgba(122, 162, 247, 0.2)' : 'rgba(59, 130, 246, 0.2)';
+          ctx.fill();
+        }
+        ctx.beginPath();
+        ctx.arc(arcHandlePos.x, arcHandlePos.y, sx(isHandleHovered || isHandleDragged ? 7 : 6), 0, Math.PI * 2);
+        ctx.fillStyle = darkMode ? '#7aa2f7' : '#3b82f6';
+        ctx.fill();
+        ctx.strokeStyle = darkMode ? '#c0caf5' : '#ffffff';
+        ctx.lineWidth = sx(2);
+        ctx.stroke();
+        ctx.restore();
+
+        if (showMeasurements) {
+          const cm = (r / PIXELS_PER_CM).toFixed(1).replace('.', ',');
+          drawRadiusMeasurement(ctx, p1, p2, `r = ${cm} cm`);
         }
       }
     });
@@ -3073,6 +3731,15 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
           ctx.strokeStyle = selGlow;
           ctx.lineWidth = 16;
           ctx.stroke();
+        } else if (shape.type === 'circleArc') {
+          const arcSpan = shape.definition.arcSpan ?? COMPASS_ARC_SPAN_RAD;
+          const r = Math.sqrt(Math.pow(sp2.x - sp1.x, 2) + Math.pow(sp2.y - sp1.y, 2));
+          const { start, end } = circleArcAngles(sp1, sp2, arcSpan);
+          ctx.beginPath();
+          ctx.arc(sp1.x, sp1.y, r, start, end);
+          ctx.strokeStyle = selGlow;
+          ctx.lineWidth = 16;
+          ctx.stroke();
         } else if (shape.type === 'segment') {
           ctx.beginPath();
           ctx.moveTo(sp1.x, sp1.y);
@@ -3080,16 +3747,18 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
           ctx.strokeStyle = selGlow;
           ctx.lineWidth = 16;
           ctx.stroke();
-        } else if (shape.type === 'line') {
+        } else if (shape.type === 'line' || shape.type === 'lineDashed') {
           const dx = sp2.x - sp1.x, dy = sp2.y - sp1.y;
           const len = Math.sqrt(dx*dx+dy*dy) || 1;
           const EXT = 100000;
+          if (shape.type === 'lineDashed') ctx.setLineDash([14, 10]);
           ctx.beginPath();
           ctx.moveTo(sp1.x - dx/len*EXT, sp1.y - dy/len*EXT);
           ctx.lineTo(sp1.x + dx/len*EXT, sp1.y + dy/len*EXT);
           ctx.strokeStyle = selGlow;
           ctx.lineWidth = 16;
           ctx.stroke();
+          if (shape.type === 'lineDashed') ctx.setLineDash([]);
         } else if (shape.type === 'ray') {
           const dx = sp2.x - sp1.x, dy = sp2.y - sp1.y;
           const len = Math.sqrt(dx*dx+dy*dy) || 1;
@@ -3113,6 +3782,15 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
           ctx.strokeStyle = selColor;
           ctx.lineWidth = 3;
           ctx.stroke();
+        } else if (shape.type === 'circleArc') {
+          const arcSpan = shape.definition.arcSpan ?? COMPASS_ARC_SPAN_RAD;
+          const r = Math.sqrt(Math.pow(sp2.x - sp1.x, 2) + Math.pow(sp2.y - sp1.y, 2));
+          const { start, end } = circleArcAngles(sp1, sp2, arcSpan);
+          ctx.beginPath();
+          ctx.arc(sp1.x, sp1.y, r, start, end);
+          ctx.strokeStyle = selColor;
+          ctx.lineWidth = 3;
+          ctx.stroke();
         } else if (shape.type === 'segment') {
           ctx.beginPath();
           ctx.moveTo(sp1.x, sp1.y);
@@ -3120,7 +3798,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
           ctx.strokeStyle = selColor;
           ctx.lineWidth = 3;
           ctx.stroke();
-        } else if (shape.type === 'line') {
+        } else if (shape.type === 'line' || shape.type === 'lineDashed') {
           const dx = sp2.x - sp1.x, dy = sp2.y - sp1.y;
           const len = Math.sqrt(dx*dx+dy*dy) || 1;
           const EXT = 100000;
@@ -3165,13 +3843,22 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
             ctx.strokeStyle = hoverColor;
             ctx.lineWidth = 8;
             ctx.stroke();
+          } else if (shape.type === 'circleArc') {
+            const arcSpan = shape.definition.arcSpan ?? COMPASS_ARC_SPAN_RAD;
+            const r = Math.sqrt(Math.pow(sp2.x - sp1.x, 2) + Math.pow(sp2.y - sp1.y, 2));
+            const { start: a0, end: a1 } = circleArcAngles(sp1, sp2, arcSpan);
+            ctx.beginPath();
+            ctx.arc(sp1.x, sp1.y, r, a0, a1);
+            ctx.strokeStyle = hoverColor;
+            ctx.lineWidth = 8;
+            ctx.stroke();
           } else {
             let start = sp1, end = sp2;
-            if (shape.type === 'line' || shape.type === 'ray') {
+            if (shape.type === 'line' || shape.type === 'lineDashed' || shape.type === 'ray') {
               const dx = sp2.x - sp1.x, dy = sp2.y - sp1.y;
               const len = Math.sqrt(dx*dx+dy*dy) || 1;
               const EXT = 100000;
-              if (shape.type === 'line') start = { ...sp1, x: sp1.x - dx/len*EXT, y: sp1.y - dy/len*EXT };
+              if (shape.type === 'line' || shape.type === 'lineDashed') start = { ...sp1, x: sp1.x - dx/len*EXT, y: sp1.y - dy/len*EXT };
               end = { ...sp1, x: sp1.x + dx/len*EXT, y: sp1.y + dy/len*EXT };
             }
             ctx.beginPath();
@@ -3179,7 +3866,9 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
             ctx.lineTo(end.x, end.y);
             ctx.strokeStyle = hoverColor;
             ctx.lineWidth = 8;
+            if (shape.type === 'lineDashed') ctx.setLineDash([12, 8]);
             ctx.stroke();
+            if (shape.type === 'lineDashed') ctx.setLineDash([]);
           }
           ctx.restore();
         }
@@ -3188,8 +3877,9 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
 
     // 2. Vykreslení animovaného tvaru (právě rýsovaného)
     if (animState.isActive && animState.p1 && animState.p2) {
-      const { p1, p2, progress, type, angle } = animState;
-      
+      const { p1, p2, progress, type, angle, arcSpan } = animState;
+      const { pIn, pDrawEnd } = animPhase;
+
       const drawProg = getDrawProgress(progress);
       const activeColor = '#f97316'; // Neon Orange
       const activeWidth = 4;
@@ -3203,10 +3893,10 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
             const dist = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
             const cm = (dist / PIXELS_PER_CM).toFixed(1).replace('.', ',');
             const sA2 = Math.atan2(p2.y - p1.y, p2.x - p1.x);
-            drawMeasurement(ctx, (p1.x + p2.x)/2 + (-Math.sin(sA2) * 20), (p1.y + p2.y)/2 + (Math.cos(sA2) * 20), `${cm} cm`, sA2);
+            drawMeasurement(ctx, (p1.x + p2.x)/2 + (-Math.sin(sA2) * (20 / scale)), (p1.y + p2.y)/2 + (Math.cos(sA2) * (20 / scale)), `${cm} cm`, sA2);
         }
         
-        if (progress > 0.2 && progress < 0.8) {
+        if (progress > pIn && progress < pDrawEnd) {
              const cx = p1.x + (p2.x - p1.x) * drawProg;
              const cy = p1.y + (p2.y - p1.y) * drawProg;
              drawPenTip(ctx, cx, cy, activeColor);
@@ -3231,7 +3921,31 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
         }
         drawLine(ctx, p1, p2, progress, activeColor, activeWidth);
 
-        if (progress > 0.2 && progress < 0.8) {
+        if (progress > pIn && progress < pDrawEnd) {
+             const cx = start.x + (end.x - start.x) * drawProg;
+             const cy = start.y + (end.y - start.y) * drawProg;
+             drawPenTip(ctx, cx, cy, activeColor);
+        }
+      } else if (type === 'lineDashed') {
+        const dx = p2.x - p1.x;
+        const dy = p2.y - p1.y;
+        const len = Math.sqrt(dx*dx + dy*dy);
+        const extend = 1000; 
+        const start = { x: p1.x - dx/len * extend, y: p1.y - dy/len * extend };
+        const end = { x: p2.x + dx/len * extend, y: p2.y + dy/len * extend };
+        
+        if (len <= 200) {
+          const nx = dx / len;
+          const ny = dy / len;
+          const rStart = { x: p1.x - nx * 360, y: p1.y - ny * 360 };
+          const rEnd = { x: p1.x + nx * 440, y: p1.y + ny * 440 };
+          drawRuler(ctx, rStart, rEnd, progress);
+        } else {
+          drawRuler(ctx, p1, p2, progress);
+        }
+        drawLine(ctx, p1, p2, progress, activeColor, activeWidth, true);
+
+        if (progress > pIn && progress < pDrawEnd) {
              const cx = start.x + (end.x - start.x) * drawProg;
              const cy = start.y + (end.y - start.y) * drawProg;
              drawPenTip(ctx, cx, cy, activeColor);
@@ -3240,7 +3954,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
          drawRuler(ctx, p1, p2, progress);
          drawRay(ctx, p1, p2, progress, activeColor, activeWidth);
          
-         if (progress > 0.2 && progress < 0.8) {
+         if (progress > pIn && progress < pDrawEnd) {
              const dx = p2.x - p1.x;
              const dy = p2.y - p1.y;
              const len = Math.sqrt(dx*dx + dy*dy);
@@ -3285,7 +3999,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
           }
           drawRay(ctx, p1, p2, lineProgress, activeColor, activeWidth);
           
-          if (lineProgress > 0.2 && lineProgress < 0.8) {
+          if (lineProgress > pIn && lineProgress < pDrawEnd) {
               const subDrawProg = getDrawProgress(lineProgress);
               const dx = p2.x - p1.x;
               const dy = p2.y - p1.y;
@@ -3309,11 +4023,39 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
              drawRadiusMeasurement(ctx, p1, p2, `r = ${cm} cm`);
         }
         
-        if (progress > 0.2 && progress < 0.8) {
+        if (progress > pIn && progress < pDrawEnd) {
            const endAngle = Math.PI * 2 * drawProg;
            const cx = p1.x + r * Math.cos(endAngle);
            const cy = p1.y + r * Math.sin(endAngle);
            drawPenTip(ctx, cx, cy, activeColor);
+        }
+      } else if (type === 'circleArc') {
+        const r = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+        const as = arcSpan ?? COMPASS_ARC_SPAN_RAD;
+        const { start, end } = circleArcAngles(p1, p2, as);
+        let mapP = progress;
+        if (animState.isActive) {
+          if (progress < pIn) mapP = 0;
+          else if (progress > pDrawEnd) mapP = 1;
+          else mapP = (progress - pIn) / (pDrawEnd - pIn);
+        }
+        const curEnd = start + (end - start) * mapP;
+        ctx.beginPath();
+        ctx.arc(p1.x, p1.y, r, start, curEnd);
+        ctx.strokeStyle = activeColor;
+        ctx.lineWidth = activeWidth;
+        ctx.stroke();
+
+        if (showMeasurements) {
+          const cm = (r / PIXELS_PER_CM).toFixed(1).replace('.', ',');
+          drawRadiusMeasurement(ctx, p1, p2, `r = ${cm} cm`);
+        }
+
+        if (progress > pIn && progress < pDrawEnd) {
+          const penA = start + (end - start) * drawProg;
+          const cx = p1.x + r * Math.cos(penA);
+          const cy = p1.y + r * Math.sin(penA);
+          drawPenTip(ctx, cx, cy, activeColor);
         }
       }
     }
@@ -3324,44 +4066,57 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
       if (p.hidden) return; // Skip hidden points
       
       // Handle pro změnu poloměru kružnice — vždy vykreslit jako modré kolečko s dvojšipkou
-      const circleShapeForHandle = shapes.find(s => s.type === 'circle' && s.definition.p2Id === p.id);
+      const circleShapeForHandle = shapes.find(
+        s => (s.type === 'circle' || s.type === 'circleArc') && s.definition.p2Id === p.id
+      );
       const isCircleRadiusPoint = !!circleShapeForHandle;
       if (isCircleRadiusPoint) {
-        const usedByOtherShape = shapes.some(s => s.type !== 'circle' && s.points.includes(p.id));
+        const usedByOtherShape = shapes.some(
+          s => s.type !== 'circle' && s.type !== 'circleArc' && s.points.includes(p.id)
+        );
         if (!p.label && !usedByOtherShape) {
           // Vykreslit jako táhlo (handle) — NE jako bod
           const center = points.find(pt => pt.id === circleShapeForHandle!.definition.p1Id);
           if (center) {
-            const radialAngle = Math.atan2(p.y - center.y, p.x - center.x);
+            const centerL = getLivePoint(center);
+            const handleXY =
+              circleShapeForHandle!.type === 'circleArc'
+                ? circleArcRadiusHandlePos(
+                    centerL,
+                    p,
+                    circleShapeForHandle!.definition.arcSpan ?? COMPASS_ARC_SPAN_RAD
+                  )
+                : { x: p.x, y: p.y };
+            const radialAngle = Math.atan2(handleXY.y - centerL.y, handleXY.x - centerL.x);
             const isHoveredHandle = p.id === hoveredPointId || p.id === draggedPointId;
             ctx.save();
             ctx.setLineDash([]);
             // Glow ring pouze při hoveru/drag
             if (isHoveredHandle) {
               ctx.beginPath();
-              ctx.arc(p.x, p.y, 22, 0, Math.PI * 2);
+              ctx.arc(handleXY.x, handleXY.y, sx(22), 0, Math.PI * 2);
               ctx.fillStyle = darkMode ? 'rgba(122, 162, 247, 0.18)' : 'rgba(59, 130, 246, 0.12)';
               ctx.fill();
             }
             // Bílý (ne modrý) kruh s barevným outline — jasně táhlo, ne bod
             ctx.beginPath();
-            ctx.arc(p.x, p.y, 12, 0, Math.PI * 2);
+            ctx.arc(handleXY.x, handleXY.y, sx(12), 0, Math.PI * 2);
             ctx.fillStyle = darkMode ? '#1e2030' : '#ffffff';
             ctx.fill();
             ctx.strokeStyle = isHoveredHandle
               ? (darkMode ? '#7aa2f7' : '#2563eb')
               : (darkMode ? '#565f89' : '#94a3b8');
-            ctx.lineWidth = 2;
+            ctx.lineWidth = sx(2);
             ctx.stroke();
             // Dvojšipka podél poloměru — tmavá barva na světlém pozadí
             ctx.save();
-            ctx.translate(p.x, p.y);
+            ctx.translate(handleXY.x, handleXY.y);
             ctx.rotate(radialAngle);
-            const aLen = 7, hLen = 3.5, hAng = Math.PI / 5;
+            const aLen = sx(7), hLen = sx(3.5), hAng = Math.PI / 5;
             ctx.strokeStyle = isHoveredHandle
               ? (darkMode ? '#7aa2f7' : '#2563eb')
               : (darkMode ? '#a9b1d6' : '#475569');
-            ctx.lineWidth = 2;
+            ctx.lineWidth = sx(2);
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
             ctx.beginPath();
@@ -3381,24 +4136,25 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
       const isDragging = p.id === draggedPointId;
       const isActiveSelection = p.id === selection;
       
-      // Styl čárky
+      // Styl čárky — velikost v px obrazovky / scale, aby při zoomu zůstala stejná (jako u snap indikátorů)
       let tickColor = darkMode ? '#e5e7eb' : '#1f2937'; // Default
-      let tickLength = 10;
-      let tickWidth = 3;
-      
+      let tickPx = 10;
+      let tickWxPx = 3;
       if (isSelected) {
         tickColor = '#3b82f6'; // Blue
-        tickLength = 16;
-        tickWidth = 3.5;
+        tickPx = 16;
+        tickWxPx = 3.5;
       } else if (isHovered || isDragging) {
         tickColor = '#f59e0b'; // Amber
-        tickLength = 16;
-        tickWidth = 3.5;
+        tickPx = 16;
+        tickWxPx = 3.5;
       }
+      const tickLenWorld = tickPx / scale;
+      const tickWidthWorld = tickWxPx / scale;
 
       // Zjistit, jestli je bod součástí nebo leží na nějaké přímce/úsečce/paprsku
       const lineShape = shapes.find(s => {
-        if (!['segment', 'line', 'ray'].includes(s.type)) return false;
+        if (!['segment', 'line', 'lineDashed', 'ray'].includes(s.type)) return false;
         if (s.definition.p1Id === p.id || s.definition.p2Id === p.id) return true; // definiční bod
         // Zkontrolovat, zda bod leží na přímce (vzdálenost < 3px)
         const sp1 = points.find(pt => pt.id === s.definition.p1Id);
@@ -3423,10 +4179,10 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
       // Výběr pro smazání (dashed ring)
       if (isActiveSelection) {
         ctx.beginPath();
-        ctx.arc(p.x, p.y, 22, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, 22 / scale, 0, Math.PI * 2);
         ctx.strokeStyle = darkMode ? '#f7768e' : '#ef4444'; // Tokyo Night Red or normal red
-        ctx.lineWidth = 2;
-        ctx.setLineDash([4, 4]);
+        ctx.lineWidth = 2 / scale;
+        ctx.setLineDash([4 / scale, 4 / scale]);
         ctx.stroke();
         ctx.setLineDash([]);
       }
@@ -3435,75 +4191,63 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
         // Vnější glow ring
         ctx.save();
         ctx.beginPath();
-        ctx.arc(p.x, p.y, 20, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, 20 / scale, 0, Math.PI * 2);
         ctx.fillStyle = darkMode ? 'rgba(125, 207, 255, 0.18)' : 'rgba(59, 130, 246, 0.1)';
         ctx.fill();
         ctx.restore();
         // Vnitřní highlight
         ctx.beginPath();
-        ctx.arc(p.x, p.y, 14, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, 14 / scale, 0, Math.PI * 2);
         ctx.fillStyle = darkMode ? 'rgba(125, 207, 255, 0.45)' : 'rgba(59, 130, 246, 0.25)';
         ctx.fill();
         // Glow ring obrys
         ctx.beginPath();
-        ctx.arc(p.x, p.y, 20, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, 20 / scale, 0, Math.PI * 2);
         ctx.strokeStyle = isSelected 
           ? (darkMode ? 'rgba(122, 162, 247, 0.7)' : 'rgba(59, 130, 246, 0.5)') 
           : (darkMode ? 'rgba(125, 207, 255, 0.5)' : 'rgba(59, 130, 246, 0.3)');
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = 1.5 / scale;
         ctx.stroke();
       }
 
       if (lineShape) {
         // Bod je součástí přímky - nakreslit čárku KOLMOU na přímku
         const perpAngle = lineAngle + Math.PI / 2; // Kolmý úhel
-        const dx = Math.cos(perpAngle) * tickLength / 2;
-        const dy = Math.sin(perpAngle) * tickLength / 2;
+        const dx = Math.cos(perpAngle) * tickLenWorld / 2;
+        const dy = Math.sin(perpAngle) * tickLenWorld / 2;
         
         ctx.beginPath();
         ctx.moveTo(p.x - dx, p.y - dy);
         ctx.lineTo(p.x + dx, p.y + dy);
         ctx.strokeStyle = tickColor;
-        ctx.lineWidth = tickWidth;
+        ctx.lineWidth = tickWidthWorld;
         ctx.stroke();
       } else {
         // Samostatný bod - nakreslit křížek
         ctx.beginPath();
-        ctx.moveTo(p.x, p.y - tickLength / 2);
-        ctx.lineTo(p.x, p.y + tickLength / 2);
+        ctx.moveTo(p.x, p.y - tickLenWorld / 2);
+        ctx.lineTo(p.x, p.y + tickLenWorld / 2);
         ctx.strokeStyle = tickColor;
-        ctx.lineWidth = tickWidth;
+        ctx.lineWidth = tickWidthWorld;
         ctx.stroke();
 
         ctx.beginPath();
-        ctx.moveTo(p.x - tickLength / 2, p.y);
-        ctx.lineTo(p.x + tickLength / 2, p.y);
+        ctx.moveTo(p.x - tickLenWorld / 2, p.y);
+        ctx.lineTo(p.x + tickLenWorld / 2, p.y);
         ctx.strokeStyle = tickColor;
-        ctx.lineWidth = tickWidth;
+        ctx.lineWidth = tickWidthWorld;
         ctx.stroke();
       }
 
-      // Label v modrém koužku bez outline
-      const labelBgColor = '#3b82f6'; // Modrá
-      const labelTextColor = '#ffffff'; // Bílý text
-      
-      ctx.font = 'bold 16px Inter, system-ui, sans-serif';
-      const labelWidth = ctx.measureText(p.label).width;
-      const padding = 8;
-      const labelX = p.x + 20;
-      const labelY = p.y - 20;
-
-      // Pozadí labelu - kružnice BEZ outline
-      ctx.beginPath();
-      ctx.arc(labelX, labelY, (labelWidth / 2 + padding), 0, Math.PI * 2);
-      ctx.fillStyle = labelBgColor;
-      ctx.fill();
-
-      // Text labelu
-      ctx.fillStyle = labelTextColor;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(p.label, labelX, labelY);
+      // Popisek bodu — jako v zápisu konstrukce: kurzíva, bez kolečka, tmavý text (na tmavém plátně světlý)
+      if (p.label) {
+        const { x: labelX, y: labelY } = getPointLabelDrawPosition(p);
+        ctx.font = `italic ${24 / scale}px Georgia, "Times New Roman", "STIX Two Text", serif`;
+        ctx.fillStyle = darkMode ? '#e5e7eb' : '#111827';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(p.label, labelX, labelY);
+      }
     });
 
     // 3b. Intersection snap indicator (active only — when cursor is near)
@@ -3604,14 +4348,14 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
         // Kontrastní střed kružnice
         ctx.globalAlpha = 1;
         ctx.beginPath();
-        ctx.arc(p1.x, p1.y, 10, 0, Math.PI * 2);
+        ctx.arc(p1.x, p1.y, sx(10), 0, Math.PI * 2);
         ctx.fillStyle = darkMode ? '#ffffff' : '#1e1b4b';
         ctx.fill();
-        ctx.lineWidth = 3;
+        ctx.lineWidth = sx(3);
         ctx.strokeStyle = '#3b82f6';
         ctx.stroke();
         ctx.beginPath();
-        ctx.arc(p1.x, p1.y, 4, 0, Math.PI * 2);
+        ctx.arc(p1.x, p1.y, sx(4), 0, Math.PI * 2);
         ctx.fillStyle = '#3b82f6';
         ctx.fill();
 
@@ -3621,7 +4365,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
           const ghostRadAngle = Math.atan2(actualP2.y - p1.y, actualP2.x - p1.x);
           const ghostMidX = p1.x + (actualP2.x - p1.x) / 2;
           const ghostMidY = p1.y + (actualP2.y - p1.y) / 2;
-          const ghostPerpOff = 18;
+          const ghostPerpOff = 18 / scale;
           const ghostOx = -Math.sin(ghostRadAngle) * ghostPerpOff;
           const ghostOy = Math.cos(ghostRadAngle) * ghostPerpOff;
           drawMeasurement(ctx, ghostMidX + ghostOx, ghostMidY + ghostOy, `r = ${ghostCm} cm`, ghostRadAngle);
@@ -3633,7 +4377,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
         const pulse = (Math.sin(Date.now() * 0.004) + 1) / 2;
         const dragPulse = isHandleDragged ? 1 : pulse;
         
-        const glowRadius = 24 + dragPulse * 12;
+        const glowRadius = sx(24 + dragPulse * 12);
         const glowAlpha = 0.12 + dragPulse * 0.18;
         ctx.beginPath();
         ctx.arc(actualP2.x, actualP2.y, glowRadius, 0, Math.PI * 2);
@@ -3643,30 +4387,30 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
         ctx.fill();
         
         ctx.beginPath();
-        ctx.arc(actualP2.x, actualP2.y, 17, 0, Math.PI * 2);
+        ctx.arc(actualP2.x, actualP2.y, sx(17), 0, Math.PI * 2);
         ctx.fillStyle = darkMode 
           ? `rgba(122, 162, 247, ${0.2 + dragPulse * 0.12})` 
           : `rgba(59, 130, 246, ${0.2 + dragPulse * 0.12})`;
         ctx.fill();
         
-        const mainRadius = isHandleDragged ? 13 : 12;
+        const mainRadius = sx(isHandleDragged ? 13 : 12);
         ctx.beginPath();
         ctx.arc(actualP2.x, actualP2.y, mainRadius, 0, Math.PI * 2);
         ctx.fillStyle = darkMode ? '#7aa2f7' : '#3b82f6';
         ctx.fill();
         ctx.strokeStyle = darkMode ? '#c0caf5' : '#ffffff';
-        ctx.lineWidth = 2.5;
+        ctx.lineWidth = sx(2.5);
         ctx.stroke();
         
         // Oboustranná šipka v handle
         ctx.save();
         ctx.translate(actualP2.x, actualP2.y);
         ctx.rotate(radialAngle);
-        const arrowLen = 7;
-        const headLen = 3.5;
+        const arrowLen = sx(7);
+        const headLen = sx(3.5);
         const headAngle = Math.PI / 5;
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
-        ctx.lineWidth = 2;
+        ctx.lineWidth = sx(2);
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
         ctx.beginPath();
@@ -3748,6 +4492,26 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
              ctx.lineWidth = ghostLW;
              ctx.stroke();
 
+         } else if (activeTool === 'lineDashed') {
+             if (!isTabletMode) {
+               drawRuler(ctx, p1, p2, 0.5);
+             }
+             const dx = p2.x - p1.x;
+             const dy = p2.y - p1.y;
+             const len = Math.sqrt(dx*dx + dy*dy);
+             const extend = 1000;
+             const start = { x: p1.x - dx/len * extend, y: p1.y - dy/len * extend };
+             const end = { x: p2.x + dx/len * extend, y: p2.y + dy/len * extend };
+             ctx.save();
+             ctx.setLineDash([10, 7]);
+             ctx.beginPath();
+             ctx.moveTo(start.x, start.y);
+             ctx.lineTo(end.x, end.y);
+             ctx.strokeStyle = ghostColor;
+             ctx.lineWidth = ghostLW;
+             ctx.stroke();
+             ctx.restore();
+
          } else if (activeTool === 'ray') {
              console.log('🎯 GHOST RAY - isTabletMode:', isTabletMode);
              if (!isTabletMode) {
@@ -3780,7 +4544,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
                    const ghostRadAngle = Math.atan2(actualP2.y - p1.y, actualP2.x - p1.x);
                    const ghostMidX = p1.x + (actualP2.x - p1.x) / 2;
                    const ghostMidY = p1.y + (actualP2.y - p1.y) / 2;
-                   const ghostPerpOff = 18;
+                   const ghostPerpOff = 18 / scale;
                    const ghostOx = -Math.sin(ghostRadAngle) * ghostPerpOff;
                    const ghostOy = Math.cos(ghostRadAngle) * ghostPerpOff;
                    drawMeasurement(ctx, ghostMidX + ghostOx, ghostMidY + ghostOy, `r = ${ghostCm} cm`, ghostRadAngle);
@@ -3822,6 +4586,8 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
                   drawSegment(ctx, sp1, sp2, 1, hlColor, glowWidth);
                } else if (selectedShape.type === 'line') {
                   drawLine(ctx, sp1, sp2, 1, hlColor, glowWidth);
+               } else if (selectedShape.type === 'lineDashed') {
+                  drawLine(ctx, sp1, sp2, 1, hlColor, glowWidth, true);
                } else if (selectedShape.type === 'ray') {
                   drawRay(ctx, sp1, sp2, 1, hlColor, glowWidth);
                }
@@ -3834,6 +4600,8 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
                   drawSegment(ctx, sp1, sp2, 1, hlColor, 3);
                } else if (selectedShape.type === 'line') {
                   drawLine(ctx, sp1, sp2, 1, hlColor, 3);
+               } else if (selectedShape.type === 'lineDashed') {
+                  drawLine(ctx, sp1, sp2, 1, hlColor, 3, true);
                } else if (selectedShape.type === 'ray') {
                   drawRay(ctx, sp1, sp2, 1, hlColor, 3);
                }
@@ -3862,6 +4630,8 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
                   drawSegment(ctx, p1, p2, 1, hoverHlColor, hoverGlowWidth);
                } else if (shape.type === 'line') {
                   drawLine(ctx, p1, p2, 1, hoverHlColor, hoverGlowWidth);
+               } else if (shape.type === 'lineDashed') {
+                  drawLine(ctx, p1, p2, 1, hoverHlColor, hoverGlowWidth, true);
                } else if (shape.type === 'ray') {
                   drawRay(ctx, p1, p2, 1, hoverHlColor, hoverGlowWidth);
                }
@@ -4035,52 +4805,73 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
          drawPenTip(ctx, angleInput.customVertex.x, angleInput.customVertex.y, '#f97316');
     }
 
-    // 4b. COMPASS MODE - interaktivní kružítko s centrem a handle
+    // 4b. COMPASS MODE — náhled podle režimu; poloměr i „Narýsovat“ vždy ve směru handle (stejný úhel všude)
     if (circleInput.visible && circleInput.center) {
          const cc = circleInput.center;
          const r = circleInput.radius * PIXELS_PER_CM;
-         const hx = cc.x + Math.cos(circleInput.handleAngle) * r;
-         const hy = cc.y + Math.sin(circleInput.handleAngle) * r;
-         
+         const ha = circleInput.handleAngle;
+         const hx = cc.x + Math.cos(ha) * r;
+         const hy = cc.y + Math.sin(ha) * r;
+         const mode = circleInput.mode;
+
          ctx.save();
-         
-         // Kružnice
-         drawCircle(ctx, cc, r, 1, darkMode ? 'rgba(200, 200, 255, 0.7)' : 'rgba(30, 27, 75, 0.6)', 2.5);
-         
-         // Kružítko (compass image)
-         drawCompass(ctx, cc, r, 0.5, { x: hx, y: hy });
-         
+
+         if (mode === 'circle') {
+           drawCircle(ctx, cc, r, 1, darkMode ? 'rgba(200, 200, 255, 0.7)' : 'rgba(30, 27, 75, 0.6)', 2.5);
+           drawCompass(ctx, cc, r, 0.5, { x: hx, y: hy });
+         } else if (mode === 'arc') {
+           const { start, end } = circleArcAngles(cc, { x: hx, y: hy }, COMPASS_ARC_SPAN_RAD);
+           ctx.beginPath();
+           ctx.arc(cc.x, cc.y, r, start, end);
+           ctx.strokeStyle = darkMode ? 'rgba(200, 200, 255, 0.88)' : 'rgba(30, 27, 75, 0.78)';
+           ctx.lineWidth = 2.5;
+           ctx.stroke();
+           drawCompass(ctx, cc, r, 0.5, { x: hx, y: hy });
+         } else if (mode === 'point') {
+           drawCompass(ctx, cc, r, 0.5, { x: hx, y: hy });
+         }
+
          // Středový bod - reticle
          ctx.beginPath();
-         ctx.arc(cc.x, cc.y, 8, 0, Math.PI * 2);
+         ctx.arc(cc.x, cc.y, sx(8), 0, Math.PI * 2);
          ctx.fillStyle = darkMode ? '#ffffff' : '#1e1b4b';
          ctx.fill();
-         ctx.lineWidth = 3;
+         ctx.lineWidth = sx(3);
          ctx.strokeStyle = '#3b82f6';
          ctx.stroke();
          ctx.beginPath();
-         ctx.arc(cc.x, cc.y, 3, 0, Math.PI * 2);
+         ctx.arc(cc.x, cc.y, sx(3), 0, Math.PI * 2);
          ctx.fillStyle = '#3b82f6';
          ctx.fill();
-         // Křížek ve středu
          ctx.strokeStyle = darkMode ? '#1e1b4b' : '#ffffff';
-         ctx.lineWidth = 1.5;
+         ctx.lineWidth = sx(1.5);
          ctx.beginPath();
-         ctx.moveTo(cc.x - 5, cc.y);
-         ctx.lineTo(cc.x + 5, cc.y);
-         ctx.moveTo(cc.x, cc.y - 5);
-         ctx.lineTo(cc.x, cc.y + 5);
+         ctx.moveTo(cc.x - sx(5), cc.y);
+         ctx.lineTo(cc.x + sx(5), cc.y);
+         ctx.moveTo(cc.x, cc.y - sx(5));
+         ctx.lineTo(cc.x, cc.y + sx(5));
          ctx.stroke();
-         
-         // Radiální čára od středu k handle
+
+         // Radiální čára ke konci poloměru (handle = cíl narýsování u bodu/výseku)
          ctx.beginPath();
-         ctx.setLineDash([6, 4]);
+         ctx.setLineDash([sx(6), sx(4)]);
          ctx.moveTo(cc.x, cc.y);
          ctx.lineTo(hx, hy);
          ctx.strokeStyle = darkMode ? 'rgba(122, 162, 247, 0.6)' : 'rgba(59, 130, 246, 0.5)';
-         ctx.lineWidth = 1.5;
+         ctx.lineWidth = sx(1.5);
          ctx.stroke();
          ctx.setLineDash([]);
+
+         if (mode === 'point') {
+           ctx.beginPath();
+           ctx.arc(hx, hy, sx(8), 0, Math.PI * 2);
+           ctx.fillStyle = darkMode ? 'rgba(125, 207, 255, 0.35)' : 'rgba(59, 130, 246, 0.28)';
+           ctx.fill();
+           ctx.beginPath();
+           ctx.arc(hx, hy, sx(4), 0, Math.PI * 2);
+           ctx.fillStyle = darkMode ? '#7aa2f7' : '#3b82f6';
+           ctx.fill();
+         }
          
          // Handle na obvodu - pulzující
          const pulse = (Math.sin(Date.now() * 0.004) + 1) / 2;
@@ -4088,7 +4879,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
          const dragPulse = isDragging ? 1 : pulse;
          
          // Glow
-         const glowRadius = 22 + dragPulse * 10;
+         const glowRadius = sx(22 + dragPulse * 10);
          ctx.beginPath();
          ctx.arc(hx, hy, glowRadius, 0, Math.PI * 2);
          ctx.fillStyle = darkMode 
@@ -4097,25 +4888,25 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
          ctx.fill();
          
          // Hlavní kulička
-         const handleR = isDragging ? 13 : 11;
+         const handleR = sx(isDragging ? 13 : 11);
          ctx.beginPath();
          ctx.arc(hx, hy, handleR, 0, Math.PI * 2);
          ctx.fillStyle = darkMode ? '#7aa2f7' : '#3b82f6';
          ctx.fill();
          ctx.strokeStyle = '#ffffff';
-         ctx.lineWidth = 2.5;
+         ctx.lineWidth = sx(2.5);
          ctx.stroke();
          
          // Oboustranná šipka v handle
          ctx.save();
          ctx.translate(hx, hy);
-         ctx.rotate(circleInput.handleAngle);
+         ctx.rotate(ha);
          ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
-         ctx.lineWidth = 2;
+         ctx.lineWidth = sx(2);
          ctx.lineCap = 'round';
          ctx.lineJoin = 'round';
-         const aLen = 6;
-         const hLen = 3;
+         const aLen = sx(6);
+         const hLen = sx(3);
          const hAng = Math.PI / 5;
          ctx.beginPath();
          ctx.moveTo(-aLen, 0);
@@ -4133,15 +4924,14 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
          ctx.stroke();
          ctx.restore();
          
-         // Měření
+         // Měření podél poloměru (stejný úhel jako handle)
          const cm = circleInput.radius.toFixed(1).replace('.', ',');
-         const radAngle = circleInput.handleAngle;
-         const midX = cc.x + Math.cos(radAngle) * r / 2;
-         const midY = cc.y + Math.sin(radAngle) * r / 2;
-         const perpOff = 18;
-         const ox = -Math.sin(radAngle) * perpOff;
-         const oy = Math.cos(radAngle) * perpOff;
-         drawMeasurement(ctx, midX + ox, midY + oy, `r = ${cm} cm`, radAngle);
+         const midX = cc.x + Math.cos(ha) * r / 2;
+         const midY = cc.y + Math.sin(ha) * r / 2;
+         const perpOff = 18 / scale;
+         const ox = -Math.sin(ha) * perpOff;
+         const oy = Math.cos(ha) * perpOff;
+         drawMeasurement(ctx, midX + ox, midY + oy, `r = ${cm} cm`, ha);
          
          ctx.restore();
     }
@@ -4201,11 +4991,12 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
   const drawMeasurement = (ctx: CanvasRenderingContext2D, x: number, y: number, text: string, angle?: number) => {
     ctx.save();
     try {
-      ctx.font = 'bold 14px sans-serif';
-      const padding = 5;
+      const pad = 5 / scale;
+      const height = 18 / scale;
+      const cornerR = 4 / scale;
+      ctx.font = `bold ${14 / scale}px sans-serif`;
       const metrics = ctx.measureText(text);
-      const width = metrics.width + padding * 2;
-      const height = 18;
+      const width = metrics.width + pad * 2;
       
       // Rotace kolem stredu popisku
       if (angle !== undefined) {
@@ -4220,7 +5011,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
       // Background pill (compatible with older Safari - no roundRect)
       const rx = x - width/2;
       const ry = y - height/2;
-      const r = 4;
+      const r = cornerR;
       ctx.beginPath();
       ctx.moveTo(rx + r, ry);
       ctx.lineTo(rx + width - r, ry);
@@ -4235,7 +5026,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
       ctx.fillStyle = darkMode ? 'rgba(36, 40, 59, 0.95)' : 'rgba(255, 255, 255, 0.9)';
       ctx.fill();
       ctx.strokeStyle = darkMode ? '#7d6bc2' : '#d1d5db';
-      ctx.lineWidth = 1;
+      ctx.lineWidth = 1 / scale;
       ctx.stroke();
 
       // Text
@@ -4248,19 +5039,21 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     }
   };
 
-  // Helper: nakloeny popisek mery mezi dvema body s kolmym odsazenim
-  const drawLineMeasurement = (ctx: CanvasRenderingContext2D, p1: {x:number,y:number}, p2: {x:number,y:number}, text: string, perpOffset = 20) => {
+  // Helper: nakloeny popisek mery mezi dvema body s kolmym odsazenim (perpOffset v px obrazovky)
+  const drawLineMeasurement = (ctx: CanvasRenderingContext2D, p1: {x:number,y:number}, p2: {x:number,y:number}, text: string, perpOffsetScreen = 20) => {
     const a = Math.atan2(p2.y - p1.y, p2.x - p1.x);
-    const mx = (p1.x + p2.x) / 2 + (-Math.sin(a) * perpOffset);
-    const my = (p1.y + p2.y) / 2 + (Math.cos(a) * perpOffset);
+    const off = perpOffsetScreen / scale;
+    const mx = (p1.x + p2.x) / 2 + (-Math.sin(a) * off);
+    const my = (p1.y + p2.y) / 2 + (Math.cos(a) * off);
     drawMeasurement(ctx, mx, my, text, a);
   };
 
-  // Helper: nakloeny popisek polomerove mery
-  const drawRadiusMeasurement = (ctx: CanvasRenderingContext2D, center: {x:number,y:number}, handle: {x:number,y:number}, text: string, perpOffset = 15) => {
+  // Helper: nakloeny popisek polomerove mery (perpOffset v px obrazovky)
+  const drawRadiusMeasurement = (ctx: CanvasRenderingContext2D, center: {x:number,y:number}, handle: {x:number,y:number}, text: string, perpOffsetScreen = 15) => {
     const a = Math.atan2(handle.y - center.y, handle.x - center.x);
-    const mx = center.x + (handle.x - center.x) / 2 + (-Math.sin(a) * perpOffset);
-    const my = center.y + (handle.y - center.y) / 2 + (Math.cos(a) * perpOffset);
+    const off = perpOffsetScreen / scale;
+    const mx = center.x + (handle.x - center.x) / 2 + (-Math.sin(a) * off);
+    const my = center.y + (handle.y - center.y) / 2 + (Math.cos(a) * off);
     drawMeasurement(ctx, mx, my, text, a);
   };
 
@@ -4288,23 +5081,26 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     }
   };
 
-  const drawSegment = (ctx: CanvasRenderingContext2D, p1: {x:number, y:number}, p2: {x:number, y:number}, progress: number, color: string, width = 2) => {
+  const drawSegment = (ctx: CanvasRenderingContext2D, p1: {x:number, y:number}, p2: {x:number, y:number}, progress: number, color: string, width = 2, dashed = false) => {
     if (progress <= 0) return;
     
     // Logic from TriangleConstruction
     let drawProgress = progress;
     // Mapování progressu na animaci rýsování (když je aktivní pravítko)
     if (animState.isActive) {
-       // Pokud je animace, progress 0-0.2 je přílet pravítka, 0.2-0.8 rýsování, 0.8-1 odlet
-       if (progress < 0.2) drawProgress = 0;
-       else if (progress > 0.8) drawProgress = 1;
-       else drawProgress = (progress - 0.2) / 0.6;
+       const { pIn, pDrawEnd } = animPhase;
+       if (progress < pIn) drawProgress = 0;
+       else if (progress > pDrawEnd) drawProgress = 1;
+       else drawProgress = (progress - pIn) / (pDrawEnd - pIn);
     }
 
     const currentP2 = {
       x: p1.x + (p2.x - p1.x) * drawProgress,
       y: p1.y + (p2.y - p1.y) * drawProgress
     };
+
+    if (dashed) ctx.save();
+    if (dashed) ctx.setLineDash([12, 8]);
 
     ctx.beginPath();
     ctx.moveTo(p1.x, p1.y);
@@ -4313,9 +5109,11 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     ctx.lineWidth = width;
     ctx.lineCap = 'round';
     ctx.stroke();
+
+    if (dashed) ctx.restore();
   };
 
-  const drawLine = (ctx: CanvasRenderingContext2D, p1: {x:number, y:number}, p2: {x:number, y:number}, progress: number, color: string, width = 2) => {
+  const drawLine = (ctx: CanvasRenderingContext2D, p1: {x:number, y:number}, p2: {x:number, y:number}, progress: number, color: string, width = 2, dashed = false) => {
     // Přímka přesahuje body
     const dx = p2.x - p1.x;
     const dy = p2.y - p1.y;
@@ -4333,7 +5131,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
       y: p1.y + dy/len * EXTEND
     };
 
-    drawSegment(ctx, start, end, progress, color, width);
+    drawSegment(ctx, start, end, progress, color, width, dashed);
   };
 
   const drawRay = (ctx: CanvasRenderingContext2D, p1: {x:number, y:number}, p2: {x:number, y:number}, progress: number, color: string, width = 2) => {
@@ -4357,9 +5155,10 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
 
     let drawProgress = progress;
     if (animState.isActive) {
-        if (progress < 0.2) drawProgress = 0;
-        else if (progress > 0.8) drawProgress = 1;
-        else drawProgress = (progress - 0.2) / 0.6;
+        const { pIn, pDrawEnd } = animPhase;
+        if (progress < pIn) drawProgress = 0;
+        else if (progress > pDrawEnd) drawProgress = 1;
+        else drawProgress = (progress - pIn) / (pDrawEnd - pIn);
     }
 
     const endAngle = Math.PI * 2 * drawProgress;
@@ -4371,22 +5170,30 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     ctx.stroke();
   };
 
-  const drawLabel = (ctx: CanvasRenderingContext2D, p: {x:number, y:number}, text: string, color: string, ox = 15, oy = -15) => {
+  const drawLabel = (
+    ctx: CanvasRenderingContext2D,
+    center: { x: number; y: number },
+    text: string,
+    color: string,
+    _oxScreen = 0,
+    _oyScreen = 0
+  ) => {
     ctx.save();
-    ctx.font = 'italic 18px "Times New Roman", "Computer Modern", Georgia, serif';
+    ctx.font = `italic ${18 / scale}px "Times New Roman", "Computer Modern", Georgia, serif`;
     ctx.fillStyle = color;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'alphabetic';
-    ctx.fillText(text, p.x + ox, p.y + oy);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, center.x, center.y);
     ctx.restore();
   };
 
   const drawRuler = (ctx: CanvasRenderingContext2D, p1: {x:number, y:number}, p2: {x:number, y:number}, progress: number) => {
     if (!rulerImageRef.current) return;
     
-    // Fade in logic only - pravítko nezmizí dokud se kreslí (volá tato funkce)
+    const { pIn, pDrawEnd } = animPhase;
     let opacity = 1;
-    if (progress < 0.2) opacity = progress / 0.2;
+    if (progress < pIn) opacity = progress / pIn;
+    else if (progress > pDrawEnd) opacity = (1 - progress) / (1 - pDrawEnd);
     
     const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
 
@@ -4430,9 +5237,10 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
   const drawCompass = (ctx: CanvasRenderingContext2D, center: {x:number, y:number}, radius: number, progress: number, p2?: {x:number, y:number}) => {
     if (!compassImageRef.current) return;
 
+    const { pIn, pDrawEnd } = animPhase;
     let opacity = 0;
-    if (progress < 0.2) opacity = progress / 0.2;
-    else if (progress > 0.8) opacity = (1 - progress) / 0.2;
+    if (progress < pIn) opacity = progress / pIn;
+    else if (progress > pDrawEnd) opacity = (1 - progress) / (1 - pDrawEnd);
     else opacity = 1;
 
     if (opacity <= 0) return;
@@ -4442,9 +5250,9 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     if (p2) {
         // Pokud máme p2, natočíme kružítko směrem k němu
         rotation = Math.atan2(p2.y - center.y, p2.x - center.x);
-    } else if (progress >= 0.2 && progress <= 0.8) {
+    } else if (progress >= pIn && progress <= pDrawEnd) {
         // Jinak se točí s animací kreslení
-        rotation = (progress - 0.2) / 0.6 * Math.PI * 2;
+        rotation = (progress - pIn) / (pDrawEnd - pIn) * Math.PI * 2;
     }
 
     ctx.save();
@@ -4607,7 +5415,9 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     setPerpBaseId(null);
     setSelectedPointId(null);
     setAngleInput(prev => ({ ...prev, visible: false }));
-    if (activeTool !== 'highlighter') lastHighlightPointRef.current = null;
+    if (activeTool !== 'highlighter' && activeTool !== 'highlighterStraight') {
+      lastHighlightPointRef.current = null;
+    }
     // Angle tablet mode: inicializace při přepnutí na úhloměr v tablet módu
     if (activeTool === 'angle' && isTabletMode) {
       setAngleTabletState({ step: 'selectLine', selectedLineId: null, currentPos: null, baseAngle: 0 });
@@ -4663,9 +5473,10 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
   };
   
   const getDrawProgress = (progress: number) => {
-     if (progress < 0.2) return 0;
-     if (progress > 0.8) return 1;
-     return (progress - 0.2) / 0.6;
+     const { pIn, pDrawEnd } = animPhase;
+     if (progress < pIn) return 0;
+     if (progress > pDrawEnd) return 1;
+     return (progress - pIn) / (pDrawEnd - pIn);
   };
 
   return (
@@ -4953,13 +5764,21 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
                          {/* Submenu - čistě stavové, bez group-hover */}
                          {group.tools.length > 1 && isMenuOpen && (
                          <div 
-                           className="absolute left-[80%] top-1/2 -translate-y-1/2 ml-2 bg-white rounded-2xl shadow-[0_4px_20px_rgba(0,0,0,0.15)] p-2 flex flex-col gap-1 min-w-[160px] z-50 border border-gray-100"
+                           className={`absolute left-[80%] top-1/2 -translate-y-1/2 ml-2 bg-white rounded-2xl shadow-[0_4px_20px_rgba(0,0,0,0.15)] p-2 flex flex-col gap-0.5 z-50 border border-gray-100 ${
+                             group.id === 'group_construct'
+                               ? 'min-w-[300px]'
+                               : group.id === 'group_point'
+                                 ? 'min-w-[220px] gap-1'
+                                 : 'min-w-[160px] gap-1'
+                           }`}
                            style={{ touchAction: 'auto' }}
                            onTouchStart={(e) => e.stopPropagation()}
                          >
                              <div className="text-[10px] font-bold px-3 py-1 text-gray-400 uppercase tracking-wider">{group.label}</div>
                              {group.tools.map(tool => {
                                  const ToolIcon = getIcon(tool.icon);
+                                 const constructTextOnly = group.id === 'group_construct';
+                                 const pointDrawingMenu = group.id === 'group_point';
                                  return (
                                  <button
                                     key={tool.id}
@@ -4972,12 +5791,30 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
                                         e.stopPropagation();
                                         handleToolMenuClick(tool.id, setCircleInput, setActiveTool, setSelectedPointId, setActiveGroup, setSegmentInput, setPerpTabletState, isTabletMode, setCircleTabletState);
                                     }}
-                                    className={`flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
+                                    className={`flex rounded-xl text-sm font-medium transition-colors ${
+                                      constructTextOnly
+                                        ? 'w-full justify-start text-left px-3 py-2.5 items-center'
+                                        : pointDrawingMenu
+                                          ? 'w-full justify-start text-left items-start gap-3 px-3 py-2'
+                                          : 'items-center gap-3 px-3 py-2'
+                                    } ${
                                         activeTool === tool.id ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-50'
                                     }`}
                                  >
-                                    {ToolIcon && <ToolIcon className="w-4 h-4" />}
-                                    <span>{tool.label}</span>
+                                    {!constructTextOnly && ToolIcon && (
+                                      <ToolIcon className={`w-4 h-4 shrink-0 ${pointDrawingMenu ? 'mt-0.5' : ''}`} />
+                                    )}
+                                    <span
+                                      className={
+                                        constructTextOnly
+                                          ? 'text-left leading-snug block w-full whitespace-nowrap'
+                                          : pointDrawingMenu
+                                            ? 'text-left leading-snug flex-1 min-w-0'
+                                            : ''
+                                      }
+                                    >
+                                      {tool.label}
+                                    </span>
                                  </button>
                                  );
                              })}
@@ -5192,10 +6029,18 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
               setShapes(prev => [...prev, newLine]);
               triggerEffect(pX, pY, '#3b82f6');
               // Zápis konstrukce - kolmice (tablet)
-              addConstructionStep('perpendicular', `${newLine.label} ⊥ ${baseShape.label}`, `${newLine.label} \\perp ${baseShape.label}`, `Kolmice ${newLine.label} k přímce ${baseShape.label}`, [newLine.id]);
+              addConstructionStep(
+                'perpendicular',
+                `${newLine.label} ⊥ ${baseShape.label}`,
+                `${newLine.label} \\perp ${baseShape.label}`,
+                `Kolmice ${newLine.label} k přímce ${baseShape.label}`,
+                [newLine.id],
+                descLatexPerpendicular(newLine.label, baseShape.label)
+              );
               
               setPerpTabletState({ step: 'idle', selectedLineId: null, currentPos: null });
               setActiveTool('move');
+              clearSelectionAfterPlacement();
             }
           }}
           className="absolute left-1/2 -translate-x-1/2 z-10 px-6 py-3 rounded-full text-sm font-bold bg-blue-600 text-white shadow-lg flex items-center gap-2 transition-all hover:scale-105 active:scale-95"
@@ -5330,6 +6175,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
           let text = '';
           if (activeTool === 'segment' && selectedPointId) text = segmentInput.active ? `Vyber směr (fixní délka ${segmentInput.length} cm)` : 'Vyber druhý bod úsečky';
           else if (activeTool === 'line' && selectedPointId) text = 'Vyber druhý bod přímky';
+          else if (activeTool === 'lineDashed' && selectedPointId) text = 'Vyber druhý bod čárkované přímky';
           else if (activeTool === 'circle' && !isTabletMode && selectedPointId) text = 'Vyber bod na obvodu (poloměr)';
           else if (activeTool === 'angle' && !isTabletMode && selectedPointId) text = 'Vyber bod na rameni úhlu';
           if (text) content = <span>{text}</span>;
@@ -5519,16 +6365,16 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
                 </div>
             </div>
 
-            {/* Přepínač: Bod / Kružnice */}
+            {/* Přepínač: Bod / Kružnice / Výsek */}
             <div className="mt-4">
                 <label className={`text-xs font-medium mb-2 block ${darkMode ? 'text-[#7aa2f7]' : 'text-gray-500'}`}>
                     Narýsovat
                 </label>
-                <div className="flex gap-2">
+                <div className="flex flex-col gap-2">
                     <button
                         onClick={() => setCircleInput(prev => ({ ...prev, mode: 'point' }))}
                         onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setCircleInput(prev => ({ ...prev, mode: 'point' })); }}
-                        className={`flex-1 py-2.5 rounded-lg font-medium text-sm transition-all ${
+                        className={`w-full py-2.5 rounded-lg font-medium text-sm transition-all ${
                             circleInput.mode === 'point'
                                 ? 'bg-blue-600 text-white shadow-lg'
                                 : darkMode
@@ -5541,7 +6387,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
                     <button
                         onClick={() => setCircleInput(prev => ({ ...prev, mode: 'circle' }))}
                         onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setCircleInput(prev => ({ ...prev, mode: 'circle' })); }}
-                        className={`flex-1 py-2.5 rounded-lg font-medium text-sm transition-all ${
+                        className={`w-full py-2.5 rounded-lg font-medium text-sm transition-all ${
                             circleInput.mode === 'circle'
                                 ? 'bg-blue-600 text-white shadow-lg'
                                 : darkMode
@@ -5550,6 +6396,19 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
                         }`}
                     >
                         Kružnice
+                    </button>
+                    <button
+                        onClick={() => setCircleInput(prev => ({ ...prev, mode: 'arc' }))}
+                        onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setCircleInput(prev => ({ ...prev, mode: 'arc' })); }}
+                        className={`w-full py-2.5 rounded-lg font-medium text-sm transition-all ${
+                            circleInput.mode === 'arc'
+                                ? 'bg-blue-600 text-white shadow-lg'
+                                : darkMode
+                                    ? 'bg-[#414868] hover:bg-[#565f89] text-[#7aa2f7]'
+                                    : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
+                        }`}
+                    >
+                        Výsek kružnice
                     </button>
                 </div>
             </div>
@@ -5560,9 +6419,9 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
             const doCompassDraw = () => {
               if (!circleInput.center) return;
               const r = circleInput.radius * PIXELS_PER_CM;
-              // Radius handle always at 45° (down-right)
-              const targetX = circleInput.center.x + Math.cos(Math.PI / 4) * r;
-              const targetY = circleInput.center.y + Math.sin(Math.PI / 4) * r;
+              const ang = circleInput.handleAngle;
+              const targetX = circleInput.center.x + Math.cos(ang) * r;
+              const targetY = circleInput.center.y + Math.sin(ang) * r;
 
               // Reuse existing labeled point if center was snapped onto one
               const snappedCenter = points.find(p =>
@@ -5586,11 +6445,41 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
                 const radiusPoint: GeoPoint = { id: radiusId, x: targetX, y: targetY, label: '', hidden: false };
                 setPoints(prev => snappedCenter ? [...prev, radiusPoint] : [...prev, centerPoint, radiusPoint]);
                 pendingCircleCenterRef.current = null;
-                startConstructionAnimation('circle', centerPoint, radiusPoint);
+                if (circleInput.mode === 'arc') {
+                  const arcShape: GeoShape = {
+                    id: crypto.randomUUID(),
+                    type: 'circleArc',
+                    label: getNextShapeLabel('circleArc'),
+                    points: [centerPoint.id, radiusPoint.id],
+                    definition: {
+                      p1Id: centerPoint.id,
+                      p2Id: radiusPoint.id,
+                      arcSpan: COMPASS_ARC_SPAN_RAD
+                    }
+                  };
+                  setShapes(prev => [...prev, arcShape]);
+                  const rCm = distanceCm(centerPoint.x, centerPoint.y, radiusPoint.x, radiusPoint.y);
+                  const lS = centerPoint.label || '?';
+                  addConstructionStep(
+                    'circle',
+                    `${arcShape.label}(${lS}; výsek ${rCm} cm)`,
+                    `${arcShape.label}(${lS};\\, \\text{výsek } ${decimalForLatex(rCm)} \\text{ cm})`,
+                    `Výsek kružnice ${arcShape.label} se středem ${lS}, poloměrem ${rCm} cm`,
+                    [arcShape.id],
+                    `\\text{Výsek kružnice } ${latexIt(arcShape.label)} \\text{ se středem } ${latexIt(lS)} \\text{, } poloměrem ${decimalForLatex(rCm)} \\text{ cm}`
+                  );
+                  triggerEffect(radiusPoint.x, radiusPoint.y, '#10b981');
+                  setActiveTool('move');
+                  clearSelectionAfterPlacement();
+                } else {
+                  startConstructionAnimation('circle', centerPoint, radiusPoint);
+                }
               }
               pendingCircleCenterRef.current = null;
               setCircleInput(prev => ({ ...prev, visible: false, center: null, isDraggingCenter: false, isDraggingHandle: false }));
-              setActiveTool('circle');
+              if (circleInput.mode !== 'arc') {
+                setActiveTool('circle');
+              }
             };
             return (
             <button
@@ -5599,7 +6488,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
               className="absolute left-1/2 -translate-x-1/2 z-50 px-8 py-4 rounded-full text-base font-bold bg-blue-600 text-white shadow-lg shadow-blue-500/30 flex items-center gap-2 transition-all hover:scale-105 active:scale-95"
               style={{ bottom: 'calc(80px + env(safe-area-inset-bottom, 0px))' }}
             >
-              Narýsovat {circleInput.mode === 'point' ? 'bod' : 'kružnici'} ({circleInput.radius.toFixed(1).replace('.', ',')} cm)
+              Narýsovat {circleInput.mode === 'point' ? 'bod' : circleInput.mode === 'arc' ? 'výsek' : 'kružnici'} ({circleInput.radius.toFixed(1).replace('.', ',')} cm)
             </button>
             );
           })()}
@@ -6142,11 +7031,12 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
                 if (step.toolVisualization && step.toolVisualization.p1 && step.toolVisualization.p2) {
                   const viz = step.toolVisualization;
                   console.log('🔍 DEBUG: viz.type:', viz.type, 'viz.p1:', viz.p1, 'viz.p2:', viz.p2);
-                  let animType: 'segment' | 'line' | 'ray' | 'circle' | 'angle' | null = null;
+                  let animType: 'segment' | 'line' | 'lineDashed' | 'ray' | 'circle' | 'angle' | null = null;
                   
                   if (viz.type === 'ruler') {
                     if (step.actionType === 'create-segment') animType = 'segment';
                     else if (step.actionType === 'create-line') animType = 'line';
+                    else if (step.actionType === 'create-line-dashed') animType = 'lineDashed';
                     else if (step.actionType === 'create-ray') animType = 'ray';
                     else if (step.actionType === 'create-point') {
                       // Pokud je ruler u create-point, je to pravděpodobně vytváření úsečky
@@ -6190,7 +7080,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
                         p2: null,
                         progress: 0
                       });
-                    }, 2000);
+                    }, constructionAnimMs.total);
                   } else {
                     console.log('⚠️ DEBUG: animType je NULL! Nebudu animovat.');
                     // Bez animace - rovnou nastavit snapshot
@@ -6468,7 +7358,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
                         <div className={`text-xs font-medium mb-2 uppercase tracking-wider ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>Tvary</div>
                         <div className="space-y-2">
                           {uniqueShapes.filter(s => s.type !== 'segment').map(shape => {
-                            const typeLabel = shape.type === 'line' ? 'Přímka' : shape.type === 'ray' ? 'Polopřímka' : shape.type === 'circle' ? 'Kružnice' : shape.type;
+                            const typeLabel = shape.type === 'line' ? 'Přímka' : shape.type === 'lineDashed' ? 'Čárkovaná čára' : shape.type === 'ray' ? 'Polopřímka' : shape.type === 'circle' ? 'Kružnice' : shape.type === 'circleArc' ? 'Výsek kružnice' : shape.type;
                             return (
                               <div key={shape.id} className="flex items-center gap-3">
                                 <div className={`px-2 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
@@ -6562,7 +7452,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
                     }));
                     setShareLink(null);
                     setRecordingName('');
-                    setAnimState({ isActive: false, type: null, startTime: 0, p1: null, p2: null, progress: 0 });
+                    setAnimState({ isActive: false, type: null, startTime: 0, p1: null, p2: null, progress: 0, arcSpan: undefined });
                   }
                 }}
                 onClick={() => {
@@ -6584,7 +7474,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
                     }));
                     setShareLink(null);
                     setRecordingName('');
-                    setAnimState({ isActive: false, type: null, startTime: 0, p1: null, p2: null, progress: 0 });
+                    setAnimState({ isActive: false, type: null, startTime: 0, p1: null, p2: null, progress: 0, arcSpan: undefined });
                   }
                 }}
                 className="flex-1 py-3 rounded-xl font-medium bg-red-500 hover:bg-red-400 text-white transition-all"

@@ -7,10 +7,12 @@ import katex from 'katex';
 export interface ConstructionStep {
   id: string;
   stepNumber: number;
-  type: 'point' | 'segment' | 'line' | 'ray' | 'circle' | 'perpendicular' | 'angle' | 'freehand';
+  type: 'point' | 'segment' | 'line' | 'lineDashed' | 'ray' | 'circle' | 'perpendicular' | 'angle' | 'freehand';
   notation: string;
   latex: string;
   description: string;
+  /** Volitelný KaTeX pod popisem — kurzíva názvů přímek/bodů (\textit{}), jinak stejný text jako `description` */
+  descriptionLatex?: string;
   objectIds: string[];
 }
 
@@ -81,7 +83,7 @@ interface GeoPointLike {
 
 interface GeoShapeLike {
   id: string;
-  type: 'segment' | 'line' | 'ray' | 'circle';
+  type: 'segment' | 'line' | 'lineDashed' | 'ray' | 'circle';
   label: string;
   definition: { p1Id: string; p2Id?: string };
 }
@@ -107,8 +109,12 @@ export function ConstructionProtocol({ steps, visible, onClose, onClear, darkMod
 
   const fmtCm = (px: number): string => {
     const cm = px / pixelsPerCm;
-    return cm % 1 === 0 ? cm.toFixed(0) : cm.toFixed(1);
+    const s = cm % 1 === 0 ? cm.toFixed(0) : cm.toFixed(1);
+    return s.replace('.', ',');
   };
+
+  const decimalForLatex = (displayCm: string): string =>
+    displayCm.includes(',') ? displayCm.replace(',', '{,}') : displayCm;
 
   const liveSteps = useMemo(() => {
     if (points.length === 0 && shapes.length === 0) return steps;
@@ -127,16 +133,18 @@ export function ConstructionProtocol({ steps, visible, onClose, onClear, darkMod
           return {
             ...step,
             notation: `${lA}${lB}; |${lA}${lB}| = ${d} cm`,
-            latex: `${lA}${lB} \\;;\\; |${lA}${lB}| = ${d} \\text{ cm}`,
+            latex: `${lA}${lB} \\;;\\; |${lA}${lB}| = ${decimalForLatex(d)} \\text{ cm}`,
             description: `Úsečka ${lA}${lB} o délce ${d} cm`,
+            descriptionLatex: `\\text{Úsečka } \\textit{${lA}}\\textit{${lB}} \\text{ o délce } ${decimalForLatex(d)} \\text{ cm}`,
           };
         } else {
           const lS = p1.label || '?';
           return {
             ...step,
             notation: `${shape.label}(${lS}; ${d} cm)`,
-            latex: `${shape.label}(${lS};\\, ${d} \\text{ cm})`,
+            latex: `${shape.label}(${lS};\\, ${decimalForLatex(d)} \\text{ cm})`,
             description: `Kružnice ${shape.label} se středem ${lS} a poloměrem ${d} cm`,
+            descriptionLatex: `\\text{Kružnice } \\textit{${shape.label}} \\text{ se středem } \\textit{${lS}} \\text{ a poloměrem } ${decimalForLatex(d)} \\text{ cm}`,
           };
         }
       }
@@ -190,6 +198,7 @@ export function ConstructionProtocol({ steps, visible, onClose, onClear, darkMod
       case 'point': return '\\bullet';
       case 'segment': return '\\text{\\textemdash}';
       case 'line': return '\\leftrightarrow';
+      case 'lineDashed': return '\\leftrightarrow';
       case 'ray': return '\\rightarrow';
       case 'circle': return '\\circ';
       case 'perpendicular': return '\\perp';
@@ -204,6 +213,7 @@ export function ConstructionProtocol({ steps, visible, onClose, onClear, darkMod
       case 'point': return '#3b82f6';
       case 'segment': return '#10b981';
       case 'line': return '#8b5cf6';
+      case 'lineDashed': return '#a78bfa';
       case 'ray': return '#f59e0b';
       case 'circle': return '#f43f5e';
       case 'perpendicular': return '#06b6d4';
@@ -358,9 +368,17 @@ export function ConstructionProtocol({ steps, visible, onClose, onClear, darkMod
                         className={darkMode ? 'katex-dark' : ''}
                       />
                     </div>
-                    <p className={`${t ? 'text-[15px] mt-1.5' : 'text-[10px] mt-1'} ${darkMode ? 'text-[#565f89]' : 'text-gray-400'}`}>
-                      {step.description}
-                    </p>
+                    <div
+                      className={`protocol-step-description ${t ? 'text-[15px] mt-1.5' : 'text-[10px] mt-1'} ${darkMode ? 'text-[#565f89]' : 'text-gray-400'} ${
+                        step.descriptionLatex ? (darkMode ? 'katex-dark' : '') : ''
+                      }`}
+                    >
+                      {step.descriptionLatex ? (
+                        <Latex math={step.descriptionLatex} className={darkMode ? 'katex-dark' : ''} />
+                      ) : (
+                        step.description
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -409,6 +427,7 @@ export function ConstructionProtocol({ steps, visible, onClose, onClear, darkMod
           color: #c0caf5;
         }
         .katex { font-size: 1.45em !important; }
+        .protocol-step-description .katex { font-size: 1em !important; }
       `}</style>
     </div>
   );

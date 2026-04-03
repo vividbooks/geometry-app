@@ -24,12 +24,21 @@ const CZ = {
   filterDrawing: 'Voln\u00e9 r\u00fdsov\u00e1n\u00ed',
   filterConstruction: 'Konstrukce',
   sectionDrawing: 'Voln\u00e9 r\u00fdsov\u00e1n\u00ed',
+  sectionDrawingIntro:
+    'Ka\u017ed\u00e1 verze je vylad\u011bna podle zp\u016fsobu ovl\u00e1d\u00e1n\u00ed \u2014 a\u0165 u\u017e r\u00fdsuje\u0161 prstem na tabuli nebo tabletu, nebo my\u0161\u00ed na po\u010d\u00edta\u010di.',
+  whatsNewTitle: 'Novinky ve voln\u00e9m r\u00fdsov\u00e1n\u00ed',
+  whatsNewBullets: [
+    'Zv\u00fdrazn\u011bn\u00ed podle prav\u00edtka \u2014 v menu pod tu\u017ekou; rovn\u00e9 \u00faseky zv\u00fdrazn\u011bn\u00ed po dvou kliknut\u00edch (jako p\u0159i dr\u017een\u00ed Shift u klasick\u00e9ho zv\u00fdrazn\u011bn\u00ed).',
+    '\u010c\u00e1rkovan\u00e1 \u010d\u00e1ra \u2014 v nab\u00eddce Konstrukce (\u010d\u00e1rkovan\u00e1 p\u0159\u00edmka vedle klasick\u00e9 p\u0159\u00edmky).',
+    'V\u00fdsek kru\u017enice \u2014 v re\u017eimu kru\u017e\u00edtko lze nar\u00fdsat jen \u010d\u00e1st obvodu (oblouk), ne jen celou kru\u017enici.',
+    'Popisky bod\u016f uh\u00fdbaj\u00ed \u010dar\u00e1m, aby byly v\u017edy viditeln\u00e9.',
+  ],
   sectionConstruction: 'Konstrukce',
   open: 'Otev\u0159\u00edt',
-  card1Title: 'Tabule',
-  card1Desc: 'Interaktivn\u00ed tabule pro v\u00fduku. Dotykov\u00e9 ovl\u00e1d\u00e1n\u00ed.',
+  card1Title: 'Tabule / tablet',
+  card1Desc: 'Interaktivn\u00ed tabule pro v\u00fduku \u2014 v\u011bt\u0161\u00ed c\u00edle pro prst, rozhran\u00ed pro dotyk.',
   card2Title: 'Po\u010d\u00edta\u010d',
-  card2Desc: 'Klasick\u00e9 ovl\u00e1d\u00e1n\u00ed my\u0161\u00ed. Body, p\u0159\u00edmky, kru\u017enice, \u00fahly a dal\u0161\u00ed.',
+  card2Desc: 'Verze pro my\u0161 a kl\u00e1vesnici \u2014 p\u0159esn\u00e9 klik\u00e1n\u00ed, stejn\u00e9 n\u00e1stroje jako na tabuli.',
   bisectorTitle: 'Osa \u00fase\u010dky',
   bisectorDesc: 'Konstrukce osy \u00fase\u010dky pomoc\u00ed kru\u017enic',
   axialTitle: 'Osov\u011b soum\u011brn\u00fd obraz',
@@ -222,10 +231,13 @@ export function GeometryMenu({ onSelect }: GeometryMenuProps) {
       {/* Drawing section */}
       {(activeFilter === 'all' || activeFilter === 'drawing') && (
         <div className="max-w-5xl mx-auto px-4 sm:px-8 mt-8">
-          <div className="flex items-center justify-center mb-8">
-            <div className="text-[#4e5871] text-[32px] text-center" style={{ fontWeight: 400 }}>
+          <div className="flex flex-col items-center justify-center mb-6 text-center px-2">
+            <div className="text-[#4e5871] text-[32px]" style={{ fontWeight: 400 }}>
               {CZ.sectionDrawing}
             </div>
+            <p className="text-[#4e5871] text-[16px] leading-relaxed max-w-xl mt-3" style={{ fontWeight: 400 }}>
+              {CZ.sectionDrawingIntro}
+            </p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-2xl mx-auto">
             <CategoryCard
@@ -260,6 +272,21 @@ export function GeometryMenu({ onSelect }: GeometryMenuProps) {
               }
               onClick={() => onSelect('free-editor-computer')}
             />
+          </div>
+          <div className="max-w-2xl mx-auto mt-8 px-4 sm:px-0">
+            <div
+              className="rounded-[20px] border border-[#e5e7eb] bg-[#fafafa] px-5 py-5"
+              style={{ fontWeight: 400 }}
+            >
+              <div className="text-[#09056f] text-[15px] mb-3" style={{ fontWeight: 600 }}>
+                {CZ.whatsNewTitle}
+              </div>
+              <ul className="text-[#4e5871] text-[15px] leading-[1.55] m-0 pl-5 list-disc space-y-2">
+                {CZ.whatsNewBullets.map((text, i) => (
+                  <li key={i}>{text}</li>
+                ))}
+              </ul>
+            </div>
           </div>
         </div>
       )}

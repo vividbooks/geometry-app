@@ -112,8 +112,8 @@ interface DrawingItem {
 const drawingItems: DrawingItem[] = [
   {
     id: 'free-board',
-    title: 'Tabule',
-    description: 'Interaktivní tabule pro výuku. Dotykové ovládání.',
+    title: 'Tabule / tablet',
+    description: 'Interaktivní tabule pro výuku — větší cíle pro prst, rozhraní pro dotyk.',
     color: '#dcf3ff',
     previewBg: '#e3f4ff',
     view: 'free-editor-board',
@@ -125,7 +125,7 @@ const drawingItems: DrawingItem[] = [
   {
     id: 'free-computer',
     title: 'Počítač',
-    description: 'Klasické ovládání myší. Body, přímky, kružnice, úhly a další.',
+    description: 'Verze pro myš a klávesnici — přesné klikání, stejné nástroje jako na tabuli.',
     color: '#fff8b3',
     previewBg: '#fefce8',
     view: 'free-editor-computer',
@@ -551,7 +551,7 @@ export function Landing({ mode }: { mode: LandingMode }) {
             fontSize: '42px',
             fontWeight: 600,
             color: '#09056f',
-            marginBottom: '28px',
+            marginBottom: activeFilter === 'rysovani' ? '12px' : '28px',
             textAlign: 'left',
             letterSpacing: '-0.02em',
           }}
@@ -559,13 +559,78 @@ export function Landing({ mode }: { mode: LandingMode }) {
           {HEADING_MAP[activeFilter]}
         </h2>
 
+        {activeFilter === 'rysovani' && (
+          <p
+            style={{
+              fontFamily: "'Fenomen Sans', sans-serif",
+              fontSize: '17px',
+              lineHeight: 1.55,
+              color: '#4e5871',
+              maxWidth: '640px',
+              margin: '0 0 28px',
+              fontWeight: 400,
+            }}
+          >
+            Každá verze je vyladěna podle způsobu ovládání — ať už rýsuješ prstem na tabuli
+            nebo tabletu, nebo myší na počítači.
+          </p>
+        )}
+
         {/* Rýsování – Volné rýsování (Tabule + Počítač) */}
         {activeFilter === 'rysovani' && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '24px', maxWidth: '660px' }}>
-            {drawingItems.map((item) => (
-              <DrawingCard key={item.id} item={item} />
-            ))}
-          </div>
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '24px', maxWidth: '660px' }}>
+              {drawingItems.map((item) => (
+                <DrawingCard key={item.id} item={item} />
+              ))}
+            </div>
+            <div
+              style={{
+                marginTop: '32px',
+                maxWidth: '640px',
+                padding: '20px 22px',
+                borderRadius: '20px',
+                border: '1px solid #e5e7eb',
+                background: '#fafafa',
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: "'Fenomen Sans', sans-serif",
+                  fontSize: '15px',
+                  fontWeight: 600,
+                  color: '#09056f',
+                  marginBottom: '12px',
+                }}
+              >
+                Novinky ve volném rýsování
+              </div>
+              <ul
+                style={{
+                  fontFamily: "'Fenomen Sans', sans-serif",
+                  fontSize: '15px',
+                  lineHeight: 1.55,
+                  color: '#4e5871',
+                  margin: 0,
+                  paddingLeft: '20px',
+                  fontWeight: 400,
+                }}
+              >
+                <li style={{ marginBottom: '8px' }}>
+                  <strong>Zvýraznění podle pravítka</strong> — v menu pod tužkou; rovné úseky zvýraznění po dvou kliknutích (jako při držení Shift u klasického zvýraznění).
+                </li>
+                <li style={{ marginBottom: '8px' }}>
+                  <strong>Čárkovaná čára</strong> — v nabídce Konstrukce (čárkovaná přímka vedle klasické přímky).
+                </li>
+                <li style={{ marginBottom: '8px' }}>
+                  <strong>Výsek kružnice</strong> — v režimu kružítko lze narýsovat jen část obvodu (oblouk), ne jen celou kružnici.
+                </li>
+                <li>
+                  Popisky bodů uhýbají čarám, aby byly vždy viditelné.
+                </li>
+              </ul>
+            </div>
+          </>
         )}
 
         {/* Konstrukce */}
