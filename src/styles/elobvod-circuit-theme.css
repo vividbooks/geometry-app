@@ -108,6 +108,23 @@ input[type="range"] {
   cursor: pointer;
 }
 
+/* Track (the horizontal line the thumb slides on) */
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 6px;
+  background: rgba(148, 163, 184, 0.35); /* slate-400/35 */
+  border-radius: 9999px;
+}
+input[type="range"]::-moz-range-track {
+  height: 6px;
+  background: rgba(148, 163, 184, 0.35);
+  border-radius: 9999px;
+}
+input[type="range"]::-moz-range-progress {
+  height: 6px;
+  background: rgba(100, 116, 139, 0.55); /* slate-500/55 */
+  border-radius: 9999px;
+}
+
 /* Thumb – bigger on touch screens so it's easy to grab */
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
@@ -119,6 +136,7 @@ input[type="range"]::-webkit-slider-thumb {
   cursor: pointer;
   border: 2px solid #fff;
   box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  margin-top: -8px; /* center thumb vertically on 6px track */
 }
 input[type="range"]::-moz-range-thumb {
   width: 22px;

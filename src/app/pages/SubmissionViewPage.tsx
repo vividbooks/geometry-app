@@ -196,7 +196,7 @@ export default function SubmissionViewPage() {
     );
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-white">
+    <div className="flex h-[100dvh] w-full overflow-hidden bg-white">
       <div className="flex-1 relative min-w-0 overflow-hidden">{mainCanvas}</div>
 
       <aside className="flex w-[min(100vw,288px)] min-w-0 shrink-0 flex-col border-l border-zinc-200 bg-zinc-50/90">

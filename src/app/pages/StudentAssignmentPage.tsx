@@ -34,6 +34,8 @@ const NOTE_KEY_PREFIX = 'elobvod-student-note-';
 const MIN_ASIDE_PX = 200;
 const MAX_ASIDE_PX = 640;
 const DEFAULT_ASIDE_PX = 288;
+// Feature flag: keep detection code, hide UI for now.
+const SHOW_OBJECT_DETECT_UI = false;
 
 function readAsideWidth(): number {
   if (typeof sessionStorage === 'undefined') return DEFAULT_ASIDE_PX;
@@ -338,7 +340,7 @@ export default function StudentAssignmentPage() {
 
   return (
     <StudentAssignmentErrorBoundary>
-      <div className="relative h-screen w-full overflow-hidden bg-white">
+      <div className="relative h-[100dvh] w-full overflow-hidden bg-white">
         <div className="absolute inset-0 min-h-0 min-w-0">
           <Suspense
             fallback={
@@ -498,17 +500,20 @@ export default function StudentAssignmentPage() {
                               <ImageIcon className="size-4 opacity-80" aria-hidden />
                               {projectionEnabled && projectionSrc === activeStep.image ? 'Skrýt předlohu' : 'Promítnout na plátno'}
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setAutoDetectSrc(activeStep.image);
-                                setAutoDetectRequestId((v) => v + 1);
-                              }}
-                              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm transition-colors hover:bg-slate-50"
-                              title="Detekovat přímky a kružnice z obrázku"
-                            >
-                              Detekovat objekty
-                            </button>
+                            {SHOW_OBJECT_DETECT_UI ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAutoDetectSrc(activeStep.image);
+                                  setAutoDetectRequestId((v) => v + 1);
+                                }}
+                                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm transition-colors hover:bg-slate-50"
+                                title="Detekovat přímky a kružnice z obrázku"
+                              >
+                                Detekovat objekty
+                              </button>
+                            ) : null}
+                            <div className="h-9 w-px bg-slate-200" aria-hidden />
                             <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm">
                               <span className="text-xs font-medium text-slate-600">Průhlednost</span>
                               <input
@@ -518,7 +523,7 @@ export default function StudentAssignmentPage() {
                                 step={0.05}
                                 value={projectionOpacity}
                                 onChange={(e) => setProjectionOpacity(Number(e.currentTarget.value))}
-                                className="w-28 accent-slate-700"
+                                className="w-28 text-slate-700"
                                 aria-label="Průhlednost předlohy"
                               />
                             </div>
@@ -568,17 +573,20 @@ export default function StudentAssignmentPage() {
                             ? 'Skrýt předlohu'
                             : 'Promítnout na plátno'}
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAutoDetectSrc(assignment.instruction_image);
-                            setAutoDetectRequestId((v) => v + 1);
-                          }}
-                          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm transition-colors hover:bg-slate-50"
-                          title="Detekovat přímky a kružnice z obrázku"
-                        >
-                          Detekovat objekty
-                        </button>
+                        {SHOW_OBJECT_DETECT_UI ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAutoDetectSrc(assignment.instruction_image);
+                              setAutoDetectRequestId((v) => v + 1);
+                            }}
+                            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm transition-colors hover:bg-slate-50"
+                            title="Detekovat přímky a kružnice z obrázku"
+                          >
+                            Detekovat objekty
+                          </button>
+                        ) : null}
+                        <div className="h-9 w-px bg-slate-200" aria-hidden />
                         <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm">
                           <span className="text-xs font-medium text-slate-600">Průhlednost</span>
                           <input
@@ -588,7 +596,7 @@ export default function StudentAssignmentPage() {
                             step={0.05}
                             value={projectionOpacity}
                             onChange={(e) => setProjectionOpacity(Number(e.currentTarget.value))}
-                            className="w-28 accent-slate-700"
+                            className="w-28 text-slate-700"
                             aria-label="Průhlednost předlohy"
                           />
                         </div>

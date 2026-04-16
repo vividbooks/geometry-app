@@ -3652,7 +3652,9 @@ export function FreeGeometryEditor({
       const ih = entry.img.naturalHeight || 1;
       const w = canvasSize.width;
       const h = canvasSize.height;
-      const s = Math.min(w / iw, h / ih);
+      // Make projected template slightly smaller than full "contain",
+      // so it doesn't visually fill the whole canvas by default.
+      const s = Math.min(w / iw, h / ih) * 0.7;
       const dw = iw * s;
       const dh = ih * s;
       const dx = (w - dw) / 2;
