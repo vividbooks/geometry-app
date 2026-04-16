@@ -340,7 +340,7 @@ export default function StudentAssignmentPage() {
 
   return (
     <StudentAssignmentErrorBoundary>
-      <div className="relative h-[100dvh] w-full overflow-hidden bg-white">
+      <div className="relative h-screen h-[100dvh] w-full overflow-hidden bg-white">
         <div className="absolute inset-0 min-h-0 min-w-0">
           <Suspense
             fallback={
