@@ -1,6 +1,6 @@
-import { useState, useRef, useCallback, useEffect, lazy, Suspense } from 'react';
+import { Component, useMemo, useState, useRef, useCallback, useEffect, lazy, Suspense } from 'react';
 import { useParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, GripVertical } from 'lucide-react';
+import { ChevronLeft, ChevronRight, GripVertical, Image as ImageIcon } from 'lucide-react';
 import { ShareModal } from '../components/ShareModal';
 import '../../../rysovani/src/index.css';
 import type { GeometrySubmissionSnapshot } from '../../../rysovani/src/components/FreeGeometryEditor';
@@ -42,9 +42,10 @@ function readAsideWidth(): number {
 }
 
 function readAsideCollapsed(): boolean {
-  if (typeof sessionStorage === 'undefined') return true;
+  // Default: show assignment panel on open.
+  if (typeof sessionStorage === 'undefined') return false;
   const v = sessionStorage.getItem(ASIDE_COLLAPSED_KEY);
-  if (v === null) return true;
+  if (v === null) return false;
   return v === '1';
 }
 
@@ -64,6 +65,36 @@ type AssignmentRow = {
   instruction_steps?: unknown;
 };
 
+class StudentAssignmentErrorBoundary extends Component<
+  { children: React.ReactNode },
+  { error: Error | null }
+> {
+  state: { error: Error | null } = { error: null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-white p-6 text-center">
+          <div className="max-w-xl">
+            <div className="text-sm font-semibold text-red-700">Chyba při vykreslení stránky úkolu</div>
+            <div className="mt-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-left text-sm text-red-900 whitespace-pre-wrap">
+              {this.state.error.message || String(this.state.error)}
+            </div>
+            <div className="mt-3 text-xs text-zinc-500">
+              Otevři DevTools konzoli pro detailnější stacktrace.
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function StudentAssignmentPage() {
   const { assignmentId } = useParams<{ assignmentId: string }>();
   const submissionSnapshotRef = useRef<(() => GeometrySubmissionSnapshot | null) | null>(null);
@@ -71,6 +102,7 @@ export default function StudentAssignmentPage() {
   const [loadState, setLoadState] = useState<'loading' | 'error' | 'ready'>('loading');
   const [assignment, setAssignment] = useState<AssignmentRow | null>(null);
   const [stepIndex, setStepIndex] = useState(0);
+  const [darkMode, setDarkMode] = useState(false);
 
   const [gateName, setGateName] = useState('');
   const [studentName, setStudentName] = useState<string | null>(null);
@@ -83,6 +115,12 @@ export default function StudentAssignmentPage() {
   const [asideWidth, setAsideWidth] = useState(readAsideWidth);
   const [asideCollapsed, setAsideCollapsed] = useState(readAsideCollapsed);
   const asideResizeRef = useRef<{ startX: number; startW: number } | null>(null);
+
+  const [projectionEnabled, setProjectionEnabled] = useState(false);
+  const [projectionOpacity, setProjectionOpacity] = useState(0.35);
+  const [projectionSrc, setProjectionSrc] = useState<string | null>(null);
+  const [autoDetectRequestId, setAutoDetectRequestId] = useState(0);
+  const [autoDetectSrc, setAutoDetectSrc] = useState<string | null>(null);
 
   useEffect(() => {
     sessionStorage.setItem(ASIDE_W_KEY, String(asideWidth));
@@ -246,6 +284,33 @@ export default function StudentAssignmentPage() {
     void performSubmit(encoded, n);
   }, [assignmentId, gateName, performSubmit, collectGeometrySubmission]);
 
+  const instructionView = useMemo(() => {
+    return assignment ? assignmentInstructionDisplay(assignment) : null;
+  }, [assignment]);
+
+  const stepsCount = instructionView?.kind === 'steps' ? instructionView.steps.length : 0;
+  const activeStep =
+    instructionView?.kind === 'steps' && stepsCount > 0
+      ? instructionView.steps[Math.min(Math.max(0, stepIndex), stepsCount - 1)]
+      : null;
+
+  useEffect(() => {
+    if (!projectionSrc) setProjectionEnabled(false);
+  }, [projectionSrc]);
+
+  const openAssignmentButton = asideCollapsed ? (
+    <button
+      type="button"
+      onClick={() => setAsideCollapsed(false)}
+      className="flex h-12 shrink-0 items-center gap-2 rounded-full border border-[#3d4456] bg-[#565e75] px-4 text-[15px] font-semibold tracking-tight text-white shadow-md transition-colors hover:bg-[#4f566b] [font-family:system-ui,sans-serif]"
+      title="Otevřít zadání"
+      aria-expanded={false}
+    >
+      <ChevronRight className="size-5 shrink-0 opacity-95" strokeWidth={2.5} aria-hidden />
+      Zadání
+    </button>
+  ) : null;
+
   if (!assignmentId) {
     return (
       <div className="min-h-screen flex items-center justify-center text-zinc-600 p-6">
@@ -271,48 +336,40 @@ export default function StudentAssignmentPage() {
     );
   }
 
-  const instructionView = assignmentInstructionDisplay(assignment);
-  const stepsCount = instructionView.kind === 'steps' ? instructionView.steps.length : 0;
-  const activeStep =
-    instructionView.kind === 'steps' && stepsCount > 0
-      ? instructionView.steps[Math.min(Math.max(0, stepIndex), stepsCount - 1)]
-      : null;
-
   return (
-    <div className="relative h-screen w-full overflow-hidden bg-white">
-      <div className="absolute inset-0 min-h-0 min-w-0">
-        <Suspense
-          fallback={
-            <div className="flex h-full w-full items-center justify-center bg-white text-zinc-500">
-              Načítám rýsovací editor…
-            </div>
-          }
-        >
-          <FreeGeometryEditor
-            onBack={() => {}}
-            darkMode={false}
-            onDarkModeChange={() => {}}
-            deviceType="computer"
-            embedInAssignment
-            submissionSnapshotRef={submissionSnapshotRef}
-            assignmentToolbarRightOffsetPx={asideCollapsed ? 16 : asideWidth}
-            assignmentToolbarSlot={
-              asideCollapsed ? (
-                <button
-                  type="button"
-                  onClick={() => setAsideCollapsed(false)}
-                  className="flex h-12 shrink-0 items-center gap-2 rounded-full border border-[#3d4456] bg-[#565e75] px-4 text-[15px] font-semibold tracking-tight text-white shadow-md transition-colors hover:bg-[#4f566b] [font-family:system-ui,sans-serif]"
-                  title="Otevřít zadání"
-                  aria-expanded={false}
-                >
-                  <ChevronRight className="size-5 shrink-0 opacity-95" strokeWidth={2.5} aria-hidden />
-                  Zadání
-                </button>
-              ) : undefined
+    <StudentAssignmentErrorBoundary>
+      <div className="relative h-screen w-full overflow-hidden bg-white">
+        <div className="absolute inset-0 min-h-0 min-w-0">
+          <Suspense
+            fallback={
+              <div className="flex h-full w-full items-center justify-center bg-white text-zinc-500">
+                Načítám rýsovací editor…
+              </div>
             }
-          />
-        </Suspense>
-      </div>
+          >
+            <FreeGeometryEditor
+              onBack={() => {}}
+              darkMode={darkMode}
+              onDarkModeChange={setDarkMode}
+              deviceType="computer"
+              embedInAssignment
+              submissionSnapshotRef={submissionSnapshotRef}
+              assignmentToolbarRightOffsetPx={asideCollapsed ? 16 : asideWidth}
+            projectionImageSrc={projectionSrc}
+              projectionEnabled={projectionEnabled}
+              projectionOpacity={projectionOpacity}
+              autoDetectImageSrc={autoDetectSrc}
+              autoDetectRequestId={autoDetectRequestId}
+              assignmentToolbarSlot={
+                openAssignmentButton ? (
+                  <div className="flex items-center gap-2">
+                    {openAssignmentButton}
+                  </div>
+                ) : undefined
+              }
+            />
+          </Suspense>
+        </div>
 
       {!asideCollapsed ? (
           <aside
@@ -413,11 +470,60 @@ export default function StudentAssignmentPage() {
                         {activeStep.text}
                       </div>
                       {activeStep.image ? (
-                        <img
-                          src={activeStep.image}
-                          alt=""
-                          className="mt-4 w-full max-w-full rounded-lg border border-slate-200 object-contain max-h-[min(40vh,18rem)] bg-white"
-                        />
+                        <div className="mt-4 space-y-2">
+                          <img
+                            src={activeStep.image}
+                            alt=""
+                            className="w-full max-w-full rounded-lg border border-slate-200 object-contain max-h-[min(40vh,18rem)] bg-white"
+                          />
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (projectionEnabled && projectionSrc === activeStep.image) {
+                                  setProjectionEnabled(false);
+                                  return;
+                                }
+                                setProjectionSrc(activeStep.image);
+                                setProjectionEnabled(true);
+                              }}
+                              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm transition-colors hover:bg-slate-50"
+                              title={
+                                projectionEnabled && projectionSrc === activeStep.image
+                                  ? 'Skrýt předlohu z plátna'
+                                  : 'Promítnout obrázek na plátno'
+                              }
+                              aria-pressed={projectionEnabled && projectionSrc === activeStep.image}
+                            >
+                              <ImageIcon className="size-4 opacity-80" aria-hidden />
+                              {projectionEnabled && projectionSrc === activeStep.image ? 'Skrýt předlohu' : 'Promítnout na plátno'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAutoDetectSrc(activeStep.image);
+                                setAutoDetectRequestId((v) => v + 1);
+                              }}
+                              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm transition-colors hover:bg-slate-50"
+                              title="Detekovat přímky a kružnice z obrázku"
+                            >
+                              Detekovat objekty
+                            </button>
+                            <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm">
+                              <span className="text-xs font-medium text-slate-600">Průhlednost</span>
+                              <input
+                                type="range"
+                                min={0.05}
+                                max={0.9}
+                                step={0.05}
+                                value={projectionOpacity}
+                                onChange={(e) => setProjectionOpacity(Number(e.currentTarget.value))}
+                                className="w-28 accent-slate-700"
+                                aria-label="Průhlednost předlohy"
+                              />
+                            </div>
+                          </div>
+                        </div>
                       ) : null}
                     </article>
                   ) : (
@@ -432,11 +538,62 @@ export default function StudentAssignmentPage() {
                     {instructionView.text || '—'}
                   </div>
                   {assignment.instruction_image ? (
-                    <img
-                      src={assignment.instruction_image}
-                      alt="Ilustrace ke zadání"
-                      className="mt-4 w-full max-w-full rounded-lg border border-slate-200 object-contain max-h-[min(40vh,18rem)] bg-white"
-                    />
+                    <div className="mt-4 space-y-2">
+                      <img
+                        src={assignment.instruction_image}
+                        alt="Ilustrace ke zadání"
+                        className="w-full max-w-full rounded-lg border border-slate-200 object-contain max-h-[min(40vh,18rem)] bg-white"
+                      />
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (projectionEnabled && projectionSrc === assignment.instruction_image) {
+                              setProjectionEnabled(false);
+                              return;
+                            }
+                            setProjectionSrc(assignment.instruction_image);
+                            setProjectionEnabled(true);
+                          }}
+                          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm transition-colors hover:bg-slate-50"
+                          title={
+                            projectionEnabled && projectionSrc === assignment.instruction_image
+                              ? 'Skrýt předlohu z plátna'
+                              : 'Promítnout obrázek na plátno'
+                          }
+                          aria-pressed={projectionEnabled && projectionSrc === assignment.instruction_image}
+                        >
+                          <ImageIcon className="size-4 opacity-80" aria-hidden />
+                          {projectionEnabled && projectionSrc === assignment.instruction_image
+                            ? 'Skrýt předlohu'
+                            : 'Promítnout na plátno'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAutoDetectSrc(assignment.instruction_image);
+                            setAutoDetectRequestId((v) => v + 1);
+                          }}
+                          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm transition-colors hover:bg-slate-50"
+                          title="Detekovat přímky a kružnice z obrázku"
+                        >
+                          Detekovat objekty
+                        </button>
+                        <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm">
+                          <span className="text-xs font-medium text-slate-600">Průhlednost</span>
+                          <input
+                            type="range"
+                            min={0.05}
+                            max={0.9}
+                            step={0.05}
+                            value={projectionOpacity}
+                            onChange={(e) => setProjectionOpacity(Number(e.currentTarget.value))}
+                            className="w-28 accent-slate-700"
+                            aria-label="Průhlednost předlohy"
+                          />
+                        </div>
+                      </div>
+                    </div>
                   ) : null}
                 </article>
               )}
@@ -524,6 +681,7 @@ export default function StudentAssignmentPage() {
           description="Zkopíruj tento odkaz a pošli ho učiteli – uvidí tvé odevzdané rýsování."
         />
       )}
-    </div>
+      </div>
+    </StudentAssignmentErrorBoundary>
   );
 }

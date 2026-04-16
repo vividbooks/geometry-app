@@ -39,6 +39,7 @@ export default function SubmissionViewPage() {
   const [viewMode, setViewMode] = useState<ViewMode>('realistic');
   const [zoom, setZoom] = useState(2);
   const [tool, setTool] = useState<Tool>('select');
+  const [darkMode, setDarkMode] = useState(false);
   const isTouch = useIsTouch();
   const toolbarScale = useToolbarScale();
 
@@ -143,8 +144,8 @@ export default function SubmissionViewPage() {
       >
         <FreeGeometryEditor
           onBack={() => {}}
-          darkMode={false}
-          onDarkModeChange={() => {}}
+          darkMode={darkMode}
+          onDarkModeChange={setDarkMode}
           deviceType="computer"
           embedInAssignment
           readOnlyCanvas

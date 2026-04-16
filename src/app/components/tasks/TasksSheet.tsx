@@ -758,7 +758,7 @@ export function TasksSheet({
                                 id="task-title"
                                 value={title}
                                 onChange={e => setTitle(e.target.value)}
-                                placeholder="Např. Ampérmetr – základní zapojení"
+                                placeholder="Např. Narýsuj kružnici se středem S"
                                 className="min-w-0 flex-1 rounded-xl border border-sky-200/80 bg-white px-4 py-3.5 text-sm text-slate-800 shadow-sm outline-none ring-sky-400/0 transition-shadow placeholder:text-slate-400 focus-visible:border-sky-400 focus-visible:ring-2 focus-visible:ring-sky-400/25"
                               />
                               <div className="flex w-full shrink-0 flex-col gap-2 min-[520px]:w-auto min-[520px]:flex-row min-[520px]:items-center min-[520px]:justify-end">
@@ -819,7 +819,7 @@ export function TasksSheet({
                                     id={index === 0 ? 'task-step-0' : undefined}
                                     value={step.text}
                                     onChange={e => setStepTextAt(index, e.target.value)}
-                                    placeholder="Např. Sestroj obvod se dvěma žárovkami …"
+                                    placeholder="Např. Narýsuj kružnici k se středem S a poloměrem 3 cm …"
                                     rows={5}
                                     className="min-h-[100px] resize-y rounded-xl border border-slate-200 bg-slate-50/60 px-3.5 py-3 text-sm text-slate-800 outline-none transition-colors placeholder:text-slate-400 focus-visible:border-sky-300 focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-sky-400/20"
                                   />

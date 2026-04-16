@@ -7,7 +7,7 @@ import {
   type MutableRefObject,
   type ReactNode,
 } from 'react';
-import { Toaster, toast } from 'sonner@2.0.3';
+import { toast } from 'sonner@2.0.3';
 import katex from 'katex';
 import { 
   ArrowLeft, 
@@ -59,6 +59,126 @@ import Papir from '../imports/Papir';
 // --- TYPY ---
 
 type ToolType = 'move' | 'point' | 'segment' | 'line' | 'lineDashed' | 'ray' | 'circle' | 'angle' | 'distance' | 'perpendicular' | 'pan' | 'paper' | 'freehand' | 'highlighter' | 'highlighterStraight' | 'eraser';
+
+type TracePoint = { x: number; y: number };
+
+// React 18 StrictMode (dev) může efekty spustit 2× (simulace remountu).
+// Aby se detekce nespouštěla duplicitně, držíme si globální cache zpracovaných requestů.
+const handledAutoDetectKeys: string[] = [];
+const handledAutoDetectSet = new Set<string>();
+function markAutoDetectHandled(key: string): boolean {
+  if (handledAutoDetectSet.has(key)) return false;
+  handledAutoDetectSet.add(key);
+  handledAutoDetectKeys.push(key);
+  if (handledAutoDetectKeys.length > 80) {
+    const old = handledAutoDetectKeys.splice(0, handledAutoDetectKeys.length - 80);
+    for (const k of old) handledAutoDetectSet.delete(k);
+  }
+  return true;
+}
+
+function sobelEdgesGray(gray: Uint8ClampedArray, w: number, h: number) {
+  const mag = new Uint16Array(w * h);
+  const idx = (x: number, y: number) => y * w + x;
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const a00 = gray[idx(x - 1, y - 1)];
+      const a10 = gray[idx(x, y - 1)];
+      const a20 = gray[idx(x + 1, y - 1)];
+      const a01 = gray[idx(x - 1, y)];
+      const a21 = gray[idx(x + 1, y)];
+      const a02 = gray[idx(x - 1, y + 1)];
+      const a12 = gray[idx(x, y + 1)];
+      const a22 = gray[idx(x + 1, y + 1)];
+      const gx = -a00 + a20 - 2 * a01 + 2 * a21 - a02 + a22;
+      const gy = -a00 - 2 * a10 - a20 + a02 + 2 * a12 + a22;
+      const m = Math.min(65535, Math.abs(gx) + Math.abs(gy));
+      mag[idx(x, y)] = m;
+    }
+  }
+  return mag;
+}
+
+function traceEdgePaths(edge: Uint8Array, w: number, h: number, maxPaths: number) {
+  const visited = new Uint8Array(w * h);
+  const paths: TracePoint[][] = [];
+  const dirs = [
+    [-1, -1], [0, -1], [1, -1],
+    [-1, 0],           [1, 0],
+    [-1, 1],  [0, 1],  [1, 1],
+  ] as const;
+  const idx = (x: number, y: number) => y * w + x;
+  for (let y = 1; y < h - 1 && paths.length < maxPaths; y++) {
+    for (let x = 1; x < w - 1 && paths.length < maxPaths; x++) {
+      const i = idx(x, y);
+      if (!edge[i] || visited[i]) continue;
+      const path: TracePoint[] = [];
+      let cx = x, cy = y;
+      let safety = 0;
+      while (safety++ < w * h) {
+        const ci = idx(cx, cy);
+        if (!edge[ci] || visited[ci]) break;
+        visited[ci] = 1;
+        path.push({ x: cx, y: cy });
+        let found = false;
+        for (const [dx, dy] of dirs) {
+          const nx = cx + dx;
+          const ny = cy + dy;
+          const ni = idx(nx, ny);
+          if (nx <= 0 || ny <= 0 || nx >= w - 1 || ny >= h - 1) continue;
+          if (edge[ni] && !visited[ni]) {
+            cx = nx;
+            cy = ny;
+            found = true;
+            break;
+          }
+        }
+        if (!found) break;
+      }
+      if (path.length >= 20) paths.push(path);
+    }
+  }
+  return paths;
+}
+
+type LineModel = { a: number; b: number; c: number }; // ax + by + c = 0, normalized
+type CircleModel = { cx: number; cy: number; r: number };
+
+function lineFrom2Points(p1: TracePoint, p2: TracePoint): LineModel | null {
+  const dx = p2.x - p1.x;
+  const dy = p2.y - p1.y;
+  const n = Math.hypot(dx, dy);
+  if (n < 1e-6) return null;
+  // normal vector (dy, -dx)
+  const a = dy / n;
+  const b = -dx / n;
+  const c = -(a * p1.x + b * p1.y);
+  return { a, b, c };
+}
+
+function distPointLine(p: TracePoint, l: LineModel) {
+  return Math.abs(l.a * p.x + l.b * p.y + l.c);
+}
+
+function circleFrom3Points(p1: TracePoint, p2: TracePoint, p3: TracePoint): CircleModel | null {
+  const ax = p1.x, ay = p1.y;
+  const bx = p2.x, by = p2.y;
+  const cx = p3.x, cy = p3.y;
+  const d = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by));
+  if (Math.abs(d) < 1e-6) return null;
+  const ax2ay2 = ax * ax + ay * ay;
+  const bx2by2 = bx * bx + by * by;
+  const cx2cy2 = cx * cx + cy * cy;
+  const ux = (ax2ay2 * (by - cy) + bx2by2 * (cy - ay) + cx2cy2 * (ay - by)) / d;
+  const uy = (ax2ay2 * (cx - bx) + bx2by2 * (ax - cx) + cx2cy2 * (bx - ax)) / d;
+  const r = Math.hypot(ax - ux, ay - uy);
+  if (!Number.isFinite(r) || r < 1e-3) return null;
+  return { cx: ux, cy: uy, r };
+}
+
+function distPointCircle(p: TracePoint, c: CircleModel) {
+  return Math.abs(Math.hypot(p.x - c.cx, p.y - c.cy) - c.r);
+}
 
 export interface GeoPoint {
   id: string;
@@ -149,6 +269,16 @@ interface FreeGeometryEditorProps {
   assignmentToolbarSlot?: ReactNode;
   /** Posun celé skupiny od pravého okraje (px), když je otevřený boční panel. */
   assignmentToolbarRightOffsetPx?: number;
+  /** Obrázek „předlohy“, který lze promítnout přes plátno (např. obrázek u kroku úkolu). */
+  projectionImageSrc?: string | null;
+  /** Zda je předloha právě promítnutá. */
+  projectionEnabled?: boolean;
+  /** Průhlednost předlohy (0..1). */
+  projectionOpacity?: number;
+  /** Spustit detekci geometrických objektů (přímky/kružnice) z obrázku. */
+  autoDetectImageSrc?: string | null;
+  /** Změna hodnoty spustí novou detekci objektů (např. inkrement). */
+  autoDetectRequestId?: number;
 }
 
 interface RecordedStep {
@@ -275,11 +405,23 @@ export function FreeGeometryEditor({
   canvasExportRef,
   assignmentToolbarSlot,
   assignmentToolbarRightOffsetPx,
+  projectionImageSrc = null,
+  projectionEnabled = false,
+  projectionOpacity = 0.35,
+  autoDetectImageSrc = null,
+  autoDetectRequestId = 0,
 }: FreeGeometryEditorProps) {
   const isMobile = useIsMobile();
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const bgCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const animationFrameRef = useRef<number>();
+  const projectionImgRef = useRef<{ src: string; img: HTMLImageElement; loaded: boolean } | null>(null);
+  const projectionWorldRectRef = useRef<{ src: string; x: number; y: number; w: number; h: number } | null>(null);
+  const pointsStateRef = useRef<GeoPoint[]>([]);
+  const shapesStateRef = useRef<GeoShape[]>([]);
+  const lastHandledAutoDetectIdRef = useRef<number>(0);
+  const autoDetectRunningRef = useRef(false);
   /** Animace posunu středu popisku při změně cílové pozice (ease-out). */
   const labelAnimByPointIdRef = useRef<
     Map<string, { from: { x: number; y: number }; to: { x: number; y: number }; startMs: number }>
@@ -329,6 +471,14 @@ export function FreeGeometryEditor({
   const [scale, setScale] = useState(isMobile ? 0.7 : 1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    pointsStateRef.current = points;
+  }, [points]);
+
+  useEffect(() => {
+    shapesStateRef.current = shapes;
+  }, [shapes]);
 
   // Assets
   const rulerImageRef = useRef<HTMLImageElement | null>(null);
@@ -427,7 +577,7 @@ export function FreeGeometryEditor({
   const pinchRef = useRef<{ active: boolean; lastDist: number; lastCenter: { x: number; y: number } }>({ active: false, lastDist: 0, lastCenter: { x: 0, y: 0 } });
   const [visualEffects, setVisualEffects] = useState<VisualEffect[]>([]);
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
-  const [showMeasurements, setShowMeasurements] = useState(true); // Toggle pro zobrazení měření - defaultně zapnuté
+  const [showMeasurements, setShowMeasurements] = useState(false); // Toggle pro zobrazení měření - defaultně vypnuté
   const [showGrid, setShowGrid] = useState(false);
   const canvasWarningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [canvasWarning, setCanvasWarning] = useState<string | null>(null);
@@ -905,6 +1055,26 @@ export function FreeGeometryEditor({
   const historyIndexRef = useRef(historyIndex);
   historyRef.current = history;
   historyIndexRef.current = historyIndex;
+  const suppressHistoryRef = useRef(false);
+  const didDragSinceSuppressRef = useRef(false);
+
+  const commitHistorySnapshot = useCallback(() => {
+    if (points.length === 0 && shapes.length === 0 && freehandPaths.length === 0) return;
+    const newState = {
+      points: [...points],
+      shapes: [...shapes],
+      freehandPaths: [...freehandPaths],
+      constructionSteps: [...constructionSteps],
+      constructionCounter: constructionStepCounter.current
+    };
+    setHistory(prev => {
+      const idx = historyIndexRef.current;
+      const newHistory = [...prev.slice(0, idx + 1), newState];
+      if (newHistory.length > 50) return newHistory.slice(newHistory.length - 50);
+      return newHistory;
+    });
+    setHistoryIndex(prev => Math.min(prev + 1, 49));
+  }, [constructionSteps, freehandPaths, points, shapes]);
 
   // Automatické ukládání do historie při změně stavu
   useEffect(() => {
@@ -913,28 +1083,13 @@ export function FreeGeometryEditor({
       return;
     }
 
+    if (suppressHistoryRef.current) return;
+
     if (points.length === 0 && shapes.length === 0 && freehandPaths.length === 0) {
       return;
     }
-
-    const newState = {
-      points: [...points],
-      shapes: [...shapes],
-      freehandPaths: [...freehandPaths],
-      constructionSteps: [...constructionSteps],
-      constructionCounter: constructionStepCounter.current
-    };
-    
-    setHistory(prev => {
-      const idx = historyIndexRef.current;
-      const newHistory = [...prev.slice(0, idx + 1), newState];
-      if (newHistory.length > 50) {
-        return newHistory.slice(newHistory.length - 50);
-      }
-      return newHistory;
-    });
-    setHistoryIndex(prev => Math.min(prev + 1, 49));
-  }, [points, shapes, freehandPaths]);
+    commitHistorySnapshot();
+  }, [points, shapes, freehandPaths, commitHistorySnapshot]);
 
   // Automatické zachytávání změn při nahrávání
   useEffect(() => {
@@ -1888,8 +2043,8 @@ export function FreeGeometryEditor({
       } else if (distToCenter < threshold) {
         setCircleInput(prev => ({ ...prev, isDraggingCenter: true }));
       } else {
-        // Snap to nearest point or intersection
-        const snap = getSnapPosition(wx, wy, 30);
+        // Snap to nearest point or intersection — prefer existing point to avoid "jumping" center
+        const snap = getSnapPositionPreferPoint(wx, wy, 30);
         const snapX = snap ? snap.x : wx;
         const snapY = snap ? snap.y : wy;
         setCircleInput(prev => ({ ...prev, center: { x: snapX, y: snapY } }));
@@ -1977,7 +2132,7 @@ export function FreeGeometryEditor({
       }
     }
 
-    const snapped = getSnappingPoint(wx, wy);
+    const snapped = getSnappingPoint(wx, wy, SNAP_PX, undefined, activeTool === 'move');
 
     // NÁSTROJ: POSUN PLÁTNA (PAN)
     if (activeTool === 'pan') {
@@ -1995,6 +2150,8 @@ export function FreeGeometryEditor({
         );
         if (isPartOfSelection) {
           // Začít group drag všech bodů vybraných tvarů
+          suppressHistoryRef.current = true;
+          didDragSinceSuppressRef.current = false;
           const allPointIds = new Set<string>();
           shapes.forEach(s => {
             if (selectedShapeIds.includes(s.id)) s.points.forEach(pid => allPointIds.add(pid));
@@ -2004,6 +2161,8 @@ export function FreeGeometryEditor({
             pointSnapshots: points.filter(p => allPointIds.has(p.id)).map(p => ({ id: p.id, x: p.x, y: p.y }))
           };
         } else {
+          suppressHistoryRef.current = true;
+          didDragSinceSuppressRef.current = false;
           draggedPointIdRef.current = snapped.id;
           setDraggedPointId(snapped.id);
           setSelection(snapped.id);
@@ -2032,6 +2191,8 @@ export function FreeGeometryEditor({
               if (effectiveIds.includes(s.id)) s.points.forEach(pid => allPointIds.add(pid));
             });
             if (allPointIds.size > 0) {
+              suppressHistoryRef.current = true;
+              didDragSinceSuppressRef.current = false;
               groupDragRef.current = {
                 startWx: wx, startWy: wy,
                 pointSnapshots: points.filter(p => allPointIds.has(p.id)).map(p => ({ id: p.id, x: p.x, y: p.y }))
@@ -2304,12 +2465,18 @@ export function FreeGeometryEditor({
     // V tablet módu úhloměr nepoužívá 2-bodový workflow
     if (activeTool === 'angle' && isTabletMode) return;
     if (['segment', 'line', 'lineDashed', 'circle', 'angle'].includes(activeTool)) {
-      // Nejprve bod vs. průsečík jako u getSnapPosition (ne jen getSnappingPoint u kurzoru — jinak u průsečíku
-      // vyhrál jiný bod / popisek). Existující bod jen pokud cíl přichytávání leží na něm (skryté body OK).
-      const snapPos = getSnapPosition(wx, wy, SNAP_PX);
+      // Nejprve bod vs. průsečík jako u getSnapPosition, ale u kružnice preferuj existující bod,
+      // aby se střed (typicky označený bod) nepřichytil na blízký průsečík/projekci a "neuskočil".
+      const snapPos = activeTool === 'circle'
+        ? getSnapPositionPreferPoint(wx, wy, SNAP_PX)
+        : getSnapPosition(wx, wy, SNAP_PX);
       const SNAP_MATCH_ON_POINT_PX = 2;
       let snappedShape: GeoPoint | null = null;
-      if (snapPos) {
+      if (activeTool === 'circle') {
+        // For circle construction, if the cursor is near an existing point, ALWAYS reuse that point.
+        // Otherwise the snap might pick a nearby intersection/projection and the intended center/radius point "jumps".
+        snappedShape = getSnappingPoint(wx, wy, SNAP_PX);
+      } else if (snapPos) {
         const p = getSnappingPoint(snapPos.x, snapPos.y, SNAP_PX);
         if (p) {
           const dPx = Math.hypot((p.x - snapPos.x) * scale, (p.y - snapPos.y) * scale);
@@ -2727,7 +2894,7 @@ export function FreeGeometryEditor({
     }
 
     // Hover logic for points
-    const snapped = getSnappingPoint(wx, wy);
+    const snapped = getSnappingPoint(wx, wy, SNAP_PX, undefined, activeTool === 'move');
     // For point tool: don't highlight existing points — snap to lines/intersections instead
     setHoveredPointId(activeTool === 'point' ? null : (snapped ? snapped.id : null));
     mousePosRef.current = { x: wx, y: wy };
@@ -2776,6 +2943,7 @@ export function FreeGeometryEditor({
       const gd = groupDragRef.current;
       const dx = wx - gd.startWx;
       const dy = wy - gd.startWy;
+      if (dx !== 0 || dy !== 0) didDragSinceSuppressRef.current = true;
       const snapMap = new Map(gd.pointSnapshots.map(s => [s.id, s]));
       setPoints(prev => prev.map(p => {
         const snap = snapMap.get(p.id);
@@ -2793,6 +2961,7 @@ export function FreeGeometryEditor({
       dragSnapPreviewRef.current = snapToNearestShape(wx, wy, SNAP_PX, excludeIds);
       // Store position in ref for real-time rendering
       draggedPointPosRef.current = { x: wx, y: wy };
+      didDragSinceSuppressRef.current = true;
       // Throttle setPoints to one per animation frame to avoid dropped frames
       if (!dragUpdateRafRef.current) {
         dragUpdateRafRef.current = requestAnimationFrame(() => {
@@ -2867,7 +3036,7 @@ export function FreeGeometryEditor({
         return;
       }
       if (circleInput.isDraggingCenter) {
-        const snap = getSnapPosition(wx, wy, 25);
+        const snap = getSnapPositionPreferPoint(wx, wy, 25);
         const snapX = snap ? snap.x : wx;
         const snapY = snap ? snap.y : wy;
         setCircleInput(prev => ({ ...prev, center: { x: snapX, y: snapY } }));
@@ -3013,6 +3182,14 @@ export function FreeGeometryEditor({
       }
       
       marqueeRef.current = null;
+    }
+
+    // Commit one undo step for the whole drag (friendlier undo than pixel-steps)
+    if (suppressHistoryRef.current) {
+      suppressHistoryRef.current = false;
+      const didDrag = didDragSinceSuppressRef.current;
+      didDragSinceSuppressRef.current = false;
+      if (didDrag) commitHistorySnapshot();
     }
   };
 
@@ -3290,14 +3467,20 @@ export function FreeGeometryEditor({
             // Zápis konstrukce
             const p1data = animState.p1 as any;
             const p2data = animState.p2 as any;
-            // For circles: reposition radius point to 45° (down-right) from center
+            // For circles: reposition radius point to 45° (down-right) from center,
+            // but ONLY if it's a dedicated hidden/unlabeled point — never move a shared visible point
+            // (e.g. the center of another circle used as the radius reference).
             if (newShape.type === 'circle' || newShape.type === 'circleArc') {
-              const r = Math.sqrt((p2data.x - p1data.x) ** 2 + (p2data.y - p1data.y) ** 2);
-              setPoints(prev => prev.map(pt =>
-                pt.id === p2data.id
-                  ? { ...pt, x: p1data.x + Math.cos(Math.PI / 4) * r, y: p1data.y + Math.sin(Math.PI / 4) * r }
-                  : pt
-              ));
+              const p2pt = points.find(pt => pt.id === p2data.id);
+              const isSharedPoint = p2pt && p2pt.label && !p2pt.hidden;
+              if (!isSharedPoint) {
+                const r = Math.sqrt((p2data.x - p1data.x) ** 2 + (p2data.y - p1data.y) ** 2);
+                setPoints(prev => prev.map(pt =>
+                  pt.id === p2data.id
+                    ? { ...pt, x: p1data.x + Math.cos(Math.PI / 4) * r, y: p1data.y + Math.sin(Math.PI / 4) * r }
+                    : pt
+                ));
+              }
             }
             if (newShape.type === 'segment') {
               const lA = getPointLabel(p1data.id);
@@ -3379,6 +3562,7 @@ export function FreeGeometryEditor({
       }
       
       try {
+        renderProjectionBackground();
         renderCanvas();
       } catch (e) {
         // Prevent rendering errors from killing the animation loop
@@ -3391,10 +3575,689 @@ export function FreeGeometryEditor({
     return () => {
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
     };
-  }, [animState, points, shapes, freehandPaths, scale, offset, canvasSize, darkMode, selectedPointId, hoveredPointId, hoveredShape, activeTool, visualEffects, angleInput, circleInput, recordingState.showPlayer, showMeasurements, showGrid, perpTabletState, circleTabletState, isTabletMode, angleTabletState, selectedShapeIds, hoveredShapeForMove, selectedFreehandIds, draggedPointId, constructionAnimMs]);
+  }, [
+    animState,
+    points,
+    shapes,
+    freehandPaths,
+    scale,
+    offset,
+    canvasSize,
+    darkMode,
+    selectedPointId,
+    hoveredPointId,
+    hoveredShape,
+    activeTool,
+    visualEffects,
+    angleInput,
+    circleInput,
+    recordingState.showPlayer,
+    showMeasurements,
+    showGrid,
+    perpTabletState,
+    circleTabletState,
+    isTabletMode,
+    angleTabletState,
+    selectedShapeIds,
+    hoveredShapeForMove,
+    selectedFreehandIds,
+    draggedPointId,
+    constructionAnimMs,
+    projectionEnabled,
+    projectionImageSrc,
+    projectionOpacity,
+  ]);
 
 
   // --- RENDEROVÁNÍ ---
+  const renderProjectionBackground = () => {
+    const bg = bgCanvasRef.current;
+    if (!bg) return;
+    const ctx = bg.getContext('2d');
+    if (!ctx) return;
+
+    const dpr = isLowPerformance ? 1 : (window.devicePixelRatio || 1);
+    if (bg.width !== canvasSize.width * dpr || bg.height !== canvasSize.height * dpr) {
+      bg.width = canvasSize.width * dpr;
+      bg.height = canvasSize.height * dpr;
+    }
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, bg.width, bg.height);
+
+    if (!projectionEnabled || !projectionImageSrc) return;
+
+    // Ensure image element exists / is loading
+    if (!projectionImgRef.current || projectionImgRef.current.src !== projectionImageSrc) {
+      const img = new Image();
+      const entry = { src: projectionImageSrc, img, loaded: false };
+      projectionImgRef.current = entry;
+      img.onload = () => {
+        entry.loaded = true;
+      };
+      img.onerror = () => {
+        entry.loaded = false;
+      };
+      img.src = projectionImageSrc;
+    }
+
+    const entry = projectionImgRef.current;
+    if (!entry?.loaded) return;
+
+    // Compute world rect once per src / resize / initial enable to match "contain" at that moment.
+    const prevRect = projectionWorldRectRef.current;
+    const needsRect = !prevRect || prevRect.src !== projectionImageSrc;
+    if (needsRect) {
+      const iw = entry.img.naturalWidth || 1;
+      const ih = entry.img.naturalHeight || 1;
+      const w = canvasSize.width;
+      const h = canvasSize.height;
+      const s = Math.min(w / iw, h / ih);
+      const dw = iw * s;
+      const dh = ih * s;
+      const dx = (w - dw) / 2;
+      const dy = (h - dh) / 2;
+      // Screen(px) → world
+      const wx = (dx - offset.x) / scale;
+      const wy = (dy - offset.y) / scale;
+      projectionWorldRectRef.current = { src: projectionImageSrc, x: wx, y: wy, w: dw / scale, h: dh / scale };
+    }
+
+    const rect = projectionWorldRectRef.current;
+    if (!rect) return;
+
+    ctx.save();
+    ctx.scale(dpr, dpr);
+    ctx.globalAlpha = Math.max(0, Math.min(1, projectionOpacity));
+    ctx.translate(offset.x, offset.y);
+    ctx.scale(scale, scale);
+    ctx.drawImage(entry.img, rect.x, rect.y, rect.w, rect.h);
+    ctx.restore();
+  };
+
+  useEffect(() => {
+    if (!autoDetectRequestId) return;
+    if (autoDetectRequestId === lastHandledAutoDetectIdRef.current) return;
+    lastHandledAutoDetectIdRef.current = autoDetectRequestId;
+    if (!autoDetectImageSrc?.trim()) return;
+    if (autoDetectRunningRef.current) return;
+    const src = autoDetectImageSrc.trim();
+    const requestKey = `${autoDetectRequestId}:${src}`;
+    if (!markAutoDetectHandled(requestKey)) return;
+    autoDetectRunningRef.current = true;
+    let cancelled = false;
+    (async () => {
+      if (readOnlyCanvas) {
+        toast.error('Plátno je jen pro čtení.');
+        return;
+      }
+      const w = canvasSize.width;
+      const h = canvasSize.height;
+      if (w <= 0 || h <= 0) {
+        toast.error('Plátno není připravené.');
+        return;
+      }
+      toast.message('Detekuji geometrické objekty…', { duration: 1200 });
+
+      const img = new Image();
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error('Nepodařilo se načíst obrázek.'));
+        img.src = src;
+      });
+      if (cancelled) return;
+
+      const maxSide = 640;
+      const scaleTo = Math.min(1, maxSide / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
+      const ow = Math.max(1, Math.round((img.naturalWidth || 1) * scaleTo));
+      const oh = Math.max(1, Math.round((img.naturalHeight || 1) * scaleTo));
+
+      const off = document.createElement('canvas');
+      off.width = ow;
+      off.height = oh;
+      const offCtx = off.getContext('2d');
+      if (!offCtx) throw new Error('Canvas není dostupný.');
+      offCtx.drawImage(img, 0, 0, ow, oh);
+
+      const data = offCtx.getImageData(0, 0, ow, oh).data;
+      const gray = new Uint8ClampedArray(ow * oh);
+      for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+        const r = data[i], g = data[i + 1], b = data[i + 2];
+        gray[p] = (0.299 * r + 0.587 * g + 0.114 * b) | 0;
+      }
+
+      const mag = sobelEdgesGray(gray, ow, oh);
+      let maxMag = 0;
+      for (let i = 0; i < mag.length; i++) if (mag[i] > maxMag) maxMag = mag[i];
+      const thr = Math.max(50, Math.round(maxMag * 0.23));
+
+      const edgeBinary = new Uint8Array(ow * oh);
+      let edgeCount = 0;
+      for (let i = 0; i < mag.length; i++) {
+        if (mag[i] > thr) { edgeBinary[i] = 1; edgeCount++; }
+      }
+      if (edgeCount < 200) {
+        toast.error('V obrázku je málo hran pro detekci.');
+        return;
+      }
+
+      const allPaths = traceEdgePaths(edgeBinary, ow, oh, 500);
+      const imgDiag = Math.hypot(ow, oh);
+      const minPathPx = imgDiag * 0.12;
+      const longPaths = allPaths.filter(path => {
+        let len = 0;
+        for (let i = 1; i < path.length; i++) {
+          len += Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y);
+        }
+        return len >= minPathPx;
+      });
+
+      const filteredPts: TracePoint[] = [];
+      for (const path of longPaths) for (const p of path) filteredPts.push(p);
+
+      if (filteredPts.length < 100) {
+        toast.error('V obrázku nejsou dostatečně dlouhé hrany pro detekci.');
+        return;
+      }
+
+      const maxPts = 6000;
+      const step = Math.max(1, Math.floor(filteredPts.length / maxPts));
+      const pts = filteredPts.filter((_, i) => i % step === 0);
+
+      const lineDistThr = 3.0;
+      const circleDistThr = 4.0;
+
+      const remaining: TracePoint[] = [...pts];
+      const pickedLines: { model: LineModel; inliers: TracePoint[] }[] = [];
+      const pickedCircles: { model: CircleModel; inliers: TracePoint[] }[] = [];
+
+      const randInt = (n: number) => Math.floor(Math.random() * n);
+
+      const minLineSpanPx = imgDiag * 0.25;
+      const maxLines = 8;
+      const maxCircles = 3;
+
+      const lineSpanPx = (model: LineModel, inliers: TracePoint[]) => {
+        const dx = -model.b;
+        const dy = model.a;
+        let tMin = Infinity;
+        let tMax = -Infinity;
+        for (const p of inliers) {
+          const t = p.x * dx + p.y * dy;
+          if (t < tMin) tMin = t;
+          if (t > tMax) tMax = t;
+        }
+        return tMax - tMin;
+      };
+
+      const circleCoverageRad = (model: CircleModel, inliers: TracePoint[]) => {
+        const angles: number[] = [];
+        for (const p of inliers) angles.push(Math.atan2(p.y - model.cy, p.x - model.cx));
+        angles.sort((a, b) => a - b);
+        if (angles.length < 10) return 0;
+        let maxGap = 0;
+        for (let i = 1; i < angles.length; i++) maxGap = Math.max(maxGap, angles[i] - angles[i - 1]);
+        maxGap = Math.max(maxGap, angles[0] + Math.PI * 2 - angles[angles.length - 1]);
+        return Math.PI * 2 - maxGap;
+      };
+
+      for (let iterObj = 0; iterObj < maxLines; iterObj++) {
+        let best: { model: LineModel; inliers: TracePoint[] } | null = null;
+        const iters = 400;
+        for (let it = 0; it < iters; it++) {
+          if (remaining.length < 60) break;
+          const p1 = remaining[randInt(remaining.length)];
+          const p2 = remaining[randInt(remaining.length)];
+          const model = lineFrom2Points(p1, p2);
+          if (!model) continue;
+          const inliers: TracePoint[] = [];
+          for (const p of remaining) if (distPointLine(p, model) <= lineDistThr) inliers.push(p);
+          if (inliers.length < 150) continue;
+          if (lineSpanPx(model, inliers) < minLineSpanPx) continue;
+          if (!best || inliers.length > best.inliers.length) best = { model, inliers };
+        }
+        if (!best || best.inliers.length < 150) break;
+        pickedLines.push(best);
+        const inlierSet = new Set(best.inliers.map(p => `${p.x},${p.y}`));
+        for (let i = remaining.length - 1; i >= 0; i--) {
+          if (inlierSet.has(`${remaining[i].x},${remaining[i].y}`)) remaining.splice(i, 1);
+        }
+      }
+
+      // Merge near-parallel close lines (two edges of a thick stroke → one line)
+      const mergeAngleTol = Math.cos((6 * Math.PI) / 180);
+      const mergeDistPx = 20;
+
+      const normLine = (l: LineModel): LineModel => {
+        const n = Math.hypot(l.a, l.b) || 1;
+        let a = l.a / n, b = l.b / n, c = l.c / n;
+        if (a < 0 || (Math.abs(a) < 1e-9 && b < 0)) { a = -a; b = -b; c = -c; }
+        return { a, b, c };
+      };
+
+      const mergedLines: { model: LineModel; inliers: TracePoint[] }[] = [];
+      const lineUsed = new Uint8Array(pickedLines.length);
+      for (let i = 0; i < pickedLines.length; i++) {
+        if (lineUsed[i]) continue;
+        const ni = normLine(pickedLines[i].model);
+        const group = [i];
+        for (let j = i + 1; j < pickedLines.length; j++) {
+          if (lineUsed[j]) continue;
+          const nj = normLine(pickedLines[j].model);
+          const dot = Math.abs(ni.a * nj.a + ni.b * nj.b);
+          if (dot < mergeAngleTol) continue;
+          if (Math.abs(ni.c - nj.c) > mergeDistPx) continue;
+          group.push(j);
+        }
+        let sa = 0, sb = 0, sc = 0;
+        const allInliers: TracePoint[] = [];
+        for (const idx of group) {
+          lineUsed[idx] = 1;
+          const nm = normLine(pickedLines[idx].model);
+          sa += nm.a; sb += nm.b; sc += nm.c;
+          allInliers.push(...pickedLines[idx].inliers);
+        }
+        const n = Math.hypot(sa, sb) || 1;
+        mergedLines.push({ model: { a: sa / n, b: sb / n, c: sc / group.length }, inliers: allInliers });
+      }
+
+      pickedLines.length = 0;
+      for (const ml of mergedLines) pickedLines.push(ml);
+
+      for (let iterObj = 0; iterObj < maxCircles; iterObj++) {
+        let best: { model: CircleModel; inliers: TracePoint[] } | null = null;
+        const iters = 340;
+        for (let it = 0; it < iters; it++) {
+          if (remaining.length < 120) break;
+          const p1 = remaining[randInt(remaining.length)];
+          const p2 = remaining[randInt(remaining.length)];
+          const p3 = remaining[randInt(remaining.length)];
+          const model = circleFrom3Points(p1, p2, p3);
+          if (!model) continue;
+          if (model.r < 10 || model.r > Math.max(ow, oh) * 0.9) continue;
+          const inliers: TracePoint[] = [];
+          for (const p of remaining) if (distPointCircle(p, model) <= circleDistThr) inliers.push(p);
+          if (inliers.length < 240) continue;
+          if (circleCoverageRad(model, inliers) < (140 * Math.PI) / 180) continue;
+          if (!best || inliers.length > best.inliers.length) best = { model, inliers };
+        }
+        if (!best || best.inliers.length < 240) break;
+        pickedCircles.push(best);
+        const inlierSet = new Set(best.inliers.map(p => `${p.x},${p.y}`));
+        for (let i = remaining.length - 1; i >= 0; i--) {
+          if (inlierSet.has(`${remaining[i].x},${remaining[i].y}`)) remaining.splice(i, 1);
+        }
+      }
+
+      // Merge near-duplicate circles (inner/outer edge of thick stroke → one circle)
+      const mergeCenterPx = 20;
+      const mergeRadiusPx = 20;
+      const mergedCircles: { model: CircleModel; inliers: TracePoint[] }[] = [];
+      const circleUsed = new Uint8Array(pickedCircles.length);
+      for (let i = 0; i < pickedCircles.length; i++) {
+        if (circleUsed[i]) continue;
+        const ci = pickedCircles[i].model;
+        const group = [i];
+        for (let j = i + 1; j < pickedCircles.length; j++) {
+          if (circleUsed[j]) continue;
+          const cj = pickedCircles[j].model;
+          if (Math.hypot(ci.cx - cj.cx, ci.cy - cj.cy) > mergeCenterPx) continue;
+          if (Math.abs(ci.r - cj.r) > mergeRadiusPx) continue;
+          group.push(j);
+        }
+        let scx = 0, scy = 0, sr = 0;
+        const allInliers: TracePoint[] = [];
+        for (const idx of group) {
+          circleUsed[idx] = 1;
+          const m = pickedCircles[idx].model;
+          scx += m.cx; scy += m.cy; sr += m.r;
+          allInliers.push(...pickedCircles[idx].inliers);
+        }
+        const k = group.length;
+        mergedCircles.push({ model: { cx: scx / k, cy: scy / k, r: sr / k }, inliers: allInliers });
+      }
+      pickedCircles.length = 0;
+      for (const mc of mergedCircles) pickedCircles.push(mc);
+
+      // Remove "lines" whose inliers mostly lie on a detected circle (arc misdetected as line)
+      if (pickedCircles.length > 0 && pickedLines.length > 0) {
+        const circleOverlapThr = circleDistThr * 3;
+        const filteredLines = pickedLines.filter(line => {
+          let nearCircle = 0;
+          for (const p of line.inliers) {
+            for (const circ of pickedCircles) {
+              if (distPointCircle(p, circ.model) <= circleOverlapThr) { nearCircle++; break; }
+            }
+          }
+          return nearCircle / line.inliers.length < 0.4;
+        });
+        pickedLines.length = 0;
+        for (const fl of filteredLines) pickedLines.push(fl);
+      }
+
+      if (pickedLines.length === 0 && pickedCircles.length === 0) {
+        toast.error('Nepodařilo se detekovat přímky ani kružnice.');
+        return;
+      }
+
+      const iw = img.naturalWidth || 1;
+      const ih = img.naturalHeight || 1;
+      const sContain = Math.min(w / iw, h / ih);
+      const dw = iw * sContain;
+      const dh = ih * sContain;
+      const dx = (w - dw) / 2;
+      const dy = (h - dh) / 2;
+      const toWorld = (px: number, py: number) => {
+        const sx = dx + (px / ow) * dw;
+        const sy = dy + (py / oh) * dh;
+        return { x: (sx - offset.x) / scale, y: (sy - offset.y) / scale };
+      };
+
+      const wx0 = (0 - offset.x) / scale;
+      const wy0 = (0 - offset.y) / scale;
+      const wx1 = (w - offset.x) / scale;
+      const wy1 = (h - offset.y) / scale;
+
+      const existingPoints = pointsStateRef.current;
+      const existingShapes = shapesStateRef.current;
+      const usedPointLabels = new Set(existingPoints.map(p => p.label).filter(Boolean));
+      const usedCircleLabels = new Set(existingShapes.filter(s => s.type === 'circle' || s.type === 'circleArc').map(s => s.label).filter(Boolean));
+      const usedLineLabels = new Set(existingShapes.filter(s => s.type !== 'circle' && s.type !== 'circleArc').map(s => s.label).filter(Boolean));
+
+      const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+      const nextPointLabel = () => {
+        for (const ch of alphabet) if (!usedPointLabels.has(ch)) { usedPointLabels.add(ch); return ch; }
+        const fallback = 'A' + (usedPointLabels.size + 1);
+        usedPointLabels.add(fallback);
+        return fallback;
+      };
+      const nextCircleLabel = () => {
+        const labels = ['k', 'l', 'm', 'n', 'o'];
+        for (const ch of labels) if (!usedCircleLabels.has(ch)) { usedCircleLabels.add(ch); return ch; }
+        const fallback = 'k' + (usedCircleLabels.size + 1);
+        usedCircleLabels.add(fallback);
+        return fallback;
+      };
+      const nextLineLabel = () => {
+        const labels = ['p', 'q', 'r', 's', 't', 'u', 'v'];
+        for (const ch of labels) if (!usedLineLabels.has(ch)) { usedLineLabels.add(ch); return ch; }
+        const fallback = 'p' + (usedLineLabels.size + 1);
+        usedLineLabels.add(fallback);
+        return fallback;
+      };
+
+      const newPoints: GeoPoint[] = [];
+      const newShapes: GeoShape[] = [];
+
+      const addPoint = (x: number, y: number, hidden = false) => {
+        const id = crypto.randomUUID();
+        const label = hidden ? '' : nextPointLabel();
+        const p: GeoPoint = { id, x, y, label, hidden };
+        newPoints.push(p);
+        return p;
+      };
+
+      // --- Dedup helpers (avoid near-identical detections) ---
+      const worldW = Math.abs(wx1 - wx0) || 1;
+      const worldH = Math.abs(wy1 - wy0) || 1;
+      const lineAngleTol = Math.cos((2.5 * Math.PI) / 180); // ~2.5°
+      const lineDistTol = Math.max(worldW, worldH) * 0.008; // ~0.8% of viewport
+      const circleCenterTol = Math.max(worldW, worldH) * 0.012;
+      const circleRadiusTol = Math.max(worldW, worldH) * 0.008;
+
+      const normalizeLine = (l: LineModel): LineModel => {
+        // Ensure a^2 + b^2 == 1; fix sign for stable comparisons
+        const n = Math.hypot(l.a, l.b) || 1;
+        let a = l.a / n;
+        let b = l.b / n;
+        let c = l.c / n;
+        if (a < 0 || (Math.abs(a) < 1e-9 && b < 0)) {
+          a = -a; b = -b; c = -c;
+        }
+        return { a, b, c };
+      };
+
+      const similarLine = (l1: LineModel, l2: LineModel) => {
+        const n1 = normalizeLine(l1);
+        const n2 = normalizeLine(l2);
+        const dot = Math.abs(n1.a * n2.a + n1.b * n2.b);
+        if (dot < lineAngleTol) return false;
+        return Math.abs(n1.c - n2.c) <= lineDistTol;
+      };
+
+      const similarCircle = (c1: CircleModel, c2: CircleModel) => {
+        const dc = Math.hypot(c1.cx - c2.cx, c1.cy - c2.cy);
+        if (dc > circleCenterTol) return false;
+        return Math.abs(c1.r - c2.r) <= circleRadiusTol;
+      };
+
+      const existingPointById = new Map(existingPoints.map(p => [p.id, p]));
+      const existingLineModels: LineModel[] = [];
+      const existingCircleModels: CircleModel[] = [];
+      for (const s of existingShapes) {
+        if (s.type === 'line' || s.type === 'lineDashed' || s.type === 'segment' || s.type === 'ray') {
+          const p1 = existingPointById.get(s.definition.p1Id);
+          const p2 = s.definition.p2Id ? existingPointById.get(s.definition.p2Id) : null;
+          if (p1 && p2) {
+            const lm = lineFrom2Points({ x: p1.x, y: p1.y }, { x: p2.x, y: p2.y });
+            if (lm) existingLineModels.push(lm);
+          }
+        } else if (s.type === 'circle' || s.type === 'circleArc') {
+          const p1 = existingPointById.get(s.definition.p1Id);
+          const p2 = s.definition.p2Id ? existingPointById.get(s.definition.p2Id) : null;
+          if (p1 && p2) {
+            const r = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+            existingCircleModels.push({ cx: p1.x, cy: p1.y, r });
+          }
+        }
+      }
+
+      const acceptedLineModels: LineModel[] = [];
+      const acceptedCircleModels: CircleModel[] = [];
+
+      for (const l of pickedLines) {
+        const m = l.model;
+        let imgPtA: TracePoint, imgPtB: TracePoint;
+        if (Math.abs(m.b) >= Math.abs(m.a)) {
+          imgPtA = { x: 0, y: -(m.a * 0 + m.c) / m.b };
+          imgPtB = { x: ow, y: -(m.a * ow + m.c) / m.b };
+        } else {
+          imgPtA = { x: -(m.b * 0 + m.c) / m.a, y: 0 };
+          imgPtB = { x: -(m.b * oh + m.c) / m.a, y: oh };
+        }
+        const pA = toWorld(imgPtA.x, imgPtA.y);
+        const pB = toWorld(imgPtB.x, imgPtB.y);
+        const lm = lineFrom2Points(pA, pB);
+        if (!lm) continue;
+        if (acceptedLineModels.some(m => similarLine(m, lm)) || existingLineModels.some(m => similarLine(m, lm))) {
+          continue;
+        }
+
+        const candidates: TracePoint[] = [];
+        const addIfFinite = (x: number, y: number) => {
+          if (Number.isFinite(x) && Number.isFinite(y) && x >= Math.min(wx0, wx1) - 1 && x <= Math.max(wx0, wx1) + 1 && y >= Math.min(wy0, wy1) - 1 && y <= Math.max(wy0, wy1) + 1) {
+            candidates.push({ x, y });
+          }
+        };
+        const a = lm.a, b = lm.b, c = lm.c;
+        if (Math.abs(b) > 1e-6) {
+          addIfFinite(wx0, -(a * wx0 + c) / b);
+          addIfFinite(wx1, -(a * wx1 + c) / b);
+        }
+        if (Math.abs(a) > 1e-6) {
+          addIfFinite(-(b * wy0 + c) / a, wy0);
+          addIfFinite(-(b * wy1 + c) / a, wy1);
+        }
+        if (candidates.length < 2) continue;
+        const p1 = candidates[0];
+        const p2 = candidates[candidates.length - 1];
+
+        const gp1 = addPoint(p1.x, p1.y, true);
+        const gp2 = addPoint(p2.x, p2.y, true);
+        acceptedLineModels.push(lm);
+        newShapes.push({
+          id: crypto.randomUUID(),
+          type: 'line',
+          label: nextLineLabel(),
+          points: [gp1.id, gp2.id],
+          definition: { p1Id: gp1.id, p2Id: gp2.id },
+        });
+      }
+
+      for (const c0 of pickedCircles) {
+        const centerW = toWorld(c0.model.cx, c0.model.cy);
+        const edgeW = toWorld(c0.model.cx + c0.model.r, c0.model.cy);
+        const rW = Math.hypot(edgeW.x - centerW.x, edgeW.y - centerW.y);
+        if (!Number.isFinite(rW) || rW < 1e-3) continue;
+        const cm: CircleModel = { cx: centerW.x, cy: centerW.y, r: rW };
+        if (acceptedCircleModels.some(m => similarCircle(m, cm)) || existingCircleModels.some(m => similarCircle(m, cm))) {
+          continue;
+        }
+        const centerP = addPoint(centerW.x, centerW.y);
+        const radiusP = addPoint(centerW.x + rW, centerW.y, true);
+        acceptedCircleModels.push(cm);
+        newShapes.push({
+          id: crypto.randomUUID(),
+          type: 'circle',
+          label: nextCircleLabel(),
+          points: [centerP.id, radiusP.id],
+          definition: { p1Id: centerP.id, p2Id: radiusP.id },
+        });
+      }
+
+      // --- Detect point labels via connected-component analysis on text-only edges ---
+      const lineProxPx = 6;
+      const textEdge = new Uint8Array(ow * oh);
+      for (let y = 0; y < oh; y++) {
+        for (let x = 0; x < ow; x++) {
+          if (!edgeBinary[y * ow + x]) continue;
+          let nearLine = false;
+          for (const pl of pickedLines) {
+            if (distPointLine({ x, y }, pl.model) <= lineProxPx) { nearLine = true; break; }
+          }
+          for (const pc of pickedCircles) {
+            if (!nearLine && distPointCircle({ x, y }, pc.model) <= lineProxPx) { nearLine = true; break; }
+          }
+          if (!nearLine) textEdge[y * ow + x] = 1;
+        }
+      }
+
+      const ccVisited = new Uint8Array(ow * oh);
+      const ccBoxes: { minX: number; maxX: number; minY: number; maxY: number; count: number }[] = [];
+      for (let sy = 0; sy < oh; sy++) {
+        for (let sx = 0; sx < ow; sx++) {
+          const si = sy * ow + sx;
+          if (!textEdge[si] || ccVisited[si]) continue;
+          let bMinX = sx, bMaxX = sx, bMinY = sy, bMaxY = sy, cnt = 0;
+          const stack = [si];
+          ccVisited[si] = 1;
+          while (stack.length > 0) {
+            const ci = stack.pop()!;
+            const cx = ci % ow, cy = (ci / ow) | 0;
+            cnt++;
+            if (cx < bMinX) bMinX = cx;
+            if (cx > bMaxX) bMaxX = cx;
+            if (cy < bMinY) bMinY = cy;
+            if (cy > bMaxY) bMaxY = cy;
+            for (let dy = -1; dy <= 1; dy++) {
+              for (let dx = -1; dx <= 1; dx++) {
+                if (dx === 0 && dy === 0) continue;
+                const nx = cx + dx, ny = cy + dy;
+                if (nx < 0 || nx >= ow || ny < 0 || ny >= oh) continue;
+                const ni = ny * ow + nx;
+                if (textEdge[ni] && !ccVisited[ni]) { ccVisited[ni] = 1; stack.push(ni); }
+              }
+            }
+          }
+          if (cnt >= 3) ccBoxes.push({ minX: bMinX, maxX: bMaxX, minY: bMinY, maxY: bMaxY, count: cnt });
+        }
+      }
+
+      // Cluster nearby components into character groups
+      const ccParent = Array.from({ length: ccBoxes.length }, (_, i) => i);
+      const ccFind = (x: number): number => ccParent[x] === x ? x : (ccParent[x] = ccFind(ccParent[x]));
+      const ccUnite = (a: number, b: number) => { ccParent[ccFind(a)] = ccFind(b); };
+      const ccGap = 10;
+      for (let i = 0; i < ccBoxes.length; i++) {
+        for (let j = i + 1; j < ccBoxes.length; j++) {
+          const gx = Math.max(0, Math.max(ccBoxes[i].minX, ccBoxes[j].minX) - Math.min(ccBoxes[i].maxX, ccBoxes[j].maxX));
+          const gy = Math.max(0, Math.max(ccBoxes[i].minY, ccBoxes[j].minY) - Math.min(ccBoxes[i].maxY, ccBoxes[j].maxY));
+          if (Math.hypot(gx, gy) <= ccGap) ccUnite(i, j);
+        }
+      }
+
+      const charGroups = new Map<number, number[]>();
+      for (let i = 0; i < ccBoxes.length; i++) {
+        const r = ccFind(i);
+        if (!charGroups.has(r)) charGroups.set(r, []);
+        charGroups.get(r)!.push(i);
+      }
+
+      type CharCluster = { minX: number; maxX: number; minY: number; maxY: number; h: number; w: number; pixels: number };
+      const charClusters: CharCluster[] = [];
+      for (const indices of charGroups.values()) {
+        let gMinX = Infinity, gMaxX = -Infinity, gMinY = Infinity, gMaxY = -Infinity, px = 0;
+        for (const idx of indices) {
+          const b = ccBoxes[idx];
+          if (b.minX < gMinX) gMinX = b.minX;
+          if (b.maxX > gMaxX) gMaxX = b.maxX;
+          if (b.minY < gMinY) gMinY = b.minY;
+          if (b.maxY > gMaxY) gMaxY = b.maxY;
+          px += b.count;
+        }
+        const h = gMaxY - gMinY;
+        const w = gMaxX - gMinX;
+        const margin = Math.max(ow, oh) * 0.06;
+        const nearBorder = gMinX < margin || gMinY < margin || gMaxX > ow - margin || gMaxY > oh - margin;
+        if (h >= 6 && h <= 60 && w >= 3 && w <= 60 && px >= 8 && !nearBorder) {
+          charClusters.push({ minX: gMinX, maxX: gMaxX, minY: gMinY, maxY: gMaxY, h, w, pixels: px });
+        }
+      }
+
+      if (charClusters.length >= 2) {
+        const heights = charClusters.map(c => c.h).sort((a, b) => a - b);
+        const medianH = heights[Math.floor(heights.length / 2)];
+        const upperThr = Math.max(medianH * 1.3, 12);
+
+        for (const c of charClusters) {
+          if (c.h > upperThr) {
+            const px = (c.minX + c.maxX) / 2;
+            const py = (c.minY + c.maxY) / 2;
+            const wp = toWorld(px, py);
+            addPoint(wp.x, wp.y);
+          }
+        }
+      } else if (charClusters.length === 1 && charClusters[0].h >= 12) {
+        const c = charClusters[0];
+        const px = (c.minX + c.maxX) / 2;
+        const py = (c.minY + c.maxY) / 2;
+        const wp = toWorld(px, py);
+        addPoint(wp.x, wp.y);
+      }
+
+      if (newShapes.length === 0 && newPoints.length === 0) {
+        toast.error('Detekce našla hrany, ale nepodařilo se je převést na objekty.');
+        return;
+      }
+
+      setPoints(prev => [...prev, ...newPoints]);
+      setShapes(prev => [...prev, ...newShapes]);
+      const parts: string[] = [];
+      if (newShapes.length > 0) parts.push(`${newShapes.length} tvarů`);
+      if (newPoints.filter(p => !p.hidden).length > 0) parts.push(`${newPoints.filter(p => !p.hidden).length} bodů`);
+      toast.success(`Detekováno: ${parts.join(', ')}.`);
+    })().catch((e) => {
+      console.error(e);
+      toast.error(e instanceof Error ? e.message : 'Detekce se nepovedla.');
+    }).finally(() => {
+      autoDetectRunningRef.current = false;
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [autoDetectRequestId, autoDetectImageSrc, canvasSize.width, canvasSize.height, offset.x, offset.y, scale, readOnlyCanvas]);
+
   const renderCanvas = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -5070,6 +5933,15 @@ export function FreeGeometryEditor({
 
     ctx.restore();
   };
+  useEffect(() => {
+    // When toggling / switching image / resizing, recompute base placement to "contain" at that moment.
+    if (!projectionEnabled || !projectionImageSrc) {
+      projectionWorldRectRef.current = null;
+      return;
+    }
+    // Force recompute on enable / resize
+    projectionWorldRectRef.current = null;
+  }, [projectionEnabled, projectionImageSrc, canvasSize.width, canvasSize.height]);
 
   // --- HELPER DRAW FUNCTIONS ---
   
@@ -5663,7 +6535,7 @@ export function FreeGeometryEditor({
       {/* CANVAS */}
       <div 
         ref={containerRef} 
-        className="absolute inset-0 touch-none z-0"
+        className="absolute inset-0 touch-none z-0 relative"
         style={{ cursor: getContainerCursor() }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMoveWrapper}
@@ -5674,9 +6546,15 @@ export function FreeGeometryEditor({
         onTouchEnd={handleTouchEnd}
         onWheel={handleWheel}
       >
+        <canvas
+          ref={bgCanvasRef}
+          className="absolute inset-0 z-0 block pointer-events-none"
+          style={{ width: '100%', height: '100%' }}
+          aria-hidden
+        />
         <canvas 
           ref={canvasRef} 
-          className="block" 
+          className="relative z-10 block" 
           style={{ width: '100%', height: '100%' }}
         />
       </div>
@@ -5976,7 +6854,7 @@ export function FreeGeometryEditor({
                             }}
                             className={`w-14 h-14 relative flex items-center justify-center overflow-visible ${isOther ? 'z-20' : 'z-10'}`}
                          >
-                            <div className="pointer-events-none relative w-full h-full">
+                            <div className="pointer-events-auto relative w-full h-full">
                                 <div className={iconStyle}>
                                     {IconComponent && <IconComponent />}
                                 </div>
@@ -7643,7 +8521,6 @@ export function FreeGeometryEditor({
       )}
 
     </div>
-    <Toaster position="top-center" theme={darkMode ? 'dark' : 'light'} />
     </>
   );
 }

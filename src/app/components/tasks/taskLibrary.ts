@@ -15,7 +15,13 @@ export type TaskLibraryEntry = {
 };
 
 /** Výchozí prázdná knihovna — doplň položky s `assignmentId` z `geometry_circuit_assignments`. */
-export const TASK_LIBRARY: TaskLibraryEntry[] = [];
+export const TASK_LIBRARY: TaskLibraryEntry[] = [
+  {
+    key: '17cc5eb9-7300-4e6d-b7aa-7b634d7e153b',
+    title: 'Úkol',
+    assignmentId: '17cc5eb9-7300-4e6d-b7aa-7b634d7e153b',
+  },
+];
 
 /** Absolutni src pro <img> (Vite base + relativni cesta z public). */
 export function resolveLibraryImageSrc(imageUrl: string | undefined): string | null {
