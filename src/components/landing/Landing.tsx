@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { TasksSheet, TASK_LIBRARY } from '@/features/tasks';
 import { ObjectCard } from './ObjectCard';
 import { ExerciseTile } from './ExerciseTile';
 import { objects } from '../../data/objects';
@@ -34,9 +35,9 @@ const exercises = objects.flatMap((obj) => {
     .map((taskType) => ({ object: obj, taskType }));
 });
 
-type ViewFilter = 'rysovani' | 'konstrukce' | 'telesa' | 'rovinne' | 'cviceni';
+type ViewFilter = 'rysovani' | 'konstrukce' | 'ukoly' | 'telesa' | 'rovinne' | 'cviceni';
 
-const TAB_ORDER: ViewFilter[] = ['rysovani', 'konstrukce', 'telesa', 'rovinne', 'cviceni'];
+const TAB_ORDER: ViewFilter[] = ['rysovani', 'konstrukce', 'ukoly', 'telesa', 'rovinne', 'cviceni'];
 
 const filterBtnStyle = (
   value: ViewFilter,
@@ -58,6 +59,7 @@ const filterBtnStyle = (
 const HEADING_MAP: Record<ViewFilter, string> = {
   rysovani: 'Rýsování',
   konstrukce: 'Konstrukce',
+  ukoly: 'Úkoly',
   telesa: 'Tělesa',
   rovinne: 'Rovinné útvary',
   cviceni: 'Cvičení',
@@ -463,7 +465,7 @@ export type LandingMode = 'rysovani-app' | 'telesa-app';
 const MODE_CONFIG: Record<LandingMode, { title: string; filters: ViewFilter[]; defaultFilter: ViewFilter }> = {
   'rysovani-app': {
     title: 'Rýsování a konstrukce',
-    filters: ['rysovani', 'konstrukce'],
+    filters: ['rysovani', 'konstrukce', 'ukoly'],
     defaultFilter: 'rysovani',
   },
   'telesa-app': {
@@ -475,6 +477,7 @@ const MODE_CONFIG: Record<LandingMode, { title: string; filters: ViewFilter[]; d
 
 export function Landing({ mode }: { mode: LandingMode }) {
   const [searchParams, setSearchParams] = useSearchParams();
+  const taskLibrary = useMemo(() => [...TASK_LIBRARY], []);
   const config = MODE_CONFIG[mode];
   const tabFromUrl = searchParams.get('tab');
   const activeFilter: ViewFilter = (tabFromUrl && config.filters.includes(tabFromUrl as ViewFilter))
@@ -534,7 +537,10 @@ export function Landing({ mode }: { mode: LandingMode }) {
               key={f}
               type="button"
               onClick={() => setActiveFilter(f)}
-              onTouchEnd={(e) => { e.preventDefault(); setActiveFilter(f); }}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                setActiveFilter(f);
+              }}
               style={{ ...filterBtnStyle(f, activeFilter), margin: '4px' }}
             >
               {HEADING_MAP[f]}
@@ -544,20 +550,30 @@ export function Landing({ mode }: { mode: LandingMode }) {
       </div>
 
       {/* Dlaždice */}
-      <div id="content" style={{ maxWidth: '1280px', margin: '32px auto', padding: '0 16px', marginBottom: '80px' }}>
-        <h2
-          style={{
-            fontFamily: "'Fenomen Sans', sans-serif",
-            fontSize: '42px',
-            fontWeight: 600,
-            color: '#09056f',
-            marginBottom: activeFilter === 'rysovani' ? '12px' : '28px',
-            textAlign: 'left',
-            letterSpacing: '-0.02em',
-          }}
-        >
-          {HEADING_MAP[activeFilter]}
-        </h2>
+      <div
+        id="content"
+        style={{
+          maxWidth: activeFilter === 'ukoly' ? 'min(1600px, 100%)' : '1280px',
+          margin: '32px auto',
+          padding: '0 16px',
+          marginBottom: '80px',
+        }}
+      >
+        {activeFilter !== 'ukoly' ? (
+          <h2
+            style={{
+              fontFamily: "'Fenomen Sans', sans-serif",
+              fontSize: '42px',
+              fontWeight: 600,
+              color: '#09056f',
+              marginBottom: activeFilter === 'rysovani' ? '12px' : '28px',
+              textAlign: 'left',
+              letterSpacing: '-0.02em',
+            }}
+          >
+            {HEADING_MAP[activeFilter]}
+          </h2>
+        ) : null}
 
         {activeFilter === 'rysovani' && (
           <p
@@ -640,6 +656,17 @@ export function Landing({ mode }: { mode: LandingMode }) {
               <ConstructionCard key={item.id} item={item} />
             ))}
           </div>
+        )}
+
+        {/* Úkoly – vložený panel (stejné UI jako Elobvod, pod bobánky) */}
+        {activeFilter === 'ukoly' && (
+          <TasksSheet
+            embedded
+            open
+            onOpenChange={() => {}}
+            brandLabel="Elobvod"
+            taskLibrary={taskLibrary}
+          />
         )}
 
         {/* 3D tělesa */}

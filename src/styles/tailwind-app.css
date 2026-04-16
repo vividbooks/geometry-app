@@ -1,0 +1,7 @@
+@import "tailwindcss";
+
+/* Stejné zdroje jako Elobvod: všechny komponenty se třídami Tailwind. */
+@source "../**/*.{tsx,ts,jsx,js}";
+
+@import "tw-animate-css";
+@import "./elobvod-circuit-theme.css";

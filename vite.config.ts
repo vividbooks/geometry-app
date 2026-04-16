@@ -1,12 +1,16 @@
 
   import { defineConfig } from 'vite';
   import react from '@vitejs/plugin-react-swc';
-  import path from 'path';
+  import tailwindcss from '@tailwindcss/vite';
+  import path from 'node:path';
+  import { fileURLToPath } from 'node:url';
+
+  const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
   export default defineConfig(({ mode }) => ({
     // Dev: /geometry-app/ (local Vividbooks platform), Prod: /rysovani-app/ (GitHub Pages)
     base: mode === 'development' ? '/geometry-app/' : '/rysovani-app/',
-    plugins: [react()],
+    plugins: [tailwindcss(), react()],
     css: {
       transformer: 'lightningcss',
       lightningcss: {

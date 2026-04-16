@@ -1,4 +1,12 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+  useMemo,
+  type MutableRefObject,
+  type ReactNode,
+} from 'react';
 import { Toaster, toast } from 'sonner@2.0.3';
 import katex from 'katex';
 import { 
@@ -52,7 +60,7 @@ import Papir from '../imports/Papir';
 
 type ToolType = 'move' | 'point' | 'segment' | 'line' | 'lineDashed' | 'ray' | 'circle' | 'angle' | 'distance' | 'perpendicular' | 'pan' | 'paper' | 'freehand' | 'highlighter' | 'highlighterStraight' | 'eraser';
 
-interface GeoPoint {
+export interface GeoPoint {
   id: string;
   x: number;
   y: number;
@@ -60,7 +68,7 @@ interface GeoPoint {
   hidden?: boolean;
 }
 
-interface FreehandPath {
+export interface FreehandPath {
   id: string;
   points: {x: number, y: number}[];
   color: string;
@@ -68,7 +76,7 @@ interface FreehandPath {
   isHighlight?: boolean;
 }
 
-interface GeoShape {
+export interface GeoShape {
   id: string;
   type: 'segment' | 'line' | 'lineDashed' | 'ray' | 'circle' | 'circleArc';
   label: string;
@@ -115,12 +123,32 @@ interface VisualEffect {
   color: string;
 }
 
+export type GeometrySubmissionSnapshot = {
+  points: GeoPoint[];
+  shapes: GeoShape[];
+  freehandPaths: FreehandPath[];
+};
+
 interface FreeGeometryEditorProps {
   onBack: () => void;
   darkMode: boolean;
   onDarkModeChange: (dark: boolean) => void;
   deviceType?: 'board' | 'computer';
   sharedRecording?: { name: string; steps: any[] };
+  /** Úkol ve značkové aplikaci: skrýt zpět a nahrávání. */
+  embedInAssignment?: boolean;
+  /** Jednorázové načtení plátna (náhled odevzdání). */
+  initialCanvasSnapshot?: { points: GeoPoint[]; shapes: GeoShape[]; freehandPaths: FreehandPath[] } | null;
+  /** Jen posun a zoom (bez úprav geometrie). */
+  readOnlyCanvas?: boolean;
+  /** Aktuální stav plátna pro odevzdání (serializuje rodič do DB). */
+  submissionSnapshotRef?: MutableRefObject<(() => GeometrySubmissionSnapshot | null) | null>;
+  /** Přímý přístup k vykreslovacímu canvasu (export náhledu do zadání úkolu jako PNG). */
+  canvasExportRef?: MutableRefObject<(() => HTMLCanvasElement | null) | null>;
+  /** Vedle Undo/Redo — tmavé tlačítko „Zadání“ (studentský úkol). */
+  assignmentToolbarSlot?: ReactNode;
+  /** Posun celé skupiny od pravého okraje (px), když je otevřený boční panel. */
+  assignmentToolbarRightOffsetPx?: number;
 }
 
 interface RecordedStep {
@@ -234,7 +262,20 @@ function circleArcRadiusHandlePos(
 
 // --- HLAVNÍ KOMPONENTA ---
 
-export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceType: deviceTypeProp, sharedRecording }: FreeGeometryEditorProps) {
+export function FreeGeometryEditor({
+  onBack,
+  darkMode,
+  onDarkModeChange,
+  deviceType: deviceTypeProp,
+  sharedRecording,
+  embedInAssignment = false,
+  initialCanvasSnapshot = null,
+  readOnlyCanvas = false,
+  submissionSnapshotRef,
+  canvasExportRef,
+  assignmentToolbarSlot,
+  assignmentToolbarRightOffsetPx,
+}: FreeGeometryEditorProps) {
   const isMobile = useIsMobile();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -387,7 +428,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
   const [visualEffects, setVisualEffects] = useState<VisualEffect[]>([]);
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
   const [showMeasurements, setShowMeasurements] = useState(true); // Toggle pro zobrazení měření - defaultně zapnuté
-  const [showGrid, setShowGrid] = useState(true); // Toggle pro zobrazení mřížky
+  const [showGrid, setShowGrid] = useState(false);
   const canvasWarningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [canvasWarning, setCanvasWarning] = useState<string | null>(null);
   
@@ -465,6 +506,44 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
       setFreehandPaths([]);
     }
   }, [sharedRecording]);
+
+  useEffect(() => {
+    if (readOnlyCanvas) setActiveTool('pan');
+  }, [readOnlyCanvas]);
+
+  useEffect(() => {
+    if (sharedRecording && sharedRecording.steps.length > 0) return;
+    if (!initialCanvasSnapshot) return;
+    setPoints(initialCanvasSnapshot.points);
+    setShapes(initialCanvasSnapshot.shapes);
+    setFreehandPaths(initialCanvasSnapshot.freehandPaths ?? []);
+  }, [sharedRecording, initialCanvasSnapshot]);
+
+  useEffect(() => {
+    if (!submissionSnapshotRef) return;
+    submissionSnapshotRef.current = () => {
+      try {
+        return {
+          points: JSON.parse(JSON.stringify(points)) as GeoPoint[],
+          shapes: JSON.parse(JSON.stringify(shapes)) as GeoShape[],
+          freehandPaths: JSON.parse(JSON.stringify(freehandPaths)) as FreehandPath[],
+        };
+      } catch {
+        return null;
+      }
+    };
+    return () => {
+      submissionSnapshotRef.current = null;
+    };
+  }, [points, shapes, freehandPaths, submissionSnapshotRef]);
+
+  useEffect(() => {
+    if (!canvasExportRef) return;
+    canvasExportRef.current = () => canvasRef.current;
+    return () => {
+      canvasExportRef.current = null;
+    };
+  }, [canvasExportRef]);
 
   // Save recording to server
   const saveRecordingToServer = async (name: string, steps: RecordedStep[]) => {
@@ -1782,6 +1861,12 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
       return; // Ignorovat - uz byl zpracovan touch event
     }
 
+    if (readOnlyCanvas) {
+      isPanning.current = true;
+      lastPanPos.current = { x: e.clientX, y: e.clientY };
+      return;
+    }
+
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     const wx = (e.clientX - rect.left - offset.x) / scale;
@@ -2575,7 +2660,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
 
   const handleMouseMove = (e: React.MouseEvent) => {
     // Panning logic
-    if (activeTool === 'pan' && isPanning.current) {
+    if ((readOnlyCanvas || activeTool === 'pan') && isPanning.current) {
         const dx = e.clientX - lastPanPos.current.x;
         const dy = e.clientY - lastPanPos.current.y;
         setOffset(prev => ({ x: prev.x + dx, y: prev.y + dy }));
@@ -2839,7 +2924,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
     draggedPointPosRef.current = null;
     draggedPointIdRef.current = null;
     setDraggedPointId(null);
-    if (activeTool === 'pan') {
+    if (readOnlyCanvas || activeTool === 'pan') {
         isPanning.current = false;
     }
     
@@ -5427,6 +5512,7 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
   }, [activeTool]);
 
   const getContainerCursor = (): string => {
+    if (readOnlyCanvas) return 'grab';
     if (activeTool === 'pan') return 'grab';
     if (activeTool === 'move') {
       if (hoveredShapeForMove) return selectedShapeIds.includes(hoveredShapeForMove) ? 'move' : 'pointer';
@@ -5479,6 +5565,95 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
      return (progress - pIn) / (pDrawEnd - pIn);
   };
 
+  const topZoomCluster = (
+    <>
+      <button
+        type="button"
+        onClick={() => zoomToCenter(scale - 0.1)}
+        className="flex h-10 w-10 items-center justify-center rounded-xl text-black transition-all duration-300 hover:bg-gray-200"
+      >
+        <ZoomOut className="h-5 w-5" />
+      </button>
+
+      <div className="w-24 px-2">
+        <Slider
+          value={[scale * 100]}
+          onValueChange={(vals) => zoomToCenter(vals[0] / 100)}
+          min={10}
+          max={300}
+          step={5}
+        />
+      </div>
+
+      <button
+        type="button"
+        onClick={() => zoomToCenter(scale + 0.1)}
+        className="flex h-10 w-10 items-center justify-center rounded-xl text-black transition-all duration-300 hover:bg-gray-200"
+      >
+        <ZoomIn className="h-5 w-5" />
+      </button>
+
+      <div className="h-6 w-px bg-gray-300" />
+      <button
+        type="button"
+        onClick={() => onDarkModeChange(!darkMode)}
+        className="flex h-10 w-10 items-center justify-center rounded-xl text-black transition-all duration-300 hover:bg-gray-200"
+        title={darkMode ? 'Světlý režim' : 'Tmavý režim'}
+      >
+        {darkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+      </button>
+
+      <div className="h-6 w-px bg-gray-300" />
+      <button
+        type="button"
+        onClick={() => setShowMeasurements(!showMeasurements)}
+        onTouchEnd={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setShowMeasurements(!showMeasurements);
+        }}
+        className={`flex h-10 w-10 items-center justify-center rounded-xl transition-all duration-300 ${
+          showMeasurements ? 'bg-[#1e1b4b] text-white' : 'text-black hover:bg-gray-200'
+        }`}
+        title={showMeasurements ? 'Skrýt míry' : 'Zobrazit míry'}
+      >
+        <span className="text-[10px] font-bold">cm</span>
+      </button>
+
+      <div className="h-6 w-px bg-gray-300" />
+      <button
+        type="button"
+        onClick={() => setShowGrid(!showGrid)}
+        onTouchEnd={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setShowGrid(!showGrid);
+        }}
+        className={`flex h-10 w-10 items-center justify-center rounded-xl transition-all duration-300 ${
+          showGrid ? 'bg-[#1e1b4b] text-white' : 'text-black hover:bg-gray-200'
+        }`}
+        title={showGrid ? 'Skrýt mřížku' : 'Zobrazit mřížku'}
+      >
+        <Grid2X2 className="h-5 w-5" />
+      </button>
+
+      <div className="h-6 w-px bg-gray-300" />
+      <button
+        type="button"
+        onClick={() => {
+          console.log('🔄 Přepínám režim:', !isTabletMode ? 'TABULE' : 'PC');
+          setIsTabletMode(!isTabletMode);
+        }}
+        className={`rounded-xl px-3 py-1.5 text-xs font-medium transition-all duration-300 ${
+          isTabletMode ? 'bg-[#1e1b4b] text-white' : 'text-black hover:bg-gray-200'
+        }`}
+        title={isTabletMode ? 'Klasický režim' : 'Režim pro tabule a tablety'}
+      >
+        {isTabletMode ? '📱 Tabule' : '🖥️ PC'}
+      </button>
+    </>
+  );
+
   return (
     <>
     <div className={`relative size-full overflow-hidden select-none ${darkMode ? 'bg-[#1a1b26]' : 'bg-white'}`}>
@@ -5506,8 +5681,46 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
         />
       </div>
 
-      {/* TOP RIGHT CORNER: Undo, Redo, Record, Zápis konstrukce */}
-      {!recordingState.showPlayer && (
+      {/* TOP RIGHT: Undo/Redo (+ vedle „Zadání“ v úkolu), jinak + Record / protokol */}
+      {!recordingState.showPlayer && !readOnlyCanvas && (
+      embedInAssignment ? (
+        <div
+          className="absolute top-4 z-30 flex items-center gap-2"
+          style={{ right: `${assignmentToolbarRightOffsetPx ?? 16}px` }}
+          onTouchStart={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center gap-0 rounded-full border border-gray-200/90 bg-[#F2F2F2] p-1.5 shadow-sm">
+            <button
+              type="button"
+              onClick={handleUndo}
+              disabled={historyIndex < 0}
+              className={`flex size-11 items-center justify-center rounded-full transition-all duration-300 ${
+                historyIndex < 0
+                  ? 'cursor-not-allowed text-gray-400'
+                  : 'text-violet-900/70 hover:bg-white/90'
+              }`}
+              title="Zpět (Ctrl+Z)"
+            >
+              <Undo className="size-[22px]" strokeWidth={2} />
+            </button>
+            <div className="mx-0.5 h-8 w-px shrink-0 bg-gray-300" aria-hidden />
+            <button
+              type="button"
+              onClick={handleRedo}
+              disabled={historyIndex >= history.length - 1}
+              className={`flex size-11 items-center justify-center rounded-full transition-all duration-300 ${
+                historyIndex >= history.length - 1
+                  ? 'cursor-not-allowed text-gray-400'
+                  : 'text-violet-900/70 hover:bg-white/90'
+              }`}
+              title="Vpřed (Ctrl+Y)"
+            >
+              <RotateCw className="size-[22px]" strokeWidth={2} />
+            </button>
+          </div>
+          {assignmentToolbarSlot}
+        </div>
+      ) : (
       <div className="absolute top-4 right-4 z-30 bg-[#F2F2F2] rounded-full p-2 flex items-center gap-1 shadow-sm" onTouchStart={(e) => e.stopPropagation()}>
         {/* Undo */}
         <button
@@ -5535,81 +5748,90 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
         >
           <RotateCw className="w-6 h-6" />
         </button>
-        {/* Record */}
-        <button
-          onClick={toggleRecording}
-          className={`w-12 h-12 flex items-center justify-center rounded-xl transition-all duration-300 relative group/record ${
-            recordingState.isRecording 
-              ? 'bg-red-500 hover:bg-red-600 text-white animate-pulse' 
-              : 'text-black hover:bg-gray-200'
-          }`}
-          title={recordingState.isRecording ? 'Zastavit nahrávání' : 'Začít nahrávání'}
-        >
-          {recordingState.isRecording ? (
-            <>
-              <div className="w-6 h-6 bg-white rounded-sm" />
-              <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
-              </span>
-            </>
-          ) : (
-            <>
-              <div className="w-6 h-6 rounded-full border-2 border-current flex items-center justify-center">
-                <div className="w-3 h-3 rounded-full bg-current" />
-              </div>
+        {!embedInAssignment && !canvasExportRef ? (
+          <>
+            {/* Record */}
+            <button
+              onClick={toggleRecording}
+              className={`w-12 h-12 flex items-center justify-center rounded-xl transition-all duration-300 relative group/record ${
+                recordingState.isRecording 
+                  ? 'bg-red-500 hover:bg-red-600 text-white animate-pulse' 
+                  : 'text-black hover:bg-gray-200'
+              }`}
+              title={recordingState.isRecording ? 'Zastavit nahrávání' : 'Začít nahrávání'}
+            >
+              {recordingState.isRecording ? (
+                <>
+                  <div className="w-6 h-6 bg-white rounded-sm" />
+                  <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                  </span>
+                </>
+              ) : (
+                <>
+                  <div className="w-6 h-6 rounded-full border-2 border-current flex items-center justify-center">
+                    <div className="w-3 h-3 rounded-full bg-current" />
+                  </div>
+                  {/* Tooltip */}
+                  <div className="absolute right-0 top-full mt-2 px-3 py-1.5 bg-black/80 text-white text-xs rounded-lg whitespace-nowrap opacity-0 group-hover/record:opacity-100 transition-opacity pointer-events-none">
+                    Nahrávat postup
+                  </div>
+                </>
+              )}
+            </button>
+            {/* Zápis konstrukce */}
+            <button
+              onClick={() => setShowConstructionPanel(!showConstructionPanel)}
+              className={`w-12 h-12 flex items-center justify-center rounded-xl transition-all duration-300 relative group/protocol ${
+                showConstructionPanel
+                  ? 'bg-[#1e1b4b] text-white'
+                  : 'text-black hover:bg-gray-200'
+              }`}
+              title="Zápis konstrukce"
+            >
+              <FileText className="w-6 h-6" />
+              {constructionSteps.length > 0 && !showConstructionPanel && (
+                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-bold px-1 bg-[#1e1b4b] text-white">
+                  {constructionSteps.length}
+                </span>
+              )}
               {/* Tooltip */}
-              <div className="absolute right-0 top-full mt-2 px-3 py-1.5 bg-black/80 text-white text-xs rounded-lg whitespace-nowrap opacity-0 group-hover/record:opacity-100 transition-opacity pointer-events-none">
-                Nahrávat postup
-              </div>
-            </>
-          )}
-        </button>
-        {/* Zápis konstrukce */}
-        <button
-          onClick={() => setShowConstructionPanel(!showConstructionPanel)}
-          className={`w-12 h-12 flex items-center justify-center rounded-xl transition-all duration-300 relative group/protocol ${
-            showConstructionPanel
-              ? 'bg-[#1e1b4b] text-white'
-              : 'text-black hover:bg-gray-200'
-          }`}
-          title="Zápis konstrukce"
-        >
-          <FileText className="w-6 h-6" />
-          {constructionSteps.length > 0 && !showConstructionPanel && (
-            <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-bold px-1 bg-[#1e1b4b] text-white">
-              {constructionSteps.length}
-            </span>
-          )}
-          {/* Tooltip */}
-          {!showConstructionPanel && (
-            <div className="absolute right-0 top-full mt-2 px-3 py-1.5 bg-black/80 text-white text-xs rounded-lg whitespace-nowrap opacity-0 group-hover/protocol:opacity-100 transition-opacity pointer-events-none">
-              Zápis konstrukce
-            </div>
-          )}
-        </button>
+              {!showConstructionPanel && (
+                <div className="absolute right-0 top-full mt-2 px-3 py-1.5 bg-black/80 text-white text-xs rounded-lg whitespace-nowrap opacity-0 group-hover/protocol:opacity-100 transition-opacity pointer-events-none">
+                  Zápis konstrukce
+                </div>
+              )}
+            </button>
+          </>
+        ) : null}
       </div>
+      )
       )}
 
       {/* TOOLBAR - LEFT SIDE (NEW DESIGN) */}
-      {!recordingState.showPlayer && !circleInput.visible && !angleInput.visible && !segmentInput.visible && (
+      {!recordingState.showPlayer && !readOnlyCanvas && !circleInput.visible && !angleInput.visible && !segmentInput.visible && (
       <div className="absolute left-4 top-1/2 -translate-y-1/2 z-30 pointer-events-auto" style={{ touchAction: 'auto' }} onTouchStart={(e) => e.stopPropagation()}>
          <div className="bg-[#F2F2F2] rounded-full p-2 flex flex-col items-center shadow-sm w-[72px] py-8">
-            {/* Tlačítko Zpět */}
-            <button
-              onClick={handleBackClick}
-              className="w-12 h-12 flex items-center justify-center rounded-xl text-black hover:bg-gray-200 transition-all duration-300 mb-2 group/back relative"
-              title="Zpět do menu"
-            >
-              <ArrowLeft className="w-6 h-6" />
-              {/* Tooltip */}
-              <div className="absolute left-full ml-3 px-3 py-1.5 bg-black/80 text-white text-xs rounded-lg whitespace-nowrap opacity-0 group-hover/back:opacity-100 transition-opacity pointer-events-none">
-                Zpět
-              </div>
-            </button>
+            {!embedInAssignment ? (
+              <>
+                {/* Tlačítko Zpět */}
+                <button
+                  onClick={handleBackClick}
+                  className="w-12 h-12 flex items-center justify-center rounded-xl text-black hover:bg-gray-200 transition-all duration-300 mb-2 group/back relative"
+                  title="Zpět do menu"
+                >
+                  <ArrowLeft className="w-6 h-6" />
+                  {/* Tooltip */}
+                  <div className="absolute left-full ml-3 px-3 py-1.5 bg-black/80 text-white text-xs rounded-lg whitespace-nowrap opacity-0 group-hover/back:opacity-100 transition-opacity pointer-events-none">
+                    Zpět
+                  </div>
+                </button>
 
-            {/* Separator */}
-            <div className="w-8 h-px bg-gray-300 mb-2"></div>
+                {/* Separator */}
+                <div className="w-8 h-px bg-gray-300 mb-2"></div>
+              </>
+            ) : null}
 
             {/* Top: Move & Pan (Standard Icons) */}
             <div className="flex flex-col gap-2">
@@ -6192,91 +6414,25 @@ export function FreeGeometryEditor({ onBack, darkMode, onDarkModeChange, deviceT
         );
       })()}
 
-      {/* ZOOM + CONTROLS (top center) */}
-      {!recordingState.showPlayer && (
-      <div className="absolute left-1/2 -translate-x-1/2 top-4 z-10 flex items-center gap-1 p-2 bg-[#F2F2F2] rounded-full shadow-sm">
-        <button 
-          onClick={() => zoomToCenter(scale - 0.1)}
-          className="w-10 h-10 flex items-center justify-center rounded-xl text-black hover:bg-gray-200 transition-all duration-300"
-        >
-          <ZoomOut className="w-5 h-5" />
-        </button>
-        
-        <div className="w-24 px-2">
-          <Slider
-            value={[scale * 100]}
-            onValueChange={(vals) => zoomToCenter(vals[0] / 100)}
-            min={10}
-            max={300}
-            step={5}
-          />
-        </div>
-        
-        <button 
-          onClick={() => zoomToCenter(scale + 0.1)}
-          className="w-10 h-10 flex items-center justify-center rounded-xl text-black hover:bg-gray-200 transition-all duration-300"
-        >
-          <ZoomIn className="w-5 h-5" />
-        </button>
-
-        {/* Dark Mode Toggle */}
-        <div className="w-px h-6 bg-gray-300" />
-        <button 
-          onClick={() => onDarkModeChange(!darkMode)}
-          className="w-10 h-10 flex items-center justify-center rounded-xl text-black hover:bg-gray-200 transition-all duration-300"
-          title={darkMode ? 'Světlý režim' : 'Tmavý režim'}
-        >
-          {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-        </button>
-
-        {/* Measurements Toggle */}
-        <div className="w-px h-6 bg-gray-300" />
-        <button 
-          onClick={() => setShowMeasurements(!showMeasurements)}
-          onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setShowMeasurements(!showMeasurements); }}
-          className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-300 ${
-            showMeasurements 
-              ? 'bg-[#1e1b4b] text-white' 
-              : 'text-black hover:bg-gray-200'
-          }`}
-          title={showMeasurements ? 'Skrýt míry' : 'Zobrazit míry'}
-        >
-          <span className="text-[10px] font-bold">cm</span>
-        </button>
-
-        {/* Grid Toggle */}
-        <div className="w-px h-6 bg-gray-300" />
-        <button 
-          onClick={() => setShowGrid(!showGrid)}
-          onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setShowGrid(!showGrid); }}
-          className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-300 ${
-            showGrid 
-              ? 'bg-[#1e1b4b] text-white' 
-              : 'text-black hover:bg-gray-200'
-          }`}
-          title={showGrid ? 'Skrýt mřížku' : 'Zobrazit mřížku'}
-        >
-          <Grid2X2 className="w-5 h-5" />
-        </button>
-
-        {/* Tablet/Board Mode Toggle */}
-        <div className="w-px h-6 bg-gray-300" />
-        <button 
-          onClick={() => {
-            console.log('🔄 Přepínám režim:', !isTabletMode ? 'TABULE' : 'PC');
-            setIsTabletMode(!isTabletMode);
-          }}
-          className={`px-3 py-1.5 rounded-xl transition-all duration-300 font-medium text-xs ${
-            isTabletMode 
-              ? 'bg-[#1e1b4b] text-white' 
-              : 'text-black hover:bg-gray-200'
-          }`}
-          title={isTabletMode ? 'Klasický režim' : 'Režim pro tabule a tablety'}
-        >
-          {isTabletMode ? '📱 Tabule' : '🖥️ PC'}
-        </button>
-      </div>
-      )}
+      {/* ZOOM + CONTROLS — u úkolu centrováno v oblasti nad plátnem (reaguje na šířku panelu) */}
+      {!recordingState.showPlayer &&
+        (embedInAssignment ? (
+          <div
+            className="pointer-events-none absolute top-4 z-10 flex justify-center"
+            style={{ left: 0, right: `${assignmentToolbarRightOffsetPx ?? 16}px` }}
+          >
+            <div
+              className="pointer-events-auto flex items-center gap-1 rounded-full bg-[#F2F2F2] p-2 shadow-sm"
+              onTouchStart={(e) => e.stopPropagation()}
+            >
+              {topZoomCluster}
+            </div>
+          </div>
+        ) : (
+          <div className="absolute left-1/2 top-4 z-10 flex -translate-x-1/2 items-center gap-1 rounded-full bg-[#F2F2F2] p-2 shadow-sm">
+            {topZoomCluster}
+          </div>
+        ))}
 
       {/* CIRCLE INPUT PANEL (Compass mode) */}
       {circleInput.visible && (
