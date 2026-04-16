@@ -3468,12 +3468,20 @@ export function FreeGeometryEditor({
             const p1data = animState.p1 as any;
             const p2data = animState.p2 as any;
             // For circles: reposition radius point to 45° (down-right) from center,
-            // but ONLY if it's a dedicated hidden/unlabeled point — never move a shared visible point
-            // (e.g. the center of another circle used as the radius reference).
+            // but ONLY if the point is not used by any other shape — moving a shared
+            // point would cause other shapes (lines, perpendiculars, circles) to jump.
+            // Use shapesStateRef (always current) instead of `shapes` (stale closure).
             if (newShape.type === 'circle' || newShape.type === 'circleArc') {
-              const p2pt = points.find(pt => pt.id === p2data.id);
-              const isSharedPoint = p2pt && p2pt.label && !p2pt.hidden;
-              if (!isSharedPoint) {
+              const currentShapes = shapesStateRef.current;
+              const usedByOtherShape = currentShapes.some(s => {
+                // Shapes store dependencies in `points` and `definition`.
+                // We must treat any dependency as "shared" (even hidden/unlabeled points).
+                if (s.points?.includes(p2data.id)) return true;
+                if (s.definition?.p1Id === p2data.id) return true;
+                if (s.definition?.p2Id === p2data.id) return true;
+                return false;
+              });
+              if (!usedByOtherShape) {
                 const r = Math.sqrt((p2data.x - p1data.x) ** 2 + (p2data.y - p1data.y) ** 2);
                 setPoints(prev => prev.map(pt =>
                   pt.id === p2data.id
