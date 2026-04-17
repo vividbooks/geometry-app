@@ -1495,6 +1495,13 @@
   --sidebar-ring: color(display-p3 .321993 .321993 .321993);
 }
 
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
 html {
   font-size: var(--font-size);
 }

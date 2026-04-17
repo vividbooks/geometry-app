@@ -1453,17 +1453,33 @@ export function FreeGeometryEditor({
 
   // --- POHYB A ZOOM ---
   useEffect(() => {
-    const handleResize = () => {
-      if (containerRef.current) {
-        setCanvasSize({
-          width: containerRef.current.clientWidth,
-          height: containerRef.current.clientHeight
-        });
+    const el = containerRef.current;
+    if (!el) return;
+
+    const measure = () => {
+      const w = el.clientWidth;
+      const h = el.clientHeight;
+      if (w > 0 && h > 0) {
+        setCanvasSize(prev => (prev.width === w && prev.height === h ? prev : { width: w, height: h }));
       }
     };
-    handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+
+    measure();
+    // Re-measure on next frame in case layout wasn't settled yet on initial mount
+    // (happens with Suspense / lazy-loaded routes where the parent height is 0
+    // for one frame and then becomes the real viewport height).
+    const raf = requestAnimationFrame(measure);
+
+    // Track future container size changes (window resize, orientation, parent layout shifts)
+    const ro = new ResizeObserver(() => measure());
+    ro.observe(el);
+
+    window.addEventListener('resize', measure);
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+      window.removeEventListener('resize', measure);
+    };
   }, []);
 
   // Initialize compass center when compass mode opens
@@ -6545,7 +6561,7 @@ export function FreeGeometryEditor({
       {/* CANVAS */}
       <div 
         ref={containerRef} 
-        className="absolute inset-0 touch-none z-0 relative"
+        className="absolute inset-0 touch-none z-0"
         style={{ cursor: getContainerCursor() }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMoveWrapper}

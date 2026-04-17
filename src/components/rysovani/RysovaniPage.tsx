@@ -186,8 +186,14 @@ export function RysovaniPage() {
     </div>
   );
 
-  // Wrapper that provides explicit height for components using size-full / h-full
-  const fullHeightStyle: React.CSSProperties = { height: '100vh', width: '100%' };
+  // Wrapper that provides explicit height for components using size-full / h-full.
+  // Uses 100dvh (dynamic viewport height) so the canvas fills the entire visible
+  // viewport on mobile (accounting for browser UI), and 100% width.
+  const fullHeightStyle: React.CSSProperties = {
+    width: '100%',
+    height: '100dvh',
+    overflow: 'hidden',
+  };
 
   const renderContent = () => {
     switch (view) {
