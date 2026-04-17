@@ -6554,15 +6554,25 @@ export function FreeGeometryEditor({
 
   return (
     <>
-    <div className={`relative size-full overflow-hidden select-none ${darkMode ? 'bg-[#1a1b26]' : 'bg-white'}`}>
+    <div
+      className={`relative overflow-hidden select-none ${darkMode ? 'bg-[#1a1b26]' : 'bg-white'}`}
+      style={{ position: 'relative', width: '100%', height: '100%', minHeight: 0 }}
+    >
       
               
               {/* Computer mode */}
       {/* CANVAS */}
       <div 
         ref={containerRef} 
-        className="absolute inset-0 touch-none z-0"
-        style={{ cursor: getContainerCursor() }}
+        className="touch-none z-0"
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          cursor: getContainerCursor(),
+        }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMoveWrapper}
         onMouseUp={handleMouseUp}
