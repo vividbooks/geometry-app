@@ -40,7 +40,8 @@ import {
   Link,
   Printer,
   Grid2X2,
-  Eraser
+  Eraser,
+  ImagePlus,
 } from 'lucide-react';
 import { useIsMobile } from './ui/use-mobile';
 import { Slider } from './ui/slider';
@@ -249,6 +250,61 @@ export type GeometrySubmissionSnapshot = {
   freehandPaths: FreehandPath[];
 };
 
+type CanvasSharePayloadV1 = {
+  v: 1;
+  snapshot: GeometrySubmissionSnapshot;
+};
+
+function uint8ToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+function base64ToUint8(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+function base64ToBase64Url(base64: string): string {
+  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function base64UrlToBase64(base64url: string): string {
+  const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
+  const pad = base64.length % 4;
+  return pad === 0 ? base64 : base64 + '='.repeat(4 - pad);
+}
+
+function encodeCanvasSharePayload(payload: CanvasSharePayloadV1): string {
+  const json = JSON.stringify(payload);
+  const bytes = new TextEncoder().encode(json);
+  return base64ToBase64Url(uint8ToBase64(bytes));
+}
+
+/** Stejný limit jako při přidávání obrázků ke krokům zadání (TasksSheet). */
+const MAX_BACKGROUND_IMAGE_BYTES = 1_500_000;
+
+function decodeCanvasSharePayload(encoded: string): CanvasSharePayloadV1 | null {
+  try {
+    const base64 = base64UrlToBase64(encoded);
+    const bytes = base64ToUint8(base64);
+    const json = new TextDecoder().decode(bytes);
+    const parsed = JSON.parse(json) as CanvasSharePayloadV1;
+    if (!parsed || parsed.v !== 1 || !parsed.snapshot) return null;
+    const s = parsed.snapshot as any;
+    if (!Array.isArray(s.points) || !Array.isArray(s.shapes) || !Array.isArray(s.freehandPaths)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 interface FreeGeometryEditorProps {
   onBack: () => void;
   darkMode: boolean;
@@ -422,6 +478,7 @@ export function FreeGeometryEditor({
   const shapesStateRef = useRef<GeoShape[]>([]);
   const lastHandledAutoDetectIdRef = useRef<number>(0);
   const autoDetectRunningRef = useRef(false);
+  const appliedUrlCanvasSnapshotRef = useRef(false);
   /** Animace posunu středu popisku při změně cílové pozice (ease-out). */
   const labelAnimByPointIdRef = useRef<
     Map<string, { from: { x: number; y: number }; to: { x: number; y: number }; startMs: number }>
@@ -640,6 +697,89 @@ export function FreeGeometryEditor({
   const [isSavingRecording, setIsSavingRecording] = useState(false);
   const [shareLink, setShareLink] = useState<string | null>(null);
 
+  /** Předloha z volného režimu (bez `embedInAssignment`); z úkolu řídí rodič přes props. */
+  const [freeProjection, setFreeProjection] = useState<{
+    src: string;
+    enabled: boolean;
+    opacity: number;
+  } | null>(null);
+  const [showBackgroundImageDialog, setShowBackgroundImageDialog] = useState(false);
+  const [backgroundImageDraft, setBackgroundImageDraft] = useState<string | null>(null);
+  const [backgroundImageDraftOpacity, setBackgroundImageDraftOpacity] = useState(0.35);
+  const backgroundImageInputRef = useRef<HTMLInputElement>(null);
+
+  const effectiveProjectionSrc = embedInAssignment ? projectionImageSrc : (freeProjection?.src ?? null);
+  const effectiveProjectionEnabled = embedInAssignment
+    ? projectionEnabled
+    : Boolean(freeProjection?.enabled && freeProjection?.src);
+  const effectiveProjectionOpacity = embedInAssignment
+    ? projectionOpacity
+    : (freeProjection?.opacity ?? 0.35);
+
+  const openBackgroundImageDialog = () => {
+    if (!embedInAssignment && freeProjection?.src) {
+      setBackgroundImageDraft(freeProjection.src);
+      setBackgroundImageDraftOpacity(freeProjection.opacity);
+    } else {
+      setBackgroundImageDraft(null);
+      setBackgroundImageDraftOpacity(0.35);
+    }
+    setShowBackgroundImageDialog(true);
+  };
+
+  const onPickBackgroundFile = (file: File | undefined) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Vyber obrázek (JPG, PNG, …)');
+      return;
+    }
+    if (file.size > MAX_BACKGROUND_IMAGE_BYTES) {
+      toast.error('Obrázek je moc velký (max. cca 1,5 MB)');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setBackgroundImageDraft(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const confirmBackgroundImage = () => {
+    if (!backgroundImageDraft?.trim()) {
+      toast.error('Nejdřív vyber obrázek.');
+      return;
+    }
+    setFreeProjection({
+      src: backgroundImageDraft,
+      enabled: true,
+      opacity: Math.max(0.05, Math.min(0.95, backgroundImageDraftOpacity)),
+    });
+    projectionWorldRectRef.current = null;
+    setShowBackgroundImageDialog(false);
+    toast.success('Předloha je promítnuta na plátno.');
+  };
+
+  const hideFreeProjectionFromCanvas = () => {
+    setFreeProjection(prev => (prev ? { ...prev, enabled: false } : null));
+    setShowBackgroundImageDialog(false);
+    toast.message('Předloha je skrytá.');
+  };
+
+  const removeFreeProjection = () => {
+    setFreeProjection(null);
+    setBackgroundImageDraft(null);
+    projectionWorldRectRef.current = null;
+    setShowBackgroundImageDialog(false);
+    toast.message('Předloha byla odstraněna.');
+  };
+
+  useEffect(() => {
+    if (!showBackgroundImageDialog || embedInAssignment) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowBackgroundImageDialog(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showBackgroundImageDialog, embedInAssignment]);
+
   // Auto-start player when sharedRecording is provided
   useEffect(() => {
     if (sharedRecording && sharedRecording.steps.length > 0) {
@@ -668,6 +808,51 @@ export function FreeGeometryEditor({
     setShapes(initialCanvasSnapshot.shapes);
     setFreehandPaths(initialCanvasSnapshot.freehandPaths ?? []);
   }, [sharedRecording, initialCanvasSnapshot]);
+
+  useEffect(() => {
+    if (appliedUrlCanvasSnapshotRef.current) return;
+    if (sharedRecording && sharedRecording.steps.length > 0) return;
+
+    const encoded = new URLSearchParams(window.location.search).get('canvas');
+    if (!encoded) return;
+
+    const payload = decodeCanvasSharePayload(encoded);
+    appliedUrlCanvasSnapshotRef.current = true;
+    if (!payload) {
+      toast.error('Sdílené plátno se nepodařilo načíst (neplatný odkaz).');
+      return;
+    }
+
+    setPoints(payload.snapshot.points);
+    setShapes(payload.snapshot.shapes);
+    setFreehandPaths(payload.snapshot.freehandPaths ?? []);
+  }, [sharedRecording]);
+
+  const shareCanvasSnapshot = useCallback(async () => {
+    const payload: CanvasSharePayloadV1 = {
+      v: 1,
+      snapshot: {
+        points: JSON.parse(JSON.stringify(points)) as GeoPoint[],
+        shapes: JSON.parse(JSON.stringify(shapes)) as GeoShape[],
+        freehandPaths: JSON.parse(JSON.stringify(freehandPaths)) as FreehandPath[],
+      },
+    };
+
+    const encoded = encodeCanvasSharePayload(payload);
+    const url = new URL(window.location.href);
+    url.searchParams.set('canvas', encoded);
+    url.searchParams.delete('recording');
+
+    const link = url.toString();
+
+    try {
+      await navigator.clipboard.writeText(link);
+      toast.success('Odkaz na plátno zkopírován do schránky.');
+    } catch {
+      // Fallback: allow manual copy (e.g. older iOS / insecure context)
+      window.prompt('Zkopírujte odkaz na sdílení plátna:', link);
+    }
+  }, [freehandPaths, points, shapes]);
 
   useEffect(() => {
     if (!submissionSnapshotRef) return;
@@ -3627,9 +3812,9 @@ export function FreeGeometryEditor({
     selectedFreehandIds,
     draggedPointId,
     constructionAnimMs,
-    projectionEnabled,
-    projectionImageSrc,
-    projectionOpacity,
+    effectiveProjectionEnabled,
+    effectiveProjectionSrc,
+    effectiveProjectionOpacity,
   ]);
 
 
@@ -3649,12 +3834,12 @@ export function FreeGeometryEditor({
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, bg.width, bg.height);
 
-    if (!projectionEnabled || !projectionImageSrc) return;
+    if (!effectiveProjectionEnabled || !effectiveProjectionSrc) return;
 
     // Ensure image element exists / is loading
-    if (!projectionImgRef.current || projectionImgRef.current.src !== projectionImageSrc) {
+    if (!projectionImgRef.current || projectionImgRef.current.src !== effectiveProjectionSrc) {
       const img = new Image();
-      const entry = { src: projectionImageSrc, img, loaded: false };
+      const entry = { src: effectiveProjectionSrc, img, loaded: false };
       projectionImgRef.current = entry;
       img.onload = () => {
         entry.loaded = true;
@@ -3662,7 +3847,7 @@ export function FreeGeometryEditor({
       img.onerror = () => {
         entry.loaded = false;
       };
-      img.src = projectionImageSrc;
+      img.src = effectiveProjectionSrc;
     }
 
     const entry = projectionImgRef.current;
@@ -3670,7 +3855,7 @@ export function FreeGeometryEditor({
 
     // Compute world rect once per src / resize / initial enable to match "contain" at that moment.
     const prevRect = projectionWorldRectRef.current;
-    const needsRect = !prevRect || prevRect.src !== projectionImageSrc;
+    const needsRect = !prevRect || prevRect.src !== effectiveProjectionSrc;
     if (needsRect) {
       const iw = entry.img.naturalWidth || 1;
       const ih = entry.img.naturalHeight || 1;
@@ -3686,7 +3871,7 @@ export function FreeGeometryEditor({
       // Screen(px) → world
       const wx = (dx - offset.x) / scale;
       const wy = (dy - offset.y) / scale;
-      projectionWorldRectRef.current = { src: projectionImageSrc, x: wx, y: wy, w: dw / scale, h: dh / scale };
+      projectionWorldRectRef.current = { src: effectiveProjectionSrc, x: wx, y: wy, w: dw / scale, h: dh / scale };
     }
 
     const rect = projectionWorldRectRef.current;
@@ -3694,7 +3879,7 @@ export function FreeGeometryEditor({
 
     ctx.save();
     ctx.scale(dpr, dpr);
-    ctx.globalAlpha = Math.max(0, Math.min(1, projectionOpacity));
+    ctx.globalAlpha = Math.max(0, Math.min(1, effectiveProjectionOpacity));
     ctx.translate(offset.x, offset.y);
     ctx.scale(scale, scale);
     ctx.drawImage(entry.img, rect.x, rect.y, rect.w, rect.h);
@@ -5961,13 +6146,13 @@ export function FreeGeometryEditor({
   };
   useEffect(() => {
     // When toggling / switching image / resizing, recompute base placement to "contain" at that moment.
-    if (!projectionEnabled || !projectionImageSrc) {
+    if (!effectiveProjectionEnabled || !effectiveProjectionSrc) {
       projectionWorldRectRef.current = null;
       return;
     }
     // Force recompute on enable / resize
     projectionWorldRectRef.current = null;
-  }, [projectionEnabled, projectionImageSrc, canvasSize.width, canvasSize.height]);
+  }, [effectiveProjectionEnabled, effectiveProjectionSrc, canvasSize.width, canvasSize.height]);
 
   // --- HELPER DRAW FUNCTIONS ---
   
@@ -6664,6 +6849,30 @@ export function FreeGeometryEditor({
         </button>
         {!embedInAssignment && !canvasExportRef ? (
           <>
+            {/* Sdílet plátno */}
+            <button
+              onClick={shareCanvasSnapshot}
+              className="w-12 h-12 flex items-center justify-center rounded-xl transition-all duration-300 text-black hover:bg-gray-200"
+              title="Sdílet plátno"
+            >
+              <Share2 className="w-6 h-6" />
+            </button>
+            {/* Obrázek na pozadí (stejná předloha jako v úkolu) */}
+            <button
+              type="button"
+              onClick={openBackgroundImageDialog}
+              className={`w-12 h-12 flex items-center justify-center rounded-xl transition-all duration-300 relative group/bgimg ${
+                !embedInAssignment && effectiveProjectionEnabled && effectiveProjectionSrc
+                  ? 'bg-[#1e1b4b] text-white hover:bg-[#2d2a5e]'
+                  : 'text-black hover:bg-gray-200'
+              }`}
+              title="Obrázek na pozadí plátna"
+            >
+              <ImagePlus className="w-6 h-6" />
+              {!embedInAssignment && effectiveProjectionSrc && !effectiveProjectionEnabled ? (
+                <span className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-amber-400 ring-2 ring-[#F2F2F2]" aria-hidden />
+              ) : null}
+            </button>
             {/* Record */}
             <button
               onClick={toggleRecording}
@@ -8471,6 +8680,165 @@ export function FreeGeometryEditor({
           </div>
         </div>
       )}
+
+      {/* Dialog: obrázek na pozadí (volný režim — stejná předloha jako při úkolu) */}
+      {showBackgroundImageDialog && !embedInAssignment ? (
+        <div
+          className="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
+          style={{ zIndex: 9998, touchAction: 'auto' }}
+          onClick={() => setShowBackgroundImageDialog(false)}
+          role="presentation"
+        >
+          <div
+            className={`max-h-[min(92vh,720px)] w-full max-w-md overflow-y-auto rounded-2xl p-6 shadow-2xl ${
+              darkMode ? 'border border-[#565f89] bg-[#24283b]' : 'bg-white'
+            }`}
+            style={{ touchAction: 'auto' }}
+            onClick={e => e.stopPropagation()}
+            onTouchStart={e => e.stopPropagation()}
+          >
+            <h3 className={`text-lg font-bold ${darkMode ? 'text-[#c0caf5]' : 'text-gray-900'}`}>
+              Obrázek na pozadí plátna
+            </h3>
+            <p className={`mt-2 text-sm leading-relaxed ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+              Vyber obrázek z počítače (JPG, PNG, WebP…). Maximální velikost cca 1,5&nbsp;MB.
+            </p>
+
+            <input
+              ref={backgroundImageInputRef}
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              onChange={e => {
+                onPickBackgroundFile(e.target.files?.[0]);
+                e.target.value = '';
+              }}
+            />
+
+            <div
+              role="button"
+              tabIndex={0}
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === ' ') backgroundImageInputRef.current?.click();
+              }}
+              onClick={() => backgroundImageInputRef.current?.click()}
+              onDragOver={e => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onDrop={e => {
+                e.preventDefault();
+                e.stopPropagation();
+                onPickBackgroundFile(e.dataTransfer.files?.[0]);
+              }}
+              className={`mt-4 flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-8 text-center transition-colors ${
+                darkMode
+                  ? 'border-[#565f89] bg-[#1a1b26] hover:border-[#7aa2f7]/50'
+                  : 'border-sky-200/80 bg-sky-50/40 hover:border-sky-300'
+              }`}
+            >
+              <ImagePlus className={`size-10 stroke-[1.5] ${darkMode ? 'text-[#7aa2f7]' : 'text-sky-600'}`} aria-hidden />
+              <span className={`text-sm font-medium ${darkMode ? 'text-[#c0caf5]' : 'text-slate-800'}`}>
+                Klikni nebo přetáhni obrázek
+              </span>
+              <span className={`text-xs ${darkMode ? 'text-gray-500' : 'text-slate-500'}`}>max. 1,5&nbsp;MB</span>
+            </div>
+
+            {backgroundImageDraft ? (
+              <div className="mt-4 space-y-3">
+                <p className={`text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-slate-600'}`}>Náhled</p>
+                <div
+                  className={`rounded-lg border p-2 ${darkMode ? 'border-[#565f89] bg-[#1a1b26]' : 'border-slate-200 bg-slate-200'}`}
+                >
+                  <img
+                    src={backgroundImageDraft}
+                    alt=""
+                    className="max-h-48 w-full rounded-md object-contain"
+                    style={{ opacity: backgroundImageDraftOpacity }}
+                  />
+                </div>
+                <div
+                  className="flex flex-wrap items-center gap-3"
+                  onPointerDown={e => e.stopPropagation()}
+                  onMouseDown={e => e.stopPropagation()}
+                >
+                  <span className={`text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-slate-600'}`}>Průhlednost</span>
+                  <input
+                    type="range"
+                    min={5}
+                    max={90}
+                    step={5}
+                    value={(() => {
+                      const raw = Math.round(backgroundImageDraftOpacity * 100);
+                      return Math.min(90, Math.max(5, Math.round(raw / 5) * 5));
+                    })()}
+                    onInput={e => {
+                      const v = Number((e.target as HTMLInputElement).value);
+                      if (!Number.isFinite(v)) return;
+                      setBackgroundImageDraftOpacity(v / 100);
+                    }}
+                    onChange={e => {
+                      const v = Number(e.currentTarget.value);
+                      if (!Number.isFinite(v)) return;
+                      setBackgroundImageDraftOpacity(v / 100);
+                    }}
+                    className="min-h-9 min-w-[8rem] flex-1 text-slate-900"
+                    style={{ touchAction: 'none' }}
+                    aria-label="Průhlednost předlohy"
+                  />
+                  <span className="tabular-nums text-xs text-slate-500 dark:text-gray-400" aria-hidden>
+                    {Math.round(backgroundImageDraftOpacity * 100)}&nbsp;%
+                  </span>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setShowBackgroundImageDialog(false)}
+                className={`rounded-xl px-4 py-3 text-sm font-medium ${
+                  darkMode ? 'bg-gray-700 text-[#c0caf5] hover:bg-gray-600' : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+                }`}
+              >
+                Zrušit
+              </button>
+              {freeProjection?.src ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={hideFreeProjectionFromCanvas}
+                    className={`rounded-xl px-4 py-3 text-sm font-medium ${
+                      darkMode ? 'bg-[#414868] text-[#c0caf5] hover:bg-[#565f89]' : 'bg-slate-100 text-slate-800 hover:bg-slate-200'
+                    }`}
+                  >
+                    Skrýt předlohu
+                  </button>
+                  <button
+                    type="button"
+                    onClick={removeFreeProjection}
+                    className={`rounded-xl px-4 py-3 text-sm font-medium ${
+                      darkMode ? 'bg-red-900/50 text-red-200 hover:bg-red-900/70' : 'bg-red-50 text-red-800 hover:bg-red-100'
+                    }`}
+                  >
+                    Odstranit předlohu
+                  </button>
+                </>
+              ) : null}
+              <button
+                type="button"
+                disabled={!backgroundImageDraft}
+                onClick={confirmBackgroundImage}
+                className={`rounded-xl px-4 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${
+                  darkMode ? 'bg-[#7aa2f7] text-[#1a1b26] hover:bg-[#89b4fa]' : 'bg-[#1e1b4b] text-white hover:bg-[#2d2a5e]'
+                }`}
+              >
+                Promítnout na plátno
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* POTVRZOVACÍ DIALOG - Zavření přehrávače/editoru */}
       {showCloseConfirm && (

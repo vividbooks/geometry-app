@@ -1,6 +1,7 @@
 import { lazy, Suspense, useState, useRef, useEffect, type ReactNode } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
+  ArrowLeft,
   Check,
   Copy,
   DraftingCompass,
@@ -23,6 +24,16 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { getSupabase, getSupabaseConfigInfo, isSupabaseConfigured } from '@/lib/supabase';
 import { CIRCUIT_ASSIGNMENTS_TABLE, CIRCUIT_SUBMISSIONS_TABLE } from '@/lib/circuitTables';
 import { assignmentPublicUrl } from '../../utils/appUrl';
@@ -40,6 +51,7 @@ import {
 } from '@/app/utils/instructionSteps';
 import { toast } from 'sonner';
 import '../../../../rysovani/src/index.css';
+import type { GeometrySubmissionSnapshot } from '../../../../rysovani/src/components/FreeGeometryEditor';
 
 const MAX_IMAGE_BYTES = 1_500_000;
 
@@ -74,6 +86,38 @@ async function blobToDataUrl(blob: Blob): Promise<string> {
     r.onerror = () => reject(new Error('Nepodařilo se načíst PNG'));
     r.readAsDataURL(blob);
   });
+}
+
+function base64UrlToJson(base64url: string): string | null {
+  try {
+    const pad = base64url.length % 4 === 0 ? '' : '='.repeat(4 - (base64url.length % 4));
+    const standard = base64url.replace(/-/g, '+').replace(/_/g, '/') + pad;
+    // to match geometrySubmissionCodec.ts approach for utf-8 json
+    return decodeURIComponent(escape(atob(standard)));
+  } catch {
+    return null;
+  }
+}
+
+function decodeSharedCanvasFromUrl(raw: string): GeometrySubmissionSnapshot | null {
+  try {
+    const url = new URL(raw, window.location.origin);
+    const canvasParam = url.searchParams.get('canvas');
+    if (!canvasParam) return null;
+    const json = base64UrlToJson(canvasParam);
+    if (!json) return null;
+    const data = JSON.parse(json) as { v?: number; snapshot?: unknown };
+    if (!data || data.v !== 1 || !data.snapshot || typeof data.snapshot !== 'object') return null;
+    const snap = data.snapshot as any;
+    if (!Array.isArray(snap.points) || !Array.isArray(snap.shapes) || !Array.isArray(snap.freehandPaths)) return null;
+    return {
+      points: snap.points,
+      shapes: snap.shapes,
+      freehandPaths: snap.freehandPaths,
+    } as GeometrySubmissionSnapshot;
+  } catch {
+    return null;
+  }
 }
 
 /** HTML canvas (rýsování) → PNG data URL s omezením velikosti, stejný postup jako u SVG obvodu. */
@@ -126,6 +170,14 @@ function formatDbError(e: unknown): string {
   };
   const parts = [o.message, o.details, o.hint, o.code ? `(${o.code})` : ""].filter(Boolean);
   return parts.length ? parts.join(" · ") : JSON.stringify(e).slice(0, 200);
+}
+
+function isMissingColumnInSchemaCache(e: unknown, column: string): boolean {
+  if (!e || typeof e !== 'object') return false;
+  const o = e as { code?: string; message?: string; details?: string };
+  if (o.code === 'PGRST204') return true;
+  const hay = `${o.message ?? ''}\n${o.details ?? ''}`.toLowerCase();
+  return hay.includes(`could not find the '${column}' column`.toLowerCase());
 }
 
 /** Radix SheetTitle vyžaduje kořen `Sheet` (Dialog); v `embedded` režimu ho nemáme. */
@@ -183,6 +235,11 @@ export interface TasksSheetProps {
   sidebarIntro?: ReactNode;
   /** Bez fullscreen sheetu – vloží se do stránky (např. pod bobánky v Landing). */
   embedded?: boolean;
+  /**
+   * Volitelná akce při „Zpět“ (např. v embedded režimu přepnout záložku).
+   * Pokud není předána, zavře se panel přes `onOpenChange(false)` (jako u sheetu).
+   */
+  onBack?: () => void;
 }
 
 type TasksPanel = 'library' | 'create' | 'edit';
@@ -197,6 +254,7 @@ export function TasksSheet({
   taskLibrary: taskLibraryProp,
   sidebarIntro,
   embedded = false,
+  onBack,
 }: TasksSheetProps) {
   const assignmentPublicUrlForHost = resolveAssignmentPublicUrl ?? assignmentPublicUrl;
   const resolveClient = () => getSupabaseProp?.() ?? getSupabase();
@@ -211,6 +269,9 @@ export function TasksSheet({
   const [createdUrl, setCreatedUrl] = useState<string | null>(null);
   const [tasksPanel, setTasksPanel] = useState<TasksPanel>('library');
   const [editAssignmentUrl, setEditAssignmentUrl] = useState('');
+  const [sharedCanvasUrl, setSharedCanvasUrl] = useState('');
+  const [initialCanvasSnapshot, setInitialCanvasSnapshot] = useState<GeometrySubmissionSnapshot | null>(null);
+  const [confirmClearDraftOpen, setConfirmClearDraftOpen] = useState(false);
   const [geometryDrawOpen, setGeometryDrawOpen] = useState(false);
   const [geometryDrawStepIndex, setGeometryDrawStepIndex] = useState<number | null>(null);
   const [geometryDrawSession, setGeometryDrawSession] = useState(0);
@@ -221,6 +282,23 @@ export function TasksSheet({
     Record<string, { instruction_image: string | null; title: string | null; stepCount: number }>
   >({});
   const [linkCopied, setLinkCopied] = useState(false);
+
+  const resetTasksUiState = () => {
+    setTasksPanel('library');
+    setEditAssignmentUrl('');
+    setLibraryDbMeta({});
+    setCreatedUrl(null);
+    setLinkCopied(false);
+  };
+
+  const handleTasksBack = () => {
+    resetTasksUiState();
+    if (onBack) {
+      onBack();
+    } else {
+      onOpenChange(false);
+    }
+  };
 
   useEffect(() => {
     if (open || embedded) {
@@ -291,6 +369,15 @@ export function TasksSheet({
     setTitle('');
     setSteps([{ text: '', image: null }]);
     setDragActiveStep(null);
+    setSharedCanvasUrl('');
+    setInitialCanvasSnapshot(null);
+  };
+
+  const hasDraft = () => {
+    if (title.trim()) return true;
+    if (sharedCanvasUrl.trim()) return true;
+    if (initialCanvasSnapshot) return true;
+    return steps.some(s => Boolean(s.text.trim()) || Boolean(s.image));
   };
 
   const openGeometryDrawForStep = (index: number) => {
@@ -324,11 +411,25 @@ export function TasksSheet({
     }
     setBusy(true);
     try {
-      const { data, error } = await supabase
-        .from(CIRCUIT_ASSIGNMENTS_TABLE)
-        .select('id, title, instruction_text, instruction_steps')
-        .eq('id', assignmentId)
-        .maybeSingle();
+      const queryWithSnapshot = () =>
+        supabase
+          .from(CIRCUIT_ASSIGNMENTS_TABLE)
+          .select('id, title, instruction_text, instruction_steps, initial_canvas_snapshot')
+          .eq('id', assignmentId)
+          .maybeSingle();
+      const queryWithoutSnapshot = () =>
+        supabase
+          .from(CIRCUIT_ASSIGNMENTS_TABLE)
+          .select('id, title, instruction_text, instruction_steps')
+          .eq('id', assignmentId)
+          .maybeSingle();
+
+      let data: any = null;
+      let error: any = null;
+      ({ data, error } = await queryWithSnapshot());
+      if (error && isMissingColumnInSchemaCache(error, 'initial_canvas_snapshot')) {
+        ({ data, error } = await queryWithoutSnapshot());
+      }
       if (error || !data) {
         throw error ?? new Error('Zadání se nepodařilo načíst.');
       }
@@ -346,6 +447,22 @@ export function TasksSheet({
 
       setTitle(String((data as any).title ?? '').trim());
       setSteps(nextSteps.length > 0 ? nextSteps : [{ text: '', image: null }]);
+      const snap = (data as any).initial_canvas_snapshot;
+      if (snap && typeof snap === 'object') {
+        const s = snap as any;
+        if (Array.isArray(s.points) && Array.isArray(s.shapes)) {
+          setInitialCanvasSnapshot({
+            points: s.points,
+            shapes: s.shapes,
+            freehandPaths: Array.isArray(s.freehandPaths) ? s.freehandPaths : [],
+          } as GeometrySubmissionSnapshot);
+        } else {
+          setInitialCanvasSnapshot(null);
+        }
+      } else {
+        setInitialCanvasSnapshot(null);
+      }
+      setSharedCanvasUrl('');
       setDragActiveStep(null);
       setCreatedUrl(null);
       setLinkCopied(false);
@@ -434,13 +551,26 @@ export function TasksSheet({
     setBusy(true);
     try {
       const cleanedTitle = title.trim();
-      const payload = {
+      const payload: any = {
         title: cleanedTitle,
         instruction_text: instructionStepsToFallbackText(cleaned.map(s => s.text)),
         instruction_steps: cleaned.map(s => (s.image ? { text: s.text, image: s.image } : { text: s.text })),
         instruction_image: firstStepImage(cleaned) ?? null,
       };
-      const { data, error } = await supabase.from(CIRCUIT_ASSIGNMENTS_TABLE).insert(payload).select("id");
+
+      // Attempt to save snapshot only if DB supports it.
+      if (initialCanvasSnapshot) payload.initial_canvas_snapshot = initialCanvasSnapshot;
+
+      let data: any = null;
+      let error: any = null;
+      ({ data, error } = await supabase.from(CIRCUIT_ASSIGNMENTS_TABLE).insert(payload).select("id"));
+      if (error && payload.initial_canvas_snapshot && isMissingColumnInSchemaCache(error, 'initial_canvas_snapshot')) {
+        delete payload.initial_canvas_snapshot;
+        ({ data, error } = await supabase.from(CIRCUIT_ASSIGNMENTS_TABLE).insert(payload).select("id"));
+        toast.error(
+          "Sdílené plátno se neuložilo – v Supabase chybí sloupec `initial_canvas_snapshot`. Spusť prosím `supabase/geometry_circuit_schema.sql` a pak ulož úkol znovu.",
+        );
+      }
 
       if (error) throw error;
       const row = data?.[0];
@@ -452,7 +582,6 @@ export function TasksSheet({
 
       const url = assignmentPublicUrlForHost(row.id);
       setCreatedUrl(url);
-      resetForm();
       toast.success('Zadání je v databázi – zkopíruj odkaz pro studenty.');
     } catch (e) {
       console.error("Uložení zadání (Supabase):", e);
@@ -549,6 +678,18 @@ export function TasksSheet({
                       aria-hidden
                     />
                     Editovat úkol
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleTasksBack}
+                    className={[
+                      'flex w-full items-center gap-3 rounded-2xl px-4 py-3.5 text-left text-sm font-medium outline-none transition-colors',
+                      'bg-[#4f566b] text-white hover:bg-[#5c647a]',
+                      'focus-visible:ring-2 focus-visible:ring-[#fbc02d] focus-visible:ring-offset-2 focus-visible:ring-offset-[#565e75]',
+                    ].join(' ')}
+                  >
+                    <ArrowLeft className="size-[1.125rem] shrink-0 stroke-[2] text-white/75" aria-hidden />
+                    Zpět
                   </button>
                 </nav>
               </aside>
@@ -777,8 +918,12 @@ export function TasksSheet({
                                   onClick={() => {
                                     setCreatedUrl(null);
                                     setLinkCopied(false);
-                                    resetForm();
-                                    toast.success('Zadání vymazáno.');
+                                    if (!hasDraft()) {
+                                      resetForm();
+                                      toast.success('Zadání vymazáno.');
+                                      return;
+                                    }
+                                    setConfirmClearDraftOpen(true);
                                   }}
                                   className="h-11 w-full rounded-xl border-2 border-sky-200 bg-white text-[15px] font-medium text-sky-900 hover:bg-sky-50 min-[520px]:h-12 min-[520px]:w-auto min-[520px]:shrink-0 min-[520px]:whitespace-nowrap"
                                 >
@@ -787,6 +932,66 @@ export function TasksSheet({
                               </div>
                             </div>
                           </div>
+
+                          <div className="space-y-2.5">
+                            <Label className="text-base font-medium text-slate-800" htmlFor="task-shared-canvas">
+                              Sdílené plátno{' '}
+                              <span className="text-sm font-normal text-slate-500">(volitelné)</span>
+                            </Label>
+                            <p className="m-0 text-sm leading-relaxed text-zinc-500">
+                              Vlož odkaz ze tlačítka „Sdílet plátno“ v rýsování. Úkol se pak otevře s tímto plátnem jako výchozím stavem.
+                            </p>
+                            <div className="flex flex-col gap-3 min-[720px]:flex-row min-[720px]:items-stretch">
+                              <input
+                                id="task-shared-canvas"
+                                value={sharedCanvasUrl}
+                                onChange={e => setSharedCanvasUrl(e.target.value)}
+                                placeholder="Vlož odkaz na sdílené plátno…"
+                                className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 shadow-sm outline-none ring-sky-400/0 transition-shadow placeholder:text-slate-400 focus-visible:border-sky-400 focus-visible:ring-2 focus-visible:ring-sky-400/25"
+                                style={{ fontFamily: 'ui-monospace, monospace' }}
+                              />
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  disabled={busy || !sharedCanvasUrl.trim()}
+                                  onClick={() => {
+                                    const snap = decodeSharedCanvasFromUrl(sharedCanvasUrl.trim());
+                                    if (!snap) {
+                                      toast.error('Odkaz na sdílené plátno je neplatný.');
+                                      return;
+                                    }
+                                    setInitialCanvasSnapshot(snap);
+                                    toast.success('Sdílené plátno vloženo do úkolu.');
+                                  }}
+                                  className="h-11 rounded-xl border-2 border-sky-200 bg-white text-[14px] font-medium text-sky-900 hover:bg-sky-50"
+                                >
+                                  Vložit plátno
+                                </Button>
+                                {initialCanvasSnapshot ? (
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    disabled={busy}
+                                    onClick={() => {
+                                      setInitialCanvasSnapshot(null);
+                                      setSharedCanvasUrl('');
+                                      toast.success('Sdílené plátno odebráno.');
+                                    }}
+                                    className="h-11 rounded-xl border-2 border-zinc-200 bg-white text-[14px] font-medium text-zinc-800 hover:bg-zinc-50"
+                                  >
+                                    Odebrat
+                                  </Button>
+                                ) : null}
+                              </div>
+                            </div>
+                            {initialCanvasSnapshot ? (
+                              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+                                Sdílené plátno je připojeno k úkolu.
+                              </div>
+                            ) : null}
+                          </div>
+
                           <Label className="block text-base font-medium text-slate-800">Kroky zadání</Label>
                           <p className="m-0 text-sm leading-relaxed text-zinc-500">
                             Každý krok se studentům zobrazí jako očíslovaný bod; obrázek u kroku je volitelný.
@@ -1007,13 +1212,7 @@ export function TasksSheet({
         <Sheet
           open={open}
           onOpenChange={v => {
-            if (!v) {
-              setTasksPanel('library');
-              setEditAssignmentUrl('');
-              setLibraryDbMeta({});
-              setCreatedUrl(null);
-              setLinkCopied(false);
-            }
+            if (!v) resetTasksUiState();
             onOpenChange(v);
           }}
         >
@@ -1080,6 +1279,28 @@ export function TasksSheet({
           </div>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={confirmClearDraftOpen} onOpenChange={setConfirmClearDraftOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Opravdu chceš smazat rozpracovaný úkol?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tímto se vymaže aktuálně vyplněný název a kroky zadání.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Zrušit</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                resetForm();
+                toast.success('Zadání vymazáno.');
+              }}
+            >
+              Smazat
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

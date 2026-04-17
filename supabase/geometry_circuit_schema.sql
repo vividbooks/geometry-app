@@ -8,6 +8,7 @@ create table if not exists public.geometry_circuit_assignments (
   instruction_text text not null default '',
   instruction_image text,
   instruction_steps jsonb not null default '[]'::jsonb,
+  initial_canvas_snapshot jsonb,
   created_at timestamptz not null default now()
 );
 
@@ -18,6 +19,7 @@ alter table public.geometry_circuit_assignments add column if not exists title t
 alter table public.geometry_circuit_assignments add column if not exists instruction_text text not null default '';
 alter table public.geometry_circuit_assignments add column if not exists instruction_image text;
 alter table public.geometry_circuit_assignments add column if not exists instruction_steps jsonb not null default '[]'::jsonb;
+alter table public.geometry_circuit_assignments add column if not exists initial_canvas_snapshot jsonb;
 alter table public.geometry_circuit_assignments add column if not exists created_at timestamptz not null default now();
 
 create table if not exists public.geometry_circuit_submissions (

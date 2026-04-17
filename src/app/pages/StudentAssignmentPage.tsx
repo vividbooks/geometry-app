@@ -65,6 +65,7 @@ type AssignmentRow = {
   instruction_text: string;
   instruction_image: string | null;
   instruction_steps?: unknown;
+  initial_canvas_snapshot?: unknown;
 };
 
 class StudentAssignmentErrorBoundary extends Component<
@@ -185,6 +186,9 @@ export default function StudentAssignmentPage() {
         }
         setAssignment(data as AssignmentRow);
         setStepIndex(0);
+        // Always show instructions panel when opening an assignment.
+        // (Session storage might have it collapsed from a previous visit.)
+        setAsideCollapsed(false);
         setLoadState('ready');
       } catch (e) {
         if (!cancelled) {
@@ -290,6 +294,18 @@ export default function StudentAssignmentPage() {
     return assignment ? assignmentInstructionDisplay(assignment) : null;
   }, [assignment]);
 
+  const initialCanvasSnapshot = useMemo<GeometrySubmissionSnapshot | null>(() => {
+    const raw = assignment?.initial_canvas_snapshot;
+    if (!raw || typeof raw !== 'object') return null;
+    const s = raw as any;
+    if (!Array.isArray(s.points) || !Array.isArray(s.shapes)) return null;
+    return {
+      points: s.points,
+      shapes: s.shapes,
+      freehandPaths: Array.isArray(s.freehandPaths) ? s.freehandPaths : [],
+    } as GeometrySubmissionSnapshot;
+  }, [assignment]);
+
   const stepsCount = instructionView?.kind === 'steps' ? instructionView.steps.length : 0;
   const activeStep =
     instructionView?.kind === 'steps' && stepsCount > 0
@@ -355,6 +371,7 @@ export default function StudentAssignmentPage() {
               onDarkModeChange={setDarkMode}
               deviceType="computer"
               embedInAssignment
+              initialCanvasSnapshot={initialCanvasSnapshot}
               submissionSnapshotRef={submissionSnapshotRef}
               assignmentToolbarRightOffsetPx={asideCollapsed ? 16 : asideWidth}
             projectionImageSrc={projectionSrc}

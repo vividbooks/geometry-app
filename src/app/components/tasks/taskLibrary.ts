@@ -17,9 +17,9 @@ export type TaskLibraryEntry = {
 /** Výchozí prázdná knihovna — doplň položky s `assignmentId` z `geometry_circuit_assignments`. */
 export const TASK_LIBRARY: TaskLibraryEntry[] = [
   {
-    key: '17cc5eb9-7300-4e6d-b7aa-7b634d7e153b',
-    title: 'Úkol',
-    assignmentId: '17cc5eb9-7300-4e6d-b7aa-7b634d7e153b',
+    key: '6fe2b87a-b21e-4fc8-b362-e21ccd2d52d7',
+    title: 'Úkol 1',
+    assignmentId: '6fe2b87a-b21e-4fc8-b362-e21ccd2d52d7',
   },
 ];
 

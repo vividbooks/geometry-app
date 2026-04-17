@@ -664,6 +664,7 @@ export function Landing({ mode }: { mode: LandingMode }) {
             embedded
             open
             onOpenChange={() => {}}
+            onBack={() => setActiveFilter(config.defaultFilter)}
             brandLabel="Elobvod"
             taskLibrary={taskLibrary}
           />
