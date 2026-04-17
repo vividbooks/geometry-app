@@ -28,10 +28,24 @@ function readCookie(name: string): string | null {
   return null;
 }
 
+function isLocalDevHost(hostname: string): boolean {
+  return (
+    hostname === "localhost" ||
+    hostname.endsWith(".localhost") ||
+    /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname)
+  );
+}
+
+function isBypassedHost(hostname: string): boolean {
+  return (
+    isLocalDevHost(hostname) ||
+    hostname === "vividboard.cz" ||
+    hostname.endsWith(".vividboard.cz")
+  );
+}
+
 function getParentDomain(hostname: string): string | null {
-  const isLocalhost = hostname === "localhost" || hostname.endsWith(".localhost");
-  const isIpAddress = /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname);
-  if (isLocalhost || isIpAddress) {
+  if (isLocalDevHost(hostname)) {
     return null;
   }
   const parts = hostname.split(".");
@@ -67,6 +81,11 @@ export function AuthGate({ children }: PropsWithChildren) {
   const [status, setStatus] = useState<AuthStatus>("checking");
 
   useEffect(() => {
+    if (isBypassedHost(window.location.hostname)) {
+      setStatus("allowed");
+      return;
+    }
+
     if (!ENABLE_AUTH_GATE) {
       setStatus("allowed");
       return;
