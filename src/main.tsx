@@ -3,6 +3,7 @@ import { MantineProvider, createTheme } from "@mantine/core";
 import App from "./App.tsx";
 import "@mantine/core/styles.css";
 import "./index.css";
+import "./styles/tailwind-app.css";
 
 const theme = createTheme({
   primaryColor: "blue",

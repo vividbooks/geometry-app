@@ -1,12 +1,27 @@
 
-  import { defineConfig } from 'vite';
+  import { defineConfig, loadEnv } from 'vite';
   import react from '@vitejs/plugin-react-swc';
-  import path from 'path';
+  import tailwindcss from '@tailwindcss/vite';
+  import path from 'node:path';
+  import { fileURLToPath } from 'node:url';
 
-  export default defineConfig({
-    // Subpath for rysovani.vividbooks.com/rysovani-app (GitHub Pages)
-    base: '/rysovani-app/',
-    plugins: [react()],
+  const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+  export default defineConfig(({ mode }) => {
+    const env = loadEnv(mode, process.cwd(), '');
+    // Dev: /geometry-app/ (local). Prod default: /rysovani-app/ (e.g. rysovani.vividbooks.com/rysovani-app/).
+    // For GitHub Pages *project* sites (https://user.github.io/REPO/) build with:
+    //   VITE_DEPLOY_BASE=/REPO/rysovani-app/ npm run build
+    const deployBase =
+      process.env.VITE_DEPLOY_BASE?.trim() ||
+      env.VITE_DEPLOY_BASE?.trim() ||
+      '/rysovani-app/';
+    const prodBaseRaw = deployBase.replace(/\/?$/, '/');
+    const base = mode === 'development' ? '/geometry-app/' : prodBaseRaw;
+
+    return {
+    base,
+    plugins: [tailwindcss(), react()],
     css: {
       transformer: 'lightningcss',
       lightningcss: {
@@ -79,4 +94,5 @@
       port: 3000,
       open: true,
     },
+  };
   });

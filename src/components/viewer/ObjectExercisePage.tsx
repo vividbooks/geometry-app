@@ -1,12 +1,12 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
-import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { Canvas3DViewer } from './Canvas3DViewer';
 import { Flat2DViewer } from './Flat2DViewer';
 import { ObjectQuizPanel, generateRandomParams, type TaskType } from './ObjectQuizPanel';
 import { Slider } from '../ui/slider';
 import { Label } from '../ui/label';
 import { Switch } from '../ui/switch';
-import { ArrowLeft, Box, Grid3X3, Expand, List } from 'lucide-react';
+import { Grid3X3, Expand } from 'lucide-react';
 import { getObjectDef } from '../../data/objects';
 import { getWireframeDimensions } from '../geometry/wireframeDimensions';
 import type { FaceData } from '../geometry/shared';
@@ -110,7 +110,9 @@ export function ObjectExercisePage() {
   const def = getObjectDef(objectId || '');
   const taskType = parseTaskType(taskTypeParam);
 
-  const urlAnswerMode = searchParams.get('answerMode') === 'choices' ? 'choices' : 'number';
+  const CHOICES_ONLY_IDS = ['kruh2d', 'valec', 'kuzel'];
+  const forcedChoices = CHOICES_ONLY_IDS.includes(objectId ?? '');
+  const urlAnswerMode: AnswerMode = forcedChoices || searchParams.get('answerMode') === 'choices' ? 'choices' : 'number';
   const urlRows = searchParams.get('rows');
   const urlParamsRandom = searchParams.get('params') === 'random';
 
@@ -124,8 +126,23 @@ export function ObjectExercisePage() {
     return null;
   }, [def, urlParamsRandom, urlRows, searchParams]);
 
+  // Per-task overrides take priority over generic exercise* fields
+  const taskOverride = def?.exerciseTaskOverrides?.[taskType];
+  const exParamDefs = taskOverride?.paramDefs ?? def?.exerciseParamDefs ?? def?.parameterDefs ?? [];
+  const exComputeProperties = taskOverride?.computeProperties ?? def?.exerciseComputeProperties ?? def?.computeProperties;
+  const exComputeVertices2D = taskOverride?.computeVertices2D ?? def?.exerciseComputeVertices2D ?? def?.computeVertices2D;
+  const exShowHeight = taskOverride?.showHeight ?? def?.exerciseShowHeight;
+
+  const genParams = useCallback(() => {
+    if (!def) return {};
+    if (taskOverride?.generateParams) return taskOverride.generateParams();
+    if (def.exerciseGenerateParams) return def.exerciseGenerateParams();
+    if (def.generateParams) return def.generateParams();
+    return generateRandomParams(exParamDefs);
+  }, [def, taskOverride, exParamDefs]);
+
   const [params, setParams] = useState<Record<string, number>>(() =>
-    initialParamsFromUrl ?? (def ? generateRandomParams(def.parameterDefs) : {})
+    initialParamsFromUrl ?? (def ? genParams() : {})
   );
   const [unfoldProgress, setUnfoldProgress] = useState(0);
   const [isWireframe, setIsWireframe] = useState(false);
@@ -135,10 +152,10 @@ export function ObjectExercisePage() {
 
   const resetTask = useCallback(() => {
     if (!def) return;
-    setParams(generateRandomParams(def.parameterDefs));
+    setParams(genParams());
     setChecked(false);
     setCorrect(false);
-  }, [def]);
+  }, [def, genParams]);
 
   useEffect(() => {
     if (!def) return;
@@ -155,7 +172,7 @@ export function ObjectExercisePage() {
     setAnswerMode(urlAnswerMode);
   }, [urlAnswerMode]);
 
-  const mathProperties = def ? def.computeProperties(params) : [];
+  const mathProperties = def ? (exComputeProperties ?? def.computeProperties)(params) : [];
   const TASK_LABEL_MAP: Record<string, string> = { objem: 'Objem', povrch: 'Povrch', obvod: 'Obvod', obsah: 'Obsah' };
   const UNIT_MAP: Record<string, string> = { objem: 'cm³', povrch: 'cm²', obvod: 'cm', obsah: 'cm²' };
   const taskLabel = TASK_LABEL_MAP[taskType] ?? 'Objem';
@@ -178,12 +195,14 @@ export function ObjectExercisePage() {
     [correctNum]
   );
 
+  const exComputeFaces = taskOverride?.computeFaces ?? def?.computeFaces;
+
   const computeFaces = useCallback(
     (progress: number): FaceData[] => {
-      if (!def) return [];
-      return def.computeFaces(params, progress);
+      if (!def || !exComputeFaces) return [];
+      return exComputeFaces(params, progress);
     },
-    [def, params]
+    [def, exComputeFaces, params]
   );
 
   const hasUnfold = def?.hasUnfold ?? false;
@@ -229,46 +248,13 @@ export function ObjectExercisePage() {
           boxShadow: 'none',
         }}
       >
-        <div className="flex items-center gap-2" style={{ flexShrink: 0, padding: isMobile ? 8 : 12 }}>
-          <button
-            onClick={() => navigate('/')}
-            className="flex items-center justify-center text-slate-600 hover:text-slate-900 transition-colors"
-            style={{
-              width: isMobile ? 36 : 40,
-              height: isMobile ? 36 : 40,
-              borderRadius: '50%',
-              background: '#f8fafc',
-              border: '1px solid #e2e8f0',
-            }}
-            title="Zpět na rozcestník"
-          >
-            <ArrowLeft className={isMobile ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
-          </button>
-          <Link
-            to="/cviceni"
-            className={`flex items-center gap-2 text-slate-600 hover:text-slate-900 ${isMobile ? 'text-xs' : 'text-sm'}`}
-            style={{ textDecoration: 'none' }}
-          >
-            <List className={isMobile ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
-            Výběr úloh
-          </Link>
-          <Link
-            to={def.path}
-            className={`flex items-center gap-2 text-slate-600 hover:text-slate-900 ${isMobile ? 'text-xs' : 'text-sm'}`}
-            style={{ textDecoration: 'none' }}
-          >
-            <Box className={isMobile ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
-            Prohlížet těleso
-          </Link>
-        </div>
-
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <div style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '0 12px 12px' : '0 16px 16px' }}>
+          <div style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '12px 12px 12px' : '24px 24px 24px' }}>
             <ObjectQuizPanel
               objectName={def.name}
               shapeBadge={def.badge}
               params={params}
-              parameterDefs={def.parameterDefs}
+              parameterDefs={exParamDefs}
               taskType={taskType}
               unit={unit}
               answerMode={answerMode}
@@ -377,14 +363,15 @@ export function ObjectExercisePage() {
             boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
           }}
         >
-          {def?.is2D && def.computeVertices2D ? (
+          {def?.is2D && exComputeVertices2D ? (
             <Flat2DViewer
-              vertices={def.computeVertices2D(params)}
+              vertices={exComputeVertices2D(params)}
               params={params}
-              paramIds={def.parameterDefs.map((d) => d.id)}
+              paramIds={exParamDefs.map((d) => d.id)}
               fillColor={def.color}
               backgroundColor="#E0E7FF"
               isCircle={objectId === 'kruh2d'}
+              triangleHeightMode={exShowHeight}
             />
           ) : (
             <Canvas3DViewer

@@ -2,18 +2,32 @@ import type { ParameterDef, FaceData, MathProperty } from '../components/geometr
 
 import { CUBE_PARAMS, computeCubeFaces, computeCubeProperties } from '../components/geometry/cube';
 import { CUBOID_PARAMS, computeCuboidFaces, computeCuboidProperties } from '../components/geometry/cuboid';
-import { PRISM_PARAMS, computePrismFaces, computePrismProperties } from '../components/geometry/prism';
-import { PYRAMID_PARAMS, computePyramidFaces, computePyramidProperties } from '../components/geometry/pyramid';
+import {
+  PRISM_PARAMS, computePrismFaces, computePrismProperties,
+  PRISM_VOLUME_PARAMS, computePrismVolumeProperties, generatePrismVolumeParams,
+  PRISM_SURFACE_PARAMS, computePrismSurfaceProperties, generatePrismSurfaceParams,
+} from '../components/geometry/prism';
+import {
+  PYRAMID_PARAMS, computePyramidFaces, computePyramidProperties,
+  PYRAMID_VOLUME_PARAMS, computePyramidVolumeProperties, computePyramidVolumeFaces, generatePyramidVolumeParams,
+} from '../components/geometry/pyramid';
 import { CYLINDER_PARAMS, computeCylinderFaces, computeCylinderProperties } from '../components/geometry/cylinder';
 import { CONE_PARAMS, computeConeFaces, computeConeProperties } from '../components/geometry/cone';
 import { SPHERE_PARAMS, computeSphereFaces, computeSphereProperties } from '../components/geometry/sphere';
 
 import { SQUARE_PARAMS, computeSquareFaces, computeSquareProperties, computeSquareVertices } from '../components/geometry/square';
 import { RECTANGLE_PARAMS, computeRectangleFaces, computeRectangleProperties, computeRectangleVertices } from '../components/geometry/rectangle';
-import { TRIANGLE_PARAMS, computeTriangleFaces, computeTriangleProperties, computeTriangleVertices } from '../components/geometry/triangle';
+import {
+  TRIANGLE_PARAMS, computeTriangleFaces, computeTriangleProperties, computeTriangleVertices, generateTriangleParams,
+  TRIANGLE_EXERCISE_PARAMS, computeTriangleExerciseVertices, computeTriangleExerciseProperties, generateTriangleExerciseParams,
+} from '../components/geometry/triangle';
 import { CIRCLE2D_PARAMS, computeCircle2DFaces, computeCircle2DProperties, computeCircle2DVertices } from '../components/geometry/circle2d';
-import { TRAPEZOID_PARAMS, computeTrapezoidFaces, computeTrapezoidProperties, computeTrapezoidVertices } from '../components/geometry/trapezoid';
+import {
+  TRAPEZOID_PARAMS, computeTrapezoidFaces, computeTrapezoidProperties, computeTrapezoidVertices,
+  TRAPEZOID_PERIMETER_PARAMS, computeTrapezoidPerimeterVertices, computeTrapezoidPerimeterProperties, generateTrapezoidPerimeterParams,
+} from '../components/geometry/trapezoid';
 import { RHOMBUS_PARAMS, computeRhombusFaces, computeRhombusProperties, computeRhombusVertices } from '../components/geometry/rhombus';
+import { PARALLELOGRAM_PARAMS, computeParallelogramFaces, computeParallelogramProperties, computeParallelogramVertices } from '../components/geometry/parallelogram';
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -37,6 +51,24 @@ export interface ObjectDef {
   is2D?: boolean;
   /** Výpočet 2D vrcholů pro rovinné útvary */
   computeVertices2D?: (params: Record<string, number>) => { x: number; y: number }[];
+  /** Custom param generator (e.g. to guarantee valid triangles) */
+  generateParams?: () => Record<string, number>;
+  /** Exercise-specific overrides (may differ from viewer params) */
+  exerciseParamDefs?: ParameterDef[];
+  exerciseComputeProperties?: (params: Record<string, number>) => MathProperty[];
+  exerciseComputeVertices2D?: (params: Record<string, number>) => { x: number; y: number }[];
+  exerciseGenerateParams?: () => Record<string, number>;
+  /** Show height line in the 2D exercise viewer */
+  exerciseShowHeight?: boolean;
+  /** Per-task-type overrides (take priority over exercise* fields above) */
+  exerciseTaskOverrides?: Partial<Record<string, {
+    paramDefs?: ParameterDef[];
+    computeProperties?: (params: Record<string, number>) => MathProperty[];
+    computeVertices2D?: (params: Record<string, number>) => { x: number; y: number }[];
+    computeFaces?: (params: Record<string, number>, unfoldProgress: number) => FaceData[];
+    generateParams?: () => Record<string, number>;
+    showHeight?: boolean;
+  }>>;
 }
 
 export interface CategoryDef {
@@ -121,6 +153,18 @@ export const objects: ObjectDef[] = [
     computeFaces: computePrismFaces,
     computeProperties: computePrismProperties,
     hasUnfold: true,
+    exerciseTaskOverrides: {
+      objem: {
+        paramDefs: PRISM_VOLUME_PARAMS,
+        computeProperties: computePrismVolumeProperties,
+        generateParams: generatePrismVolumeParams,
+      },
+      povrch: {
+        paramDefs: PRISM_SURFACE_PARAMS,
+        computeProperties: computePrismSurfaceProperties,
+        generateParams: generatePrismSurfaceParams,
+      },
+    },
   },
   {
     id: 'jehlan',
@@ -136,6 +180,14 @@ export const objects: ObjectDef[] = [
     computeFaces: computePyramidFaces,
     computeProperties: computePyramidProperties,
     hasUnfold: true,
+    exerciseTaskOverrides: {
+      objem: {
+        paramDefs: PYRAMID_VOLUME_PARAMS,
+        computeProperties: computePyramidVolumeProperties,
+        computeFaces: computePyramidVolumeFaces,
+        generateParams: generatePyramidVolumeParams,
+      },
+    },
   },
   {
     id: 'valec',
@@ -235,6 +287,21 @@ export const objects: ObjectDef[] = [
     hasUnfold: false,
     is2D: true,
     computeVertices2D: computeTriangleVertices,
+    generateParams: generateTriangleParams,
+    exerciseParamDefs: TRIANGLE_EXERCISE_PARAMS,
+    exerciseComputeProperties: computeTriangleExerciseProperties,
+    exerciseComputeVertices2D: computeTriangleExerciseVertices,
+    exerciseGenerateParams: generateTriangleExerciseParams,
+    exerciseShowHeight: true,
+    exerciseTaskOverrides: {
+      obvod: {
+        paramDefs: TRIANGLE_PARAMS,
+        computeProperties: computeTriangleProperties,
+        computeVertices2D: computeTriangleVertices,
+        generateParams: generateTriangleParams,
+        showHeight: false,
+      },
+    },
   },
   {
     id: 'kruh2d',
@@ -269,6 +336,15 @@ export const objects: ObjectDef[] = [
     hasUnfold: false,
     is2D: true,
     computeVertices2D: computeTrapezoidVertices,
+    exerciseTaskOverrides: {
+      obvod: {
+        paramDefs: TRAPEZOID_PERIMETER_PARAMS,
+        computeProperties: computeTrapezoidPerimeterProperties,
+        computeVertices2D: computeTrapezoidPerimeterVertices,
+        generateParams: generateTrapezoidPerimeterParams,
+        showHeight: false,
+      },
+    },
   },
   {
     id: 'kosoctverec',
@@ -286,6 +362,23 @@ export const objects: ObjectDef[] = [
     hasUnfold: false,
     is2D: true,
     computeVertices2D: computeRhombusVertices,
+  },
+  {
+    id: 'kosodelnik',
+    name: 'Kosodélník',
+    path: '/kosodelnik',
+    category: 'rovinne',
+    grade: '7. ročník',
+    description: 'Rovnoběžník se dvěma páry stejně dlouhých stran. Obsah = základna · výška.',
+    badge: 'Kosodélník',
+    color: '#fef9c3',
+    iconName: 'RectangleHorizontal',
+    parameterDefs: PARALLELOGRAM_PARAMS,
+    computeFaces: computeParallelogramFaces,
+    computeProperties: computeParallelogramProperties,
+    hasUnfold: false,
+    is2D: true,
+    computeVertices2D: computeParallelogramVertices,
   },
 ];
 

@@ -12,7 +12,6 @@ import {
   ThemeIcon,
   Box,
   SimpleGrid,
-  SegmentedControl,
 } from '@mantine/core';
 import { Calculator, CheckCircle2, XCircle } from 'lucide-react';
 import type { ParameterDef } from '../geometry/shared';
@@ -82,9 +81,17 @@ export function ObjectQuizPanel({
     }
   };
 
-  const taskLabel = taskType === 'objem' ? 'Objem' : 'Povrch';
-  const taskSentence =
-    taskType === 'objem' ? 'Vypočítejte objem tělesa.' : 'Vypočítejte povrch tělesa.';
+  const TASK_LABEL_MAP: Record<string, string> = {
+    objem: 'Objem', povrch: 'Povrch', obvod: 'Obvod', obsah: 'Obsah',
+  };
+  const TASK_SENTENCE_MAP: Record<string, string> = {
+    objem: 'Vypočítejte objem tělesa.',
+    povrch: 'Vypočítejte povrch tělesa.',
+    obvod: 'Vypočítejte obvod útvaru.',
+    obsah: 'Vypočítejte obsah útvaru.',
+  };
+  const taskLabel = TASK_LABEL_MAP[taskType] ?? taskType;
+  const taskSentence = TASK_SENTENCE_MAP[taskType] ?? `Vypočítejte ${taskType} tělesa.`;
 
   const paramColorSets: { bg: string; text: string; label: string }[] = [
     { bg: '#e7f5ff', text: '#1971c2', label: '#1864ab' },
@@ -171,23 +178,6 @@ export function ObjectQuizPanel({
               );
             })}
           </SimpleGrid>
-        </div>
-
-        {/* Režim odpovědi: Číslo | Možnosti A–D */}
-        <div>
-          <Text size="xs" c="dimmed" fw={500} mb={6}>
-            Způsob odpovědi
-          </Text>
-          <SegmentedControl
-            value={answerMode}
-            onChange={(v) => onAnswerModeChange(v as 'number' | 'choices')}
-            data={[
-              { label: 'Psát číslo', value: 'number' },
-              { label: 'Možnosti A–D', value: 'choices' },
-            ]}
-            radius="md"
-            size="sm"
-          />
         </div>
 
         {/* Odpověď – číslo nebo A–D */}

@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { TasksSheet, TASK_LIBRARY } from '@/features/tasks';
 import { ObjectCard } from './ObjectCard';
 import { ExerciseTile } from './ExerciseTile';
 import { objects } from '../../data/objects';
@@ -21,14 +22,22 @@ import {
 import TabuleIllustration from '../../../rysovani/src/imports/Group23925';
 import PocitacIllustration from '../../../rysovani/src/imports/Group23926';
 
+const EXCLUDED_EXERCISES: Partial<Record<string, TaskType[]>> = {
+  kuzel: ['povrch'],
+  koule: ['objem', 'povrch'],
+};
+
 const exercises = objects.flatMap((obj) => {
   const types: TaskType[] = obj.is2D ? ['obvod', 'obsah'] : ['objem', 'povrch'];
-  return types.map((taskType) => ({ object: obj, taskType }));
+  const excluded = EXCLUDED_EXERCISES[obj.id] ?? [];
+  return types
+    .filter((t) => !excluded.includes(t))
+    .map((taskType) => ({ object: obj, taskType }));
 });
 
-type ViewFilter = 'rysovani' | 'konstrukce' | 'telesa' | 'rovinne' | 'cviceni';
+type ViewFilter = 'rysovani' | 'konstrukce' | 'ukoly' | 'telesa' | 'rovinne' | 'cviceni';
 
-const TAB_ORDER: ViewFilter[] = ['rysovani', 'konstrukce', 'telesa', 'rovinne', 'cviceni'];
+const TAB_ORDER: ViewFilter[] = ['rysovani', 'konstrukce', 'ukoly', 'telesa', 'rovinne', 'cviceni'];
 
 const filterBtnStyle = (
   value: ViewFilter,
@@ -50,6 +59,7 @@ const filterBtnStyle = (
 const HEADING_MAP: Record<ViewFilter, string> = {
   rysovani: 'Rýsování',
   konstrukce: 'Konstrukce',
+  ukoly: 'Úkoly',
   telesa: 'Tělesa',
   rovinne: 'Rovinné útvary',
   cviceni: 'Cvičení',
@@ -104,8 +114,8 @@ interface DrawingItem {
 const drawingItems: DrawingItem[] = [
   {
     id: 'free-board',
-    title: 'Tabule',
-    description: 'Interaktivní tabule pro výuku. Dotykové ovládání.',
+    title: 'Tabule / tablet',
+    description: 'Interaktivní tabule pro výuku — větší cíle pro prst, rozhraní pro dotyk.',
     color: '#dcf3ff',
     previewBg: '#e3f4ff',
     view: 'free-editor-board',
@@ -117,7 +127,7 @@ const drawingItems: DrawingItem[] = [
   {
     id: 'free-computer',
     title: 'Počítač',
-    description: 'Klasické ovládání myší. Body, přímky, kružnice, úhly a další.',
+    description: 'Verze pro myš a klávesnici — přesné klikání, stejné nástroje jako na tabuli.',
     color: '#fff8b3',
     previewBg: '#fefce8',
     view: 'free-editor-computer',
@@ -455,7 +465,7 @@ export type LandingMode = 'rysovani-app' | 'telesa-app';
 const MODE_CONFIG: Record<LandingMode, { title: string; filters: ViewFilter[]; defaultFilter: ViewFilter }> = {
   'rysovani-app': {
     title: 'Rýsování a konstrukce',
-    filters: ['rysovani', 'konstrukce'],
+    filters: ['rysovani', 'konstrukce', 'ukoly'],
     defaultFilter: 'rysovani',
   },
   'telesa-app': {
@@ -466,13 +476,17 @@ const MODE_CONFIG: Record<LandingMode, { title: string; filters: ViewFilter[]; d
 };
 
 export function Landing({ mode }: { mode: LandingMode }) {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const taskLibrary = useMemo(() => [...TASK_LIBRARY], []);
   const config = MODE_CONFIG[mode];
   const tabFromUrl = searchParams.get('tab');
-  const initialTab = (tabFromUrl && config.filters.includes(tabFromUrl as ViewFilter))
+  const activeFilter: ViewFilter = (tabFromUrl && config.filters.includes(tabFromUrl as ViewFilter))
     ? tabFromUrl as ViewFilter
     : config.defaultFilter;
-  const [activeFilter, setActiveFilter] = useState<ViewFilter>(initialTab);
+
+  const setActiveFilter = (tab: ViewFilter) => {
+    setSearchParams({ tab }, { replace: false });
+  };
 
   // Cvičení sub-filters
   const [exObjFilter, setExObjFilter] = useState<string>('all');
@@ -523,7 +537,10 @@ export function Landing({ mode }: { mode: LandingMode }) {
               key={f}
               type="button"
               onClick={() => setActiveFilter(f)}
-              onTouchEnd={(e) => { e.preventDefault(); setActiveFilter(f); }}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                setActiveFilter(f);
+              }}
               style={{ ...filterBtnStyle(f, activeFilter), margin: '4px' }}
             >
               {HEADING_MAP[f]}
@@ -533,28 +550,103 @@ export function Landing({ mode }: { mode: LandingMode }) {
       </div>
 
       {/* Dlaždice */}
-      <div id="content" style={{ maxWidth: '1280px', margin: '32px auto', padding: '0 16px', marginBottom: '80px' }}>
-        <h2
-          style={{
-            fontFamily: "'Fenomen Sans', sans-serif",
-            fontSize: '42px',
-            fontWeight: 600,
-            color: '#09056f',
-            marginBottom: '28px',
-            textAlign: 'left',
-            letterSpacing: '-0.02em',
-          }}
-        >
-          {HEADING_MAP[activeFilter]}
-        </h2>
+      <div
+        id="content"
+        style={{
+          maxWidth: activeFilter === 'ukoly' ? 'min(1600px, 100%)' : '1280px',
+          margin: '32px auto',
+          padding: '0 16px',
+          marginBottom: '80px',
+        }}
+      >
+        {activeFilter !== 'ukoly' ? (
+          <h2
+            style={{
+              fontFamily: "'Fenomen Sans', sans-serif",
+              fontSize: '42px',
+              fontWeight: 600,
+              color: '#09056f',
+              marginBottom: activeFilter === 'rysovani' ? '12px' : '28px',
+              textAlign: 'left',
+              letterSpacing: '-0.02em',
+            }}
+          >
+            {HEADING_MAP[activeFilter]}
+          </h2>
+        ) : null}
+
+        {activeFilter === 'rysovani' && (
+          <p
+            style={{
+              fontFamily: "'Fenomen Sans', sans-serif",
+              fontSize: '17px',
+              lineHeight: 1.55,
+              color: '#4e5871',
+              maxWidth: '640px',
+              margin: '0 0 28px',
+              fontWeight: 400,
+            }}
+          >
+            Každá verze je vyladěna podle způsobu ovládání — ať už rýsuješ prstem na tabuli
+            nebo tabletu, nebo myší na počítači.
+          </p>
+        )}
 
         {/* Rýsování – Volné rýsování (Tabule + Počítač) */}
         {activeFilter === 'rysovani' && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '24px', maxWidth: '660px' }}>
-            {drawingItems.map((item) => (
-              <DrawingCard key={item.id} item={item} />
-            ))}
-          </div>
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '24px', maxWidth: '660px' }}>
+              {drawingItems.map((item) => (
+                <DrawingCard key={item.id} item={item} />
+              ))}
+            </div>
+            <div
+              style={{
+                marginTop: '32px',
+                maxWidth: '640px',
+                padding: '20px 22px',
+                borderRadius: '20px',
+                border: '1px solid #e5e7eb',
+                background: '#fafafa',
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: "'Fenomen Sans', sans-serif",
+                  fontSize: '15px',
+                  fontWeight: 600,
+                  color: '#09056f',
+                  marginBottom: '12px',
+                }}
+              >
+                Novinky ve volném rýsování
+              </div>
+              <ul
+                style={{
+                  fontFamily: "'Fenomen Sans', sans-serif",
+                  fontSize: '15px',
+                  lineHeight: 1.55,
+                  color: '#4e5871',
+                  margin: 0,
+                  paddingLeft: '20px',
+                  fontWeight: 400,
+                }}
+              >
+                <li style={{ marginBottom: '8px' }}>
+                  <strong>Zvýraznění podle pravítka</strong> — v menu pod tužkou; rovné úseky zvýraznění po dvou kliknutích (jako při držení Shift u klasického zvýraznění).
+                </li>
+                <li style={{ marginBottom: '8px' }}>
+                  <strong>Čárkovaná čára</strong> — v nabídce Konstrukce (čárkovaná přímka vedle klasické přímky).
+                </li>
+                <li style={{ marginBottom: '8px' }}>
+                  <strong>Výsek kružnice</strong> — v režimu kružítko lze narýsovat jen část obvodu (oblouk), ne jen celou kružnici.
+                </li>
+                <li>
+                  Popisky bodů uhýbají čarám, aby byly vždy viditelné.
+                </li>
+              </ul>
+            </div>
+          </>
         )}
 
         {/* Konstrukce */}
@@ -564,6 +656,17 @@ export function Landing({ mode }: { mode: LandingMode }) {
               <ConstructionCard key={item.id} item={item} />
             ))}
           </div>
+        )}
+
+        {/* Úkoly – vložený panel (stejné UI jako Elobvod, pod bobánky) */}
+        {activeFilter === 'ukoly' && (
+          <TasksSheet
+            embedded
+            open
+            onOpenChange={() => {}}
+            brandLabel="Elobvod"
+            taskLibrary={taskLibrary}
+          />
         )}
 
         {/* 3D tělesa */}

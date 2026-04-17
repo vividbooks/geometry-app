@@ -68,6 +68,56 @@ export function computePrismFaces(
   return faces;
 }
 
+// ── Objem exercise: base area (Sp) + height (h) ───────────────────────────────
+
+export const PRISM_VOLUME_PARAMS: ParameterDef[] = [
+  { id: 'Sp', label: 'Obsah podstavy (Sp)', min: 4, max: 200, step: 1, defaultValue: 48, unit: 'cm²' },
+  { id: 'h',  label: 'Výška (h)',            min: 2, max: 30,  step: 1, defaultValue: 10, unit: 'cm' },
+];
+
+export function computePrismVolumeProperties(params: Record<string, number>): MathProperty[] {
+  const Sp = params.Sp ?? 48;
+  const h  = params.h  ?? 10;
+  const volume = Sp * h;
+  return [
+    { label: 'Objem', value: `${Math.round(volume * 100) / 100} cm³`, color: 'purple' },
+  ];
+}
+
+export function generatePrismVolumeParams(): Record<string, number> {
+  const Sp = (4 + Math.floor(Math.random() * 10)) * (2 + Math.floor(Math.random() * 6)); // product of two small ints
+  const h  = 4 + Math.floor(Math.random() * 12);
+  return { Sp, h };
+}
+
+// ── Povrch exercise: base area (Sp) + base perimeter (Op) + height (h) ────────
+
+export const PRISM_SURFACE_PARAMS: ParameterDef[] = [
+  { id: 'Sp', label: 'Obsah podstavy (Sp)', min: 4, max: 200, step: 1, defaultValue: 48, unit: 'cm²' },
+  { id: 'Op', label: 'Obvod podstavy (Op)', min: 6, max: 80,  step: 1, defaultValue: 28, unit: 'cm' },
+  { id: 'h',  label: 'Výška (h)',            min: 2, max: 30,  step: 1, defaultValue: 10, unit: 'cm' },
+];
+
+export function computePrismSurfaceProperties(params: Record<string, number>): MathProperty[] {
+  const Sp = params.Sp ?? 48;
+  const Op = params.Op ?? 28;
+  const h  = params.h  ?? 10;
+  const surface = 2 * Sp + Op * h;
+  return [
+    { label: 'Povrch', value: `${Math.round(surface * 100) / 100} cm²`, color: 'purple' },
+  ];
+}
+
+export function generatePrismSurfaceParams(): Record<string, number> {
+  // Regular n-gon prism: pick sides and edge length, derive Sp and Op
+  const sides = 3 + Math.floor(Math.random() * 4); // 3–6
+  const edge  = 4 + Math.floor(Math.random() * 8); // 4–11
+  const Sp = Math.round((sides * edge * edge) / (4 * Math.tan(Math.PI / sides)));
+  const Op = sides * edge;
+  const h  = 4 + Math.floor(Math.random() * 12);
+  return { Sp, h, Op };
+}
+
 // ── Math properties ────────────────────────────────────────
 
 export function computePrismProperties(params: Record<string, number>): MathProperty[] {

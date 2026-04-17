@@ -1,7 +1,7 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Navigate, Routes, Route, useParams } from 'react-router-dom';
 import { Crossroads } from './components/landing/Crossroads';
 import { Landing } from './components/landing/Landing';
-import { CviceniPage } from './components/landing/CviceniPage';
 import { CviceniSetupPage } from './components/landing/CviceniSetupPage';
 import { ObjectPage } from './components/viewer/ObjectPage';
 import { ObjectExercisePage } from './components/viewer/ObjectExercisePage';
@@ -10,6 +10,18 @@ import { RysovaniPage } from './components/rysovani/RysovaniPage';
 import { TutorialPage } from './components/tutorial/TutorialPage';
 import { getObjectDef } from './data/objects';
 import { AuthGate } from './components/auth/AuthGate';
+import { Toaster } from './components/ui/sonner';
+
+const StudentAssignmentPage = lazy(() => import('./app/pages/StudentAssignmentPage'));
+const SubmissionViewPage = lazy(() => import('./app/pages/SubmissionViewPage'));
+
+function RouteFallback() {
+  return (
+    <div className="flex min-h-screen items-center justify-center text-zinc-500 text-sm">
+      Načítám…
+    </div>
+  );
+}
 
 /** Wrapper that routes to 3D or 2D page */
 function SmartObjectPage() {
@@ -24,6 +36,7 @@ export default function App() {
 
   return (
     <AuthGate>
+      <Toaster position="bottom-center" />
       <BrowserRouter basename={routerBase}>
         <Routes>
           <Route path="/" element={<Crossroads />} />
@@ -33,7 +46,23 @@ export default function App() {
           <Route path="/telesa-app" element={<Navigate to="/menu-telesa" replace />} />
           <Route path="/rysovani" element={<RysovaniPage />} />
           <Route path="/tutorial/:tutorialId" element={<TutorialPage />} />
-          <Route path="/cviceni" element={<CviceniPage />} />
+          <Route
+            path="/ukol/:assignmentId"
+            element={
+              <Suspense fallback={<RouteFallback />}>
+                <StudentAssignmentPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/odpoved/:submissionId"
+            element={
+              <Suspense fallback={<RouteFallback />}>
+                <SubmissionViewPage />
+              </Suspense>
+            }
+          />
+          <Route path="/cviceni" element={<Navigate to="/menu-telesa?tab=cviceni" replace />} />
           <Route path="/cviceni/:objectId/:taskType" element={<CviceniSetupPage />} />
           <Route path="/:objectId/cviceni/:taskType" element={<ObjectExercisePage />} />
           <Route path="/:objectId" element={<SmartObjectPage />} />

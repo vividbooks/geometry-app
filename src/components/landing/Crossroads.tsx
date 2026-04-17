@@ -1,5 +1,7 @@
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Compass, Ruler, Box, Shapes, BookOpen, ArrowRight } from 'lucide-react';
+import { Compass, Ruler, Box, Shapes, BookOpen, ArrowRight, ClipboardList } from 'lucide-react';
+import { TasksSheet, TASK_LIBRARY } from '@/features/tasks';
 
 const cardStyle: React.CSSProperties = {
   display: 'flex',
@@ -23,6 +25,8 @@ const cardStyle: React.CSSProperties = {
 
 export function Crossroads() {
   const navigate = useNavigate();
+  const [tasksOpen, setTasksOpen] = useState(false);
+  const taskLibrary = useMemo(() => [...TASK_LIBRARY], []);
 
   return (
     <div
@@ -51,20 +55,34 @@ export function Crossroads() {
       >
         Geometrie online
       </h1>
-      <p
+      <button
+        type="button"
+        onClick={() => setTasksOpen(true)}
         style={{
-          color: '#4e5871',
-          fontSize: '17px',
-          lineHeight: '26px',
-          fontWeight: 400,
-          marginBottom: '48px',
-          textAlign: 'center',
-          maxWidth: '520px',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 8,
+          marginBottom: 28,
+          padding: '10px 18px',
+          borderRadius: 999,
+          border: '1px solid #c7d2fe',
+          background: '#eef2ff',
+          color: '#3730a3',
+          fontSize: 14,
+          fontWeight: 600,
+          cursor: 'pointer',
+          fontFamily: "'Fenomen Sans', sans-serif",
         }}
       >
-        Interaktivní výuka geometrie pro 2.–8. třídu. Vyber si aplikaci.
-      </p>
-
+        <ClipboardList size={18} strokeWidth={2} aria-hidden />
+        Úkoly
+      </button>
+      <TasksSheet
+        open={tasksOpen}
+        onOpenChange={setTasksOpen}
+        brandLabel="Elobvod"
+        taskLibrary={taskLibrary}
+      />
       {/* Two cards */}
       <div
         style={{

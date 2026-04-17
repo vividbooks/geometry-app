@@ -1,0 +1,9 @@
+@import "tailwindcss";
+
+/* Stejné zdroje jako Elobvod: všechny komponenty se třídami Tailwind. */
+@source "../**/*.{tsx,ts,jsx,js}";
+/* Rýsování žije v rysovani/src — bez tohoto @source může produkční build vynechat utility. */
+@source "../../rysovani/src/**/*.{tsx,ts,jsx,js}";
+
+@import "tw-animate-css";
+@import "./elobvod-circuit-theme.css";

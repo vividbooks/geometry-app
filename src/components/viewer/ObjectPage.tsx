@@ -67,7 +67,7 @@ export function ObjectPage() {
         <div className="text-center">
           <p className="text-slate-600 text-lg mb-4">Těleso "{objectId}" nebylo nalezeno.</p>
           <button
-            onClick={() => navigate('/')}
+            onClick={() => navigate(-1)}
             className="text-blue-600 hover:underline flex items-center gap-2 mx-auto"
           >
             <ArrowLeft className="h-4 w-4" /> Zpět na rozcestník
@@ -122,7 +122,7 @@ export function ObjectPage() {
         }}
       >
         <button
-          onClick={() => navigate('/')}
+          onClick={() => navigate(-1)}
           className="flex items-center justify-center text-slate-600 hover:text-slate-900 transition-colors"
           style={{
             flexShrink: 0,
@@ -154,18 +154,39 @@ export function ObjectPage() {
             mathProperties={mathProperties}
           />
         </div>
-        <Link
-          to="/cviceni"
-          className="flex items-center justify-center gap-2 text-sm text-amber-700 hover:text-amber-800 py-3 px-3 rounded-lg bg-amber-50 border border-amber-100"
-          style={{
-            textDecoration: 'none',
-            flexShrink: 0,
-            margin: `0 ${isMobile ? 8 : 12}px ${isMobile ? 8 : 12}px`,
-          }}
-        >
-          <Calculator className="h-4 w-4" />
-          Cvičení: objem a povrch
-        </Link>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flexShrink: 0, margin: `0 ${isMobile ? 8 : 12}px ${isMobile ? 8 : 12}px` }}>
+          {(['objem', 'povrch'] as const).map((taskType) => (
+            <Link
+              key={taskType}
+              to={`/cviceni/${objectId}/${taskType}`}
+              style={{
+                textDecoration: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: '11px 14px',
+                borderRadius: 12,
+                border: '1px solid #e2e8f0',
+                background: '#fff',
+                transition: 'all 200ms',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = '#f8fafc'; e.currentTarget.style.borderColor = taskType === 'objem' ? '#4d49f3' : '#0ea5e9'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.borderColor = '#e2e8f0'; }}
+            >
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                padding: '4px 10px', borderRadius: 9999, fontSize: '12px', fontWeight: 600,
+                background: taskType === 'objem' ? '#4d49f3' : '#0ea5e9', color: '#fff', flexShrink: 0,
+              }}>
+                {taskType === 'objem' ? 'Objem' : 'Povrch'}
+              </span>
+              <span style={{ flex: 1, fontSize: '0.875rem', fontWeight: 400, color: '#334155' }}>
+                Cvičení
+              </span>
+              <Calculator size={14} style={{ color: '#94a3b8', flexShrink: 0 }} />
+            </Link>
+          ))}
+        </div>
       </div>
 
       {/* Pravá oblast – zaoblená světle modrá plocha pro 3D náhled */}
