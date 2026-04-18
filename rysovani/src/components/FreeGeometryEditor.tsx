@@ -7990,9 +7990,9 @@ export function FreeGeometryEditor({
               <button
                 onClick={() => {
                   setAngleInput(prev => ({ ...prev, visible: false }));
-                  // Reset angle tablet state při zavření popupu
+                  // Znovu „vyber přímku“ — idle by zablokovalo tablet workflow (mousedown očekává step === 'selectLine')
                   if (isTabletMode) {
-                    setAngleTabletState({ step: 'idle', selectedLineId: null, currentPos: null, baseAngle: 0 });
+                    setAngleTabletState({ step: 'selectLine', selectedLineId: null, currentPos: null, baseAngle: 0 });
                   }
                 }}
                 className={`absolute -top-14 left-1/2 -translate-x-1/2 p-3 rounded-full transition-all hover:scale-110 ${
