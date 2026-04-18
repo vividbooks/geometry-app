@@ -2210,11 +2210,14 @@ export function FreeGeometryEditor({
     // Zavřít otevřené submenu při kliknutí na canvas
     setActiveGroup(null);
     
-    // Ignorovat mouse eventy ktere prisly kratce po touch eventu (< 500ms)
-    // Prevence duplicitniho zpracovani na tabletech
-    const timeSinceTouch = Date.now() - lastTouchTimeRef.current;
-    if (timeSinceTouch < 500 && timeSinceTouch > 0) {
-      return; // Ignorovat - uz byl zpracovan touch event
+    // Ignorovat syntetické *mouse* události z prohlížeče krátce po touchi (duplicitní klik).
+    // Dotyk z handleTouchStart volá handleMouseDown s __fromTouchBridge — ten se nesmí zahodit.
+    const fromTouchBridge = Boolean((e as unknown as { __fromTouchBridge?: boolean }).__fromTouchBridge);
+    if (!fromTouchBridge) {
+      const timeSinceTouch = Date.now() - lastTouchTimeRef.current;
+      if (timeSinceTouch < 500 && timeSinceTouch > 0) {
+        return;
+      }
     }
 
     if (readOnlyCanvas) {
@@ -3401,9 +3404,6 @@ export function FreeGeometryEditor({
     // Zavřít otevřené submenu při dotyku na canvas
     setActiveGroup(null);
     
-    // Zaznamej cas touch eventu
-    lastTouchTimeRef.current = Date.now();
-    
     // Two-finger gesture: pinch-to-zoom & pan
     if (e.touches.length === 2) {
       const t1 = e.touches[0];
@@ -3417,11 +3417,18 @@ export function FreeGeometryEditor({
       if (isPanning.current) isPanning.current = false;
       if (groupDragRef.current) groupDragRef.current = null;
       if (marqueeRef.current) marqueeRef.current = null;
+      lastTouchTimeRef.current = Date.now();
       return;
     }
     
     if (e.touches.length === 1 && !pinchRef.current.active) {
       const touch = e.touches[0];
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (rect) {
+        const wx = (touch.clientX - rect.left - offset.x) / scale;
+        const wy = (touch.clientY - rect.top - offset.y) / scale;
+        mousePosRef.current = { x: wx, y: wy };
+      }
       const fakeEvent = {
         clientX: touch.clientX,
         clientY: touch.clientY,
@@ -3429,9 +3436,11 @@ export function FreeGeometryEditor({
         ctrlKey: false,
         metaKey: false,
         preventDefault: () => {},
-        stopPropagation: () => {}
+        stopPropagation: () => {},
+        __fromTouchBridge: true,
       } as unknown as React.MouseEvent;
       handleMouseDown(fakeEvent);
+      lastTouchTimeRef.current = Date.now();
     }
   };
 
@@ -3480,7 +3489,8 @@ export function FreeGeometryEditor({
         clientY: touch.clientY,
         target: e.target,
         preventDefault: () => {},
-        stopPropagation: () => {}
+        stopPropagation: () => {},
+        __fromTouchBridge: true,
       } as unknown as React.MouseEvent;
       // Pouzit wrapper s podminenym throttlingem
       handleMouseMoveWrapper(fakeEvent);
@@ -5588,7 +5598,7 @@ export function FreeGeometryEditor({
       }
     }
 
-    // 4b. Náhled při tvorbě (ghost line) - requires mousePosRef for non-tablet tools
+    // 4b. Náhled při tvorbě (ghost line) — mousePosRef se na tabletu nastaví i v handleTouchStart před mousedown
     if (selectedPointId && !animState.isActive && mousePosRef.current && !circleInput.visible) {
       const p1 = points.find(p => p.id === selectedPointId);
       // Pokud hoverujeme nad bodem, použijeme ten bod jako cíl (snapping), jinak mousePos
@@ -5631,9 +5641,7 @@ export function FreeGeometryEditor({
                   drawLineMeasurement(ctx, p1, segP2, `${cm} cm`);
              }
          } else if (activeTool === 'line') {
-             console.log('🎯 GHOST LINE - isTabletMode:', isTabletMode);
              if (!isTabletMode) {
-               console.log('✏️ Kreslím GHOST pravítko pro line');
                drawRuler(ctx, p1, p2, 0.5);
              }
              // Ghost line nekonečná
@@ -5672,9 +5680,7 @@ export function FreeGeometryEditor({
              ctx.restore();
 
          } else if (activeTool === 'ray') {
-             console.log('🎯 GHOST RAY - isTabletMode:', isTabletMode);
              if (!isTabletMode) {
-               console.log('✏️ Kreslím GHOST pravítko pro ray');
                drawRuler(ctx, p1, p2, 0.5);
              }
              // Ghost ray
@@ -5720,6 +5726,38 @@ export function FreeGeometryEditor({
          }
 
          ctx.restore();
+      }
+    }
+
+    // 4b-tablet: dočasné body (bez písmen) při výběru druhého bodu u přímky / čárk. přímky / polopřímky
+    if (
+      isTabletMode &&
+      selectedPointId &&
+      !animState.isActive &&
+      !circleInput.visible &&
+      mousePosRef.current &&
+      ['line', 'lineDashed', 'ray'].includes(activeTool)
+    ) {
+      const p1draft = points.find(p => p.id === selectedPointId);
+      const p2draft = mousePosRef.current;
+      if (p1draft) {
+        const dotR = sx(5);
+        const drawConstructionDot = (x: number, y: number) => {
+          ctx.beginPath();
+          ctx.arc(x, y, dotR, 0, Math.PI * 2);
+          ctx.fillStyle = darkMode ? 'rgba(122, 162, 247, 0.95)' : 'rgba(37, 99, 235, 0.95)';
+          ctx.fill();
+          ctx.strokeStyle = darkMode ? '#c0caf5' : '#ffffff';
+          ctx.lineWidth = sx(1.5);
+          ctx.stroke();
+        };
+        ctx.save();
+        const showFirstDot = p1draft.hidden || !String(p1draft.label ?? '').trim();
+        if (showFirstDot) {
+          drawConstructionDot(p1draft.x, p1draft.y);
+        }
+        drawConstructionDot(p2draft.x, p2draft.y);
+        ctx.restore();
       }
     }
 
