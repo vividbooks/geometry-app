@@ -2204,6 +2204,58 @@ export function FreeGeometryEditor({
     setOffset({ x: newOffsetX, y: newOffsetY });
   };
 
+  /** Hover nad čárou pro nástroje úhel/kolmice — stejná geometrie jako v handleMouseMove. Na tabletu se v mousedown volá znovu u pozice ťuku, protože React stav hoveredShape je často o snímek pozadu. */
+  const getLineHoverAtWorld = (
+    wx: number,
+    wy: number
+  ): { id: string; proj: { x: number; y: number }; angle: number } | null => {
+    if (activeTool !== 'angle' && activeTool !== 'perpendicular') return null;
+    let closest: { id: string; proj: { x: number; y: number }; angle: number } | null = null;
+    const isInPositioningMode =
+      (activeTool === 'perpendicular' && isTabletMode && perpTabletState.step === 'positioning') ||
+      (activeTool === 'angle' && isTabletMode && angleTabletState.step === 'positioning');
+    const isTouchActive = (Date.now() - lastTouchTimeRef.current) < 1000;
+    const baseThreshold = isTouchActive ? 80 : 50;
+    let minD = isInPositioningMode ? Infinity : baseThreshold / scale;
+
+    shapes.forEach(shape => {
+      if (shape.type === 'segment' || shape.type === 'line' || shape.type === 'lineDashed' || shape.type === 'ray') {
+        if (activeTool === 'perpendicular' && isTabletMode && perpTabletState.step === 'positioning') {
+          if (shape.id !== perpTabletState.selectedLineId) return;
+        }
+        if (activeTool === 'angle' && isTabletMode && angleTabletState.step === 'positioning') {
+          if (shape.id !== angleTabletState.selectedLineId) return;
+        }
+        const p1 = points.find(p => p.id === shape.definition.p1Id);
+        const p2 = points.find(p => p.id === shape.definition.p2Id);
+        if (p1 && p2) {
+          let start = p1;
+          let end = p2;
+          if (shape.type === 'line' || shape.type === 'lineDashed' || shape.type === 'ray') {
+            const dx = p2.x - p1.x;
+            const dy = p2.y - p1.y;
+            const len = Math.sqrt(dx * dx + dy * dy);
+            if (len > 0.001) {
+              const EXT = 100000;
+              if (shape.type === 'line' || shape.type === 'lineDashed') {
+                start = { x: p1.x - (dx / len) * EXT, y: p1.y - (dy / len) * EXT } as any;
+              }
+              end = { x: p1.x + (dx / len) * EXT, y: p1.y + (dy / len) * EXT } as any;
+            }
+          }
+
+          const res = distToSegment({ x: wx, y: wy }, start, end);
+          if (res.dist < minD) {
+            minD = res.dist;
+            const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+            closest = { id: shape.id, proj: res.proj, angle };
+          }
+        }
+      }
+    });
+    return closest;
+  };
+
   const handleMouseDown = (e: React.MouseEvent) => {
     if (animState.isActive) return;
     
@@ -2230,6 +2282,15 @@ export function FreeGeometryEditor({
     if (!rect) return;
     const wx = (e.clientX - rect.left - offset.x) / scale;
     const wy = (e.clientY - rect.top - offset.y) / scale;
+
+    // Tablet touch: synchronní hover nad čárou v místě ťuku (stav hoveredShape z předchozího gesta by jinak vybral špatnou linku)
+    const lineHoverForAnglePerp =
+      fromTouchBridge && isTabletMode && (activeTool === 'angle' || activeTool === 'perpendicular')
+        ? getLineHoverAtWorld(wx, wy)
+        : hoveredShape;
+    if (fromTouchBridge && isTabletMode && (activeTool === 'angle' || activeTool === 'perpendicular')) {
+      setHoveredShape(lineHoverForAnglePerp);
+    }
 
     // Compass mode - handle center/handle dragging or repositioning
     if (circleInput.visible && circleInput.center) {
@@ -2269,22 +2330,23 @@ export function FreeGeometryEditor({
       return; // Nedělat nic - uživatel musí kliknout na "Použít" nebo zavřít popup
     }
 
-    // Pokud máme nástroj úhel a hoverujeme nad tvarem, otevřeme dialog
-    if (activeTool === 'angle' && hoveredShape) {
+    // Pokud máme nástroj úhel a hoverujeme nad tvarem, otevřeme dialog (lineHoverForAnglePerp = přesný hit u tablet touch)
+    if (activeTool === 'angle' && lineHoverForAnglePerp) {
+        const hs = lineHoverForAnglePerp;
         // Tablet mód - krokový workflow
         if (isTabletMode) {
           if (angleTabletState.step === 'selectLine') {
             // Krok 1: Výběr linky (s přichytáváním na body)
-            const baseShape = shapes.find(s => s.id === hoveredShape.id);
+            const baseShape = shapes.find(s => s.id === hs.id);
             if (baseShape && ['line', 'lineDashed', 'segment', 'ray'].includes(baseShape.type)) {
-              let initPos = hoveredShape.proj;
-              const snap = getSnapPosition(hoveredShape.proj.x, hoveredShape.proj.y, 25);
+              let initPos = hs.proj;
+              const snap = getSnapPosition(hs.proj.x, hs.proj.y, 25);
               if (snap) initPos = snap;
               setAngleTabletState({
                 step: 'positioning',
                 selectedLineId: baseShape.id,
                 currentPos: initPos,
-                baseAngle: hoveredShape.angle
+                baseAngle: hs.angle
               });
             }
             return;
@@ -2294,8 +2356,8 @@ export function FreeGeometryEditor({
         }
         
         // PC mód - původní logika (jeden klik otevře popup) s přichytáváním na body/průsečíky
-        let anglePos = hoveredShape.proj;
-        const snapAngle = getSnapPosition(hoveredShape.proj.x, hoveredShape.proj.y, 25);
+        let anglePos = hs.proj;
+        const snapAngle = getSnapPosition(hs.proj.x, hs.proj.y, 25);
         if (snapAngle) {
           anglePos = snapAngle;
         }
@@ -2305,7 +2367,7 @@ export function FreeGeometryEditor({
             vertexId: null, 
             directionId: null,
             customVertex: anglePos,
-            baseAngle: hoveredShape.angle,
+            baseAngle: hs.angle,
             rotationOffset: 0,
             isMirrored: false
         });
@@ -2527,11 +2589,12 @@ export function FreeGeometryEditor({
       if (isTabletMode) {
         if (perpTabletState.step === 'selectLine') {
           // Krok 1: Výběr linky (s přichytáváním na body)
-          if (hoveredShape) {
-            const baseShape = shapes.find(s => s.id === hoveredShape.id);
+          if (lineHoverForAnglePerp) {
+            const hs = lineHoverForAnglePerp;
+            const baseShape = shapes.find(s => s.id === hs.id);
             if (baseShape && ['line', 'lineDashed', 'segment', 'ray'].includes(baseShape.type)) {
-              let initPos = hoveredShape.proj;
-              const snap = getSnapPositionPreferPoint(hoveredShape.proj.x, hoveredShape.proj.y, 25, undefined, true);
+              let initPos = hs.proj;
+              const snap = getSnapPositionPreferPoint(hs.proj.x, hs.proj.y, 25, undefined, true);
               if (snap) initPos = snap;
               setPerpTabletState({
                 step: 'positioning',
@@ -2547,8 +2610,9 @@ export function FreeGeometryEditor({
       }
       
       // PC mód - původní logika (jeden klik)
-      if (hoveredShape) {
-        const baseShape = shapes.find(s => s.id === hoveredShape.id);
+      if (lineHoverForAnglePerp) {
+        const hs = lineHoverForAnglePerp;
+        const baseShape = shapes.find(s => s.id === hs.id);
         if (baseShape && ['line', 'lineDashed', 'segment', 'ray'].includes(baseShape.type)) {
             
             const bp1 = points.find(p => p.id === baseShape.definition.p1Id);
@@ -2570,8 +2634,8 @@ export function FreeGeometryEditor({
             
             // Snap: viditelné body + průsečíky; skryté konstrukční body ne (jinak „ukradnou“ kolmici od projekce na přímku).
             const snapPos = getSnapPositionPreferPoint(wx, wy, SNAP_PX, undefined, true);
-            const pX = snapPos ? snapPos.x : hoveredShape.proj.x;
-            const pY = snapPos ? snapPos.y : hoveredShape.proj.y;
+            const pX = snapPos ? snapPos.x : hs.proj.x;
+            const pY = snapPos ? snapPos.y : hs.proj.y;
             
             const newP1Id = crypto.randomUUID();
             const newP2Id = crypto.randomUUID();
@@ -3044,55 +3108,9 @@ export function FreeGeometryEditor({
     const wx = (e.clientX - rect.left - offset.x) / scale;
     const wy = (e.clientY - rect.top - offset.y) / scale;
 
-    // Angle tool shape snapping
+    // Angle / perpendicular: hover nad čárou (sdílená geometrie s getLineHoverAtWorld)
     if (activeTool === 'angle' || activeTool === 'perpendicular') {
-        let closest = null;
-        // During positioning mode, always snap to the selected line (no distance limit)
-        const isInPositioningMode = 
-          (activeTool === 'perpendicular' && isTabletMode && perpTabletState.step === 'positioning') ||
-          (activeTool === 'angle' && isTabletMode && angleTabletState.step === 'positioning');
-        // Use larger threshold for touch interactions (finger is less precise than mouse)
-        const isTouchActive = (Date.now() - lastTouchTimeRef.current) < 1000;
-        const baseThreshold = isTouchActive ? 80 : 50;
-        let minD = isInPositioningMode ? Infinity : baseThreshold / scale;
-
-        shapes.forEach(shape => {
-            if (shape.type === 'segment' || shape.type === 'line' || shape.type === 'lineDashed' || shape.type === 'ray') {
-                // V positioning módu kolmice snappuj pouze na vybranou linku
-                if (activeTool === 'perpendicular' && isTabletMode && perpTabletState.step === 'positioning') {
-                    if (shape.id !== perpTabletState.selectedLineId) return;
-                }
-                // V positioning módu úhloměru snappuj pouze na vybranou linku
-                if (activeTool === 'angle' && isTabletMode && angleTabletState.step === 'positioning') {
-                    if (shape.id !== angleTabletState.selectedLineId) return;
-                }
-                const p1 = points.find(p => p.id === shape.definition.p1Id);
-                const p2 = points.find(p => p.id === shape.definition.p2Id);
-                if (p1 && p2) {
-                    let start = p1;
-                    let end = p2;
-                    // Pro ray a line musíme "prodloužit" segment pro detekci
-                    if (shape.type === 'line' || shape.type === 'lineDashed' || shape.type === 'ray') {
-                         const dx = p2.x - p1.x;
-                         const dy = p2.y - p1.y;
-                         const len = Math.sqrt(dx*dx + dy*dy);
-                         if (len > 0.001) {
-                             const EXT = 100000;
-                             if (shape.type === 'line' || shape.type === 'lineDashed') start = { x: p1.x - dx/len * EXT, y: p1.y - dy/len * EXT } as any;
-                             end = { x: p1.x + dx/len * EXT, y: p1.y + dy/len * EXT } as any;
-                         }
-                    }
-
-                    const res = distToSegment({x:wx, y:wy}, start, end);
-                    if (res.dist < minD) {
-                        minD = res.dist;
-                        const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
-                        closest = { id: shape.id, proj: res.proj, angle: angle };
-                    }
-                }
-            }
-        });
-        setHoveredShape(closest);
+        setHoveredShape(getLineHoverAtWorld(wx, wy));
     } else {
         if (hoveredShape) setHoveredShape(null);
     }
@@ -6635,6 +6653,12 @@ export function FreeGeometryEditor({
     } else {
       setAngleTabletState({ step: 'idle', selectedLineId: null, currentPos: null, baseAngle: 0 });
     }
+    // Kolmice (tablet): stejný vzor jako úhloměr — při přepnutí nástroje vždy čistý stav (ne positioning z minula)
+    if (activeTool === 'perpendicular' && isTabletMode) {
+      setPerpTabletState({ step: 'selectLine', selectedLineId: null, currentPos: null });
+    } else {
+      setPerpTabletState({ step: 'idle', selectedLineId: null, currentPos: null });
+    }
   }, [activeTool]);
 
   const getContainerCursor = (): string => {
@@ -7993,9 +8017,10 @@ export function FreeGeometryEditor({
                  </button>
 
                  <button 
-                     onClick={() => setAngleInput(prev => ({ 
-                         ...prev, 
-                         isMirrored: !prev.isMirrored
+                     onClick={() => setAngleInput(prev => ({
+                         ...prev,
+                         isMirrored: !prev.isMirrored,
+                         rotationOffset: (prev.rotationOffset + 180) % 360,
                      }))}
                      className={`h-12 rounded-xl flex items-center justify-center border-2 transition-all ${
                          angleInput.isMirrored
@@ -8004,9 +8029,9 @@ export function FreeGeometryEditor({
                                 ? 'bg-[#414868] border-[#565f89] hover:bg-[#565f89] text-[#c0caf5]' 
                                 : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-600'
                      }`}
-                     title="Zrcadlit úhloměr"
+                     title="Zrcadlit úhloměr a otočit o 180°"
                  >
-                     <FlipVertical className="size-5" />
+                     <FlipVertical className="size-5 rotate-90" />
                  </button>
             </div>
 
