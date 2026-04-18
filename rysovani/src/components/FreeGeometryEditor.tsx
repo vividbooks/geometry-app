@@ -631,6 +631,8 @@ export function FreeGeometryEditor({
   const pendingCircleCenterRef = useRef<string | null>(null); // ID of point created as circle center (removed if circle not completed)
   const mouseMoveThrottleRef = useRef(false); // Throttle flag for conditional throttling
   const lastTouchTimeRef = useRef<number>(0); // Timestamp posledniho touch eventu pro prevenci double-tap
+  /** Tablet úhel/kolmice ve fázi „vyber linku“: zvýraznění čáry jen po touchmove, ne ze zastaralého hoveredShape */
+  const anglePerpLineHoverFromMoveRef = useRef(false);
   const pinchRef = useRef<{ active: boolean; lastDist: number; lastCenter: { x: number; y: number } }>({ active: false, lastDist: 0, lastCenter: { x: 0, y: 0 } });
   const [visualEffects, setVisualEffects] = useState<VisualEffect[]>([]);
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
@@ -3110,6 +3112,7 @@ export function FreeGeometryEditor({
 
     // Angle / perpendicular: hover nad čárou (sdílená geometrie s getLineHoverAtWorld)
     if (activeTool === 'angle' || activeTool === 'perpendicular') {
+        anglePerpLineHoverFromMoveRef.current = true;
         setHoveredShape(getLineHoverAtWorld(wx, wy));
     } else {
         if (hoveredShape) setHoveredShape(null);
@@ -3452,6 +3455,14 @@ export function FreeGeometryEditor({
       setHoveredPointId(null);
       nearestIntersectionRef.current = null;
       nearestLineSnapRef.current = null;
+      if (
+        isTabletMode &&
+        ((activeTool === 'angle' && angleTabletState.step === 'selectLine') ||
+          (activeTool === 'perpendicular' && perpTabletState.step === 'selectLine'))
+      ) {
+        anglePerpLineHoverFromMoveRef.current = false;
+        setHoveredShape(null);
+      }
       const fakeEvent = {
         clientX: touch.clientX,
         clientY: touch.clientY,
@@ -3529,6 +3540,15 @@ export function FreeGeometryEditor({
         // Don't trigger mouseUp during/after pinch
         if (e.touches.length === 0) return;
         return;
+      }
+      if (
+        e.touches.length === 0 &&
+        isTabletMode &&
+        ((activeTool === 'angle' && angleTabletState.step === 'selectLine') ||
+          (activeTool === 'perpendicular' && perpTabletState.step === 'selectLine'))
+      ) {
+        anglePerpLineHoverFromMoveRef.current = false;
+        setHoveredShape(null);
       }
       handleMouseUp();
   };
@@ -5784,6 +5804,13 @@ export function FreeGeometryEditor({
       }
     }
 
+    // Tablet ve fázi „vyber linku“: nevykresluj náhled/hover ze zastaralého hoveredShape, dokud neproběhne touchmove
+    const suppressStaleAnglePerpLineHoverVisual =
+      isTabletMode &&
+      ((activeTool === 'angle' && angleTabletState.step === 'selectLine') ||
+        (activeTool === 'perpendicular' && perpTabletState.step === 'selectLine')) &&
+      !anglePerpLineHoverFromMoveRef.current;
+
     // 4b-pre. Zvýraznění vybrané linky v angle/perp tablet positioning (i bez hoveru)
     const tabletSelectedLineId = 
       (activeTool === 'angle' && isTabletMode && angleTabletState.step === 'positioning' && angleTabletState.selectedLineId) ? angleTabletState.selectedLineId
@@ -5832,7 +5859,11 @@ export function FreeGeometryEditor({
     }
     
     // 4b. Zvýraznění hoveredShape (čára pod myší pro úhel nebo kolmici)
-    if (hoveredShape && (activeTool === 'angle' || activeTool === 'perpendicular')) {
+    if (
+      hoveredShape &&
+      (activeTool === 'angle' || activeTool === 'perpendicular') &&
+      !suppressStaleAnglePerpLineHoverVisual
+    ) {
        const shape = shapes.find(s => s.id === hoveredShape.id);
        if (shape) {
            const p1 = points.find(p => p.id === shape.definition.p1Id);
@@ -5984,7 +6015,7 @@ export function FreeGeometryEditor({
             ctx.fillStyle = '#f97316';
             ctx.fill();
             ctx.restore();
-        } else if (hoveredShape && mousePosRef.current) {
+        } else if (hoveredShape && mousePosRef.current && !suppressStaleAnglePerpLineHoverVisual) {
             // Přichycený k čáře
             drawProtractor(ctx, hoveredShape.proj, hoveredShape.angle, 200, '#f97316');
             
@@ -6659,6 +6690,8 @@ export function FreeGeometryEditor({
     } else {
       setPerpTabletState({ step: 'idle', selectedLineId: null, currentPos: null });
     }
+    anglePerpLineHoverFromMoveRef.current = false;
+    setHoveredShape(null);
   }, [activeTool]);
 
   const getContainerCursor = (): string => {
