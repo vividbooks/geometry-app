@@ -3429,6 +3429,11 @@ export function FreeGeometryEditor({
         const wy = (touch.clientY - rect.top - offset.y) / scale;
         mousePosRef.current = { x: wx, y: wy };
       }
+      // Mezi ťuknutími na tabletu neproběhne mousemove — zůstane starý hover nad bodem a náhled
+      // (ghost) by jeden snímek spojil nový kotvový bod s tím starým „pod kurzorem“.
+      setHoveredPointId(null);
+      nearestIntersectionRef.current = null;
+      nearestLineSnapRef.current = null;
       const fakeEvent = {
         clientX: touch.clientX,
         clientY: touch.clientY,
