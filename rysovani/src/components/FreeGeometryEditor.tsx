@@ -6863,7 +6863,20 @@ export function FreeGeometryEditor({
           {assignmentToolbarSlot}
         </div>
       ) : (
-      <div className="absolute top-4 right-4 z-30 bg-[#F2F2F2] rounded-full p-2 flex items-center gap-1 shadow-sm" onTouchStart={(e) => e.stopPropagation()}>
+      <div
+        className="absolute top-4 left-3 right-3 z-30 flex min-h-0 items-center gap-2 pointer-events-none sm:gap-3"
+        style={{ paddingLeft: 'max(12px, env(safe-area-inset-left))', paddingRight: 'max(12px, env(safe-area-inset-right))' }}
+      >
+        {/* Zoom + režim: vycentrované v levé části řádku, pravý cluster má fixní šířku — bez překryvu na tabletu */}
+        <div className="pointer-events-none min-w-0 flex-1 flex justify-center">
+          <div
+            className="pointer-events-auto flex max-w-full items-center gap-1 overflow-x-auto rounded-full bg-[#F2F2F2] p-2 shadow-sm [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+            onTouchStart={(e) => e.stopPropagation()}
+          >
+            {topZoomCluster}
+          </div>
+        </div>
+      <div className="pointer-events-auto shrink-0 bg-[#F2F2F2] rounded-full p-2 flex items-center gap-1 shadow-sm" onTouchStart={(e) => e.stopPropagation()}>
         {/* Undo */}
         <button
           onClick={handleUndo}
@@ -6971,6 +6984,7 @@ export function FreeGeometryEditor({
             </button>
           </>
         ) : null}
+      </div>
       </div>
       )
       )}
@@ -7580,9 +7594,8 @@ export function FreeGeometryEditor({
         );
       })()}
 
-      {/* ZOOM + CONTROLS — u úkolu centrováno v oblasti nad plátnem (reaguje na šířku panelu) */}
-      {!recordingState.showPlayer &&
-        (embedInAssignment ? (
+      {/* ZOOM + CONTROLS — v úkolu centrováno v oblasti nad plátnem (bez standalone: zoom je v horním řádku vedle Undo/…) */}
+      {!recordingState.showPlayer && embedInAssignment && (
           <div
             className="pointer-events-none absolute top-4 z-10 flex justify-center"
             style={{ left: 0, right: `${assignmentToolbarRightOffsetPx ?? 16}px` }}
@@ -7594,11 +7607,7 @@ export function FreeGeometryEditor({
               {topZoomCluster}
             </div>
           </div>
-        ) : (
-          <div className="absolute left-1/2 top-4 z-10 flex -translate-x-1/2 items-center gap-1 rounded-full bg-[#F2F2F2] p-2 shadow-sm">
-            {topZoomCluster}
-          </div>
-        ))}
+        )}
 
       {/* CIRCLE INPUT PANEL (Compass mode) */}
       {circleInput.visible && (
