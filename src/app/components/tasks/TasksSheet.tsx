@@ -277,6 +277,9 @@ export function TasksSheet({
   const [geometryDrawSession, setGeometryDrawSession] = useState(0);
   const [geometryDarkMode, setGeometryDarkMode] = useState(false);
   const geometryCanvasExportRef = useRef<(() => HTMLCanvasElement | null) | null>(null);
+  const geometrySubmissionSnapshotRef = useRef<(() => GeometrySubmissionSnapshot | null) | null>(null);
+  /** Potvrzení nahrazení již vloženého sdíleného plátna — z editoru nebo z odkazu. */
+  const [replaceSharedCanvasMode, setReplaceSharedCanvasMode] = useState<'editor' | 'url' | null>(null);
   /** title + instruction_image + počet kroků z DB podle UUID zadání (pro knihovnu) */
   const [libraryDbMeta, setLibraryDbMeta] = useState<
     Record<string, { instruction_image: string | null; title: string | null; stepCount: number }>
@@ -400,6 +403,59 @@ export function TasksSheet({
       toast.success('Rýsování vloženo jako obrázek.');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Nepodařilo se vložit rýsování jako obrázek.');
+    }
+  };
+
+  const applySharedCanvasFromEditor = () => {
+    const snap = geometrySubmissionSnapshotRef.current?.();
+    if (!snap) {
+      toast.error('Nepodařilo se načíst stav plátna.');
+      return;
+    }
+    const empty =
+      snap.points.length === 0 &&
+      snap.shapes.length === 0 &&
+      (!snap.freehandPaths || snap.freehandPaths.length === 0);
+    if (empty) {
+      toast.error('Plátno je prázdné – nejdřív něco narýsuj.');
+      return;
+    }
+    setInitialCanvasSnapshot(snap);
+    setSharedCanvasUrl('');
+    setGeometryDrawOpen(false);
+    setReplaceSharedCanvasMode(null);
+    toast.success('Sdílené plátno vloženo do úkolu.');
+  };
+
+  const applySharedCanvasFromUrl = () => {
+    const snap = decodeSharedCanvasFromUrl(sharedCanvasUrl.trim());
+    if (!snap) {
+      toast.error('Odkaz na sdílené plátno je neplatný.');
+      return;
+    }
+    setInitialCanvasSnapshot(snap);
+    setReplaceSharedCanvasMode(null);
+    toast.success('Sdílené plátno vloženo do úkolu.');
+  };
+
+  const onInsertSharedCanvasClick = () => {
+    if (initialCanvasSnapshot) {
+      setReplaceSharedCanvasMode('editor');
+    } else {
+      applySharedCanvasFromEditor();
+    }
+  };
+
+  const onInsertSharedCanvasFromUrlClick = () => {
+    const snap = decodeSharedCanvasFromUrl(sharedCanvasUrl.trim());
+    if (!snap) {
+      toast.error('Odkaz na sdílené plátno je neplatný.');
+      return;
+    }
+    if (initialCanvasSnapshot) {
+      setReplaceSharedCanvasMode('url');
+    } else {
+      applySharedCanvasFromUrl();
     }
   };
 
@@ -955,15 +1011,7 @@ export function TasksSheet({
                                   type="button"
                                   variant="outline"
                                   disabled={busy || !sharedCanvasUrl.trim()}
-                                  onClick={() => {
-                                    const snap = decodeSharedCanvasFromUrl(sharedCanvasUrl.trim());
-                                    if (!snap) {
-                                      toast.error('Odkaz na sdílené plátno je neplatný.');
-                                      return;
-                                    }
-                                    setInitialCanvasSnapshot(snap);
-                                    toast.success('Sdílené plátno vloženo do úkolu.');
-                                  }}
+                                  onClick={onInsertSharedCanvasFromUrlClick}
                                   className="h-11 rounded-xl border-2 border-sky-200 bg-white text-[14px] font-medium text-sky-900 hover:bg-sky-50"
                                 >
                                   Vložit plátno
@@ -1101,7 +1149,6 @@ export function TasksSheet({
                                         >
                                           <DraftingCompass className="size-7 stroke-[1.5] text-violet-600" aria-hidden />
                                           <div className="text-xs font-medium text-violet-950">Narýsovat</div>
-                                          <div className="text-[11px] text-violet-800/85">vloží jako obrázek</div>
                                         </button>
                                       </div>
                                     ) : null}
@@ -1240,7 +1287,7 @@ export function TasksSheet({
                 <DraftingCompass className="size-4 text-zinc-600" aria-hidden />
                 Narýsovat geometrii
               </DialogTitle>
-              <div className="flex items-center gap-2">
+              <div className="flex max-w-[min(100vw-2rem,52rem)] flex-wrap items-center justify-end gap-2">
                 <Button
                   type="button"
                   variant="outline"
@@ -1255,6 +1302,9 @@ export function TasksSheet({
                 </Button>
                 <Button type="button" onClick={() => void insertDrawnGeometryToStep()}>
                   Vložit jako obrázek
+                </Button>
+                <Button type="button" onClick={onInsertSharedCanvasClick}>
+                  Vložit jako sdílené plátno
                 </Button>
               </div>
             </div>
@@ -1273,12 +1323,45 @@ export function TasksSheet({
                   onDarkModeChange={setGeometryDarkMode}
                   deviceType="computer"
                   canvasExportRef={geometryCanvasExportRef}
+                  submissionSnapshotRef={geometrySubmissionSnapshotRef}
                 />
               </Suspense>
             </div>
           </div>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={replaceSharedCanvasMode !== null}
+        onOpenChange={open => {
+          if (!open) setReplaceSharedCanvasMode(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Nahradit sdílené plátno?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {replaceSharedCanvasMode === 'url'
+                ? 'V úkolu je už vložené sdílené plátno. Chceš ho nahradit plátnem z vloženého odkazu?'
+                : 'V úkolu je už vložené sdílené plátno. Chceš ho nahradit aktuálním rýsováním z editoru?'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Zrušit</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (replaceSharedCanvasMode === 'url') {
+                  applySharedCanvasFromUrl();
+                } else {
+                  applySharedCanvasFromEditor();
+                }
+              }}
+            >
+              Nahradit
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={confirmClearDraftOpen} onOpenChange={setConfirmClearDraftOpen}>
         <AlertDialogContent>
