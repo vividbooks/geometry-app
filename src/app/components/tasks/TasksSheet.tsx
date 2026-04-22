@@ -8,6 +8,7 @@ import {
   ExternalLink,
   ImagePlus,
   Pencil,
+  QrCode,
   Library,
   Link,
   Plus,
@@ -23,7 +24,14 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -52,6 +60,7 @@ import {
 import { toast } from 'sonner';
 import '../../../../rysovani/src/index.css';
 import type { GeometrySubmissionSnapshot } from '../../../../rysovani/src/components/FreeGeometryEditor';
+import { QRCodeCanvas } from 'qrcode.react';
 
 const MAX_IMAGE_BYTES = 1_500_000;
 
@@ -285,6 +294,9 @@ export function TasksSheet({
     Record<string, { instruction_image: string | null; title: string | null; stepCount: number }>
   >({});
   const [linkCopied, setLinkCopied] = useState(false);
+  const [assignmentQrOpen, setAssignmentQrOpen] = useState(false);
+  const [assignmentQrLink, setAssignmentQrLink] = useState<string>('');
+  const [assignmentQrTitle, setAssignmentQrTitle] = useState<string>('');
 
   const resetTasksUiState = () => {
     setTasksPanel('library');
@@ -591,6 +603,12 @@ export function TasksSheet({
     }
   };
 
+  const openAssignmentQr = (opts: { link: string; title: string }) => {
+    setAssignmentQrLink(opts.link);
+    setAssignmentQrTitle(opts.title);
+    setAssignmentQrOpen(true);
+  };
+
   const handleCreate = async () => {
     const supabase = resolveClient();
     if (!supabase) {
@@ -832,6 +850,14 @@ export function TasksSheet({
                                         </button>
                                         <button
                                           type="button"
+                                          onClick={() => openAssignmentQr({ link, title: displayTitle })}
+                                          className="inline-flex h-10 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border border-sky-200 bg-sky-50 px-3 text-xs font-medium text-sky-900 transition-colors hover:bg-sky-100"
+                                        >
+                                          <QrCode className="size-3.5 shrink-0 opacity-80" aria-hidden />
+                                          QR kód
+                                        </button>
+                                        <button
+                                          type="button"
                                           disabled={!id || busy}
                                           onClick={() => (id ? void loadLibraryAssignmentIntoDraft(id) : undefined)}
                                           className="inline-flex h-10 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border border-amber-200/90 bg-amber-50 px-3 text-xs font-medium text-amber-950 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-40"
@@ -940,6 +966,17 @@ export function TasksSheet({
                                 </>
                               )}
                             </button>
+                          </div>
+                          <div className="flex flex-col gap-3 pt-1 sm:flex-row sm:items-center sm:justify-between">
+                            <button
+                              type="button"
+                              onClick={() => openAssignmentQr({ link: createdUrl, title: title.trim() || 'Zadání' })}
+                              className="inline-flex h-11 w-fit items-center gap-2 rounded-2xl border border-sky-200 bg-white px-5 text-sm font-medium text-slate-900 shadow-sm transition-colors hover:bg-slate-50"
+                            >
+                              <QrCode className="size-4 opacity-80" aria-hidden />
+                              Zobrazit QR kód
+                            </button>
+                            <span className="text-sm text-slate-500">Tip: QR se hodí na promítnutí ve třídě.</span>
                           </div>
                         </div>
                       ) : null}
@@ -1277,6 +1314,63 @@ export function TasksSheet({
           </SheetContent>
         </Sheet>
       )}
+      <Dialog
+        open={assignmentQrOpen}
+        onOpenChange={open => {
+          setAssignmentQrOpen(open);
+          if (!open) {
+            setAssignmentQrLink('');
+            setAssignmentQrTitle('');
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader className="space-y-1">
+            <DialogTitle className="text-xl">QR kód pro zadání</DialogTitle>
+            {assignmentQrTitle ? (
+              <DialogDescription className="text-[15px] text-slate-600">
+                {assignmentQrTitle}
+              </DialogDescription>
+            ) : null}
+          </DialogHeader>
+
+          <div className="flex flex-col items-center gap-5">
+            <div className="rounded-2xl border border-sky-100 bg-white p-5 shadow-sm">
+              <QRCodeCanvas
+                value={assignmentQrLink || ' '}
+                size={320}
+                includeMargin
+              />
+            </div>
+
+            <div className="w-full rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="text-sm font-medium text-slate-600">Odkaz</div>
+              <div className="mt-2 break-all font-mono text-[13px] text-slate-800">
+                {assignmentQrLink}
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="sm:justify-between">
+            <Button
+              type="button"
+              variant="outline"
+              className="h-11 rounded-2xl gap-2 px-5"
+              onClick={() => (assignmentQrLink ? void copyText('Odkaz pro zadání', assignmentQrLink) : undefined)}
+            >
+              <Copy className="size-4 opacity-80" aria-hidden />
+              Kopírovat odkaz
+            </Button>
+            <Button
+              type="button"
+              className="h-11 rounded-2xl px-6"
+              onClick={() => setAssignmentQrOpen(false)}
+            >
+              Hotovo
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog open={geometryDrawOpen} onOpenChange={setGeometryDrawOpen}>
         <DialogContent
           className="fixed !inset-0 !left-0 !top-0 z-50 flex h-[100dvh] max-h-[100dvh] w-screen min-h-0 min-w-0 max-w-none !translate-x-0 !translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-0 p-0 shadow-none sm:max-w-none [&>button.absolute]:hidden"
