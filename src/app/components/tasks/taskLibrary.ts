@@ -17,9 +17,49 @@ export type TaskLibraryEntry = {
 /** Výchozí prázdná knihovna — doplň položky s `assignmentId` z `geometry_circuit_assignments`. */
 export const TASK_LIBRARY: TaskLibraryEntry[] = [
   {
+    key: 'dbe1f182-36d1-4d49-995a-6e91bba5a2f6',
+    title: 'Úkol',
+    assignmentId: 'dbe1f182-36d1-4d49-995a-6e91bba5a2f6',
+  },
+  {
+    key: '541e27b8-25cc-49e8-ad8c-122346200d30',
+    title: 'Úkol',
+    assignmentId: '541e27b8-25cc-49e8-ad8c-122346200d30',
+  },
+  {
+    key: '0b929f76-a736-4002-82e5-92383547a88c',
+    title: 'Úkol',
+    assignmentId: '0b929f76-a736-4002-82e5-92383547a88c',
+  },
+  {
+    key: 'f5b65da4-c347-4517-85ea-a5dbf43ba982',
+    title: 'Úkol',
+    assignmentId: 'f5b65da4-c347-4517-85ea-a5dbf43ba982',
+  },
+  {
+    key: '27578f58-d5fa-40bb-90b3-6046a143671d',
+    title: 'Úkol',
+    assignmentId: '27578f58-d5fa-40bb-90b3-6046a143671d',
+  },
+  {
+    key: 'abff5488-ac09-4cf7-8a17-81d2303b025e',
+    title: 'Úkol',
+    assignmentId: 'abff5488-ac09-4cf7-8a17-81d2303b025e',
+  },
+  {
     key: '6fe2b87a-b21e-4fc8-b362-e21ccd2d52d7',
     title: 'Úkol 1',
     assignmentId: '6fe2b87a-b21e-4fc8-b362-e21ccd2d52d7',
+  },
+  {
+    key: '3e285ab1-89a6-4f07-81fb-523f96f53803',
+    title: 'Úkol',
+    assignmentId: '3e285ab1-89a6-4f07-81fb-523f96f53803',
+  },
+  {
+    key: 'd046caea-a938-4f51-9fe0-b312f2f88df0',
+    title: 'Úkol',
+    assignmentId: 'd046caea-a938-4f51-9fe0-b312f2f88df0',
   },
 ];
 
