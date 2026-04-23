@@ -9032,12 +9032,6 @@ export function FreeGeometryEditor({
                   next: (renameDraft.shapesById[id] ?? '').trim(),
                 }));
 
-                const invalid = [...pointEdits, ...shapeEdits].find(e => !e.next);
-                if (invalid) {
-                  toast.error('Název nesmí být prázdný.');
-                  return;
-                }
-
                 // Points must stay uniquely labeled (otherwise it looks like a point "disappeared").
                 const existingPointLabels = new Set(
                   points
@@ -9048,6 +9042,7 @@ export function FreeGeometryEditor({
                 );
                 const nextPointLabels = new Set<string>();
                 for (const e of pointEdits) {
+                  if (!e.next) continue; // empty name is allowed => label disappears
                   if (existingPointLabels.has(e.next) || nextPointLabels.has(e.next)) {
                     toast.error(`Bod s názvem "${e.next}" už existuje.`);
                     return;
@@ -9064,6 +9059,7 @@ export function FreeGeometryEditor({
                 );
                 const nextShapeLabels = new Set<string>();
                 for (const e of shapeEdits) {
+                  if (!e.next) continue; // empty name is allowed => label disappears
                   if (existingShapeLabels.has(e.next) || nextShapeLabels.has(e.next)) {
                     toast.error(`Tvar s názvem "${e.next}" už existuje.`);
                     return;
