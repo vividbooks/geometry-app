@@ -47,14 +47,9 @@ export const TASK_LIBRARY: TaskLibraryEntry[] = [
     assignmentId: 'abff5488-ac09-4cf7-8a17-81d2303b025e',
   },
   {
-    key: '6fe2b87a-b21e-4fc8-b362-e21ccd2d52d7',
-    title: 'Úkol 1',
-    assignmentId: '6fe2b87a-b21e-4fc8-b362-e21ccd2d52d7',
-  },
-  {
-    key: '3e285ab1-89a6-4f07-81fb-523f96f53803',
+    key: '11a2a50a-a149-4a8a-8fc0-c87cd6e39d87',
     title: 'Úkol',
-    assignmentId: '3e285ab1-89a6-4f07-81fb-523f96f53803',
+    assignmentId: '11a2a50a-a149-4a8a-8fc0-c87cd6e39d87',
   },
   {
     key: 'd046caea-a938-4f51-9fe0-b312f2f88df0',
@@ -65,6 +60,11 @@ export const TASK_LIBRARY: TaskLibraryEntry[] = [
     key: '4a21b4c8-0f76-4404-914b-5207ee6fa7e0',
     title: 'Úkol',
     assignmentId: '4a21b4c8-0f76-4404-914b-5207ee6fa7e0',
+  },
+  {
+    key: '6fe2b87a-b21e-4fc8-b362-e21ccd2d52d7',
+    title: 'Úkol 1',
+    assignmentId: '6fe2b87a-b21e-4fc8-b362-e21ccd2d52d7',
   },
 ];
 
