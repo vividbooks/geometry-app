@@ -689,6 +689,17 @@ export function FreeGeometryEditor({
   const [editableSteps, setEditableSteps] = useState<RecordedStep[]>([]);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [showRenameModal, setShowRenameModal] = useState(false);
+  const [renameDraft, setRenameDraft] = useState<{
+    pointIds: string[];
+    shapeIds: string[];
+    pointsById: Record<string, string>;
+    shapesById: Record<string, string>;
+  }>({
+    pointIds: [],
+    shapeIds: [],
+    pointsById: {},
+    shapesById: {},
+  });
   const previousStateRef = useRef<{points: GeoPoint[], shapes: GeoShape[], freehandPaths: FreehandPath[]} | null>(null);
   const pendingToolVisualizationRef = useRef<RecordedStep['toolVisualization']>(undefined);
   const playbackAnimationTimeoutRef = useRef<number | null>(null);
@@ -717,6 +728,58 @@ export function FreeGeometryEditor({
   const effectiveProjectionOpacity = embedInAssignment
     ? projectionOpacity
     : (freeProjection?.opacity ?? 0.35);
+
+  useEffect(() => {
+    if (!showRenameModal) return;
+
+    const relevantPointIds = new Set<string>();
+    const relevantShapes: typeof shapes = [];
+
+    if (selection) {
+      relevantPointIds.add(selection);
+      shapes.forEach(s => {
+        if (s.points.includes(selection)) {
+          relevantShapes.push(s);
+          s.points.forEach(pid => relevantPointIds.add(pid));
+        }
+      });
+    }
+    selectedShapeIds.forEach(sid => {
+      const s = shapes.find(sh => sh.id === sid);
+      if (s) {
+        relevantShapes.push(s);
+        s.points.forEach(pid => relevantPointIds.add(pid));
+      }
+    });
+
+    const uniqueShapeIds = [
+      ...new Set(relevantShapes.filter(s => s.type !== 'segment').map(s => s.id)),
+    ];
+    // If we're renaming shapes, don't show point rename inputs (too noisy/confusing).
+    // Points are renamed only when explicitly selected without any shapes selected.
+    const pointIds =
+      uniqueShapeIds.length > 0
+        ? []
+        : [...relevantPointIds].filter(pid => points.some(p => p.id === pid));
+
+    const pointsById: Record<string, string> = {};
+    for (const pid of pointIds) {
+      const p = points.find(pp => pp.id === pid);
+      if (p) pointsById[pid] = p.label;
+    }
+    const shapesById: Record<string, string> = {};
+    for (const sid of uniqueShapeIds) {
+      const s = shapes.find(ss => ss.id === sid);
+      if (s) shapesById[sid] = s.label;
+    }
+
+    setRenameDraft({
+      pointIds,
+      shapeIds: uniqueShapeIds,
+      pointsById,
+      shapesById,
+    });
+  }, [showRenameModal]);
 
   const openBackgroundImageDialog = () => {
     if (!embedInAssignment && freeProjection?.src) {
@@ -1175,6 +1238,19 @@ export function FreeGeometryEditor({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // When typing into inputs (rename dialogs, forms), never treat Backspace/Delete as "delete geometry".
+      // Also avoid global shortcuts while rename modal is open.
+      const target = e.target as HTMLElement | null;
+      const isTypingTarget =
+        !!target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          (target as HTMLElement).isContentEditable);
+      if (showRenameModal || isTypingTarget) {
+        // Still allow Escape to close tools; it is handled below.
+        if (e.key !== 'Escape') return;
+      }
+
       if ((e.key === 'Delete' || e.key === 'Backspace') && (selection || selectedShapeIds.length > 0 || selectedFreehandIds.length > 0)) {
         if (selectedFreehandIds.length > 0) {
           const idsToDelete = new Set(selectedFreehandIds);
@@ -1224,7 +1300,7 @@ export function FreeGeometryEditor({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selection, historyIndex, history, selectedShapeIds, selectedFreehandIds, shapes, points, freehandPaths]);
+  }, [selection, historyIndex, history, selectedShapeIds, selectedFreehandIds, shapes, points, freehandPaths, showRenameModal]);
 
   const triggerEffect = (x: number, y: number, color: string = '#3b82f6') => {
     setVisualEffects(prev => [...prev, {
@@ -1898,7 +1974,8 @@ export function FreeGeometryEditor({
     [isLowPerformance, scale]
   );
 
-  const SNAP_PX = isTabletMode ? 76 : 52; // snap radius in screen pixels
+  // Global snap radius in screen pixels (smaller = less "sticky" snapping).
+  const SNAP_PX = isTabletMode ? 8 : 6;
 
   const getSnappingPoint = (wx: number, wy: number, threshold = SNAP_PX, excludeId?: string, skipHiddenPoints = false) => {
     const threshWorld = threshold / scale;
@@ -1939,7 +2016,10 @@ export function FreeGeometryEditor({
         ? Math.sqrt((labelAnchor.x - wx) ** 2 + (labelAnchor.y - wy) ** 2)
         : Infinity;
 
-      const labelHit = !isCircleHandle && !!p.label && distToLabel < 16 / scale;
+      // Clicking/hovering near a point label should NOT extend the snapping radius far beyond the point.
+      // Otherwise intersection points (whose labels are often pushed away) feel "stickier" than standalone points.
+      const labelHit =
+        !isCircleHandle && !!p.label && distToLabel < 4 / scale && distToPoint < snapDist;
       const isNear = distToPoint < snapDist || labelHit;
       // Klik na popisek: střed bodu může být dál než snap — porovnávat min(od bodu, od popisku), jinak se bod nevybere a „uhne“ to
       const effectiveDist = labelHit ? Math.min(distToPoint, distToLabel) : distToPoint;
@@ -2400,7 +2480,22 @@ export function FreeGeometryEditor({
       }
     }
 
-    const snapped = getSnappingPoint(wx, wy, SNAP_PX, undefined, activeTool === 'move');
+    // When picking the second point of a segment, snapping back to the first point (A) should be
+    // possible, but only in a very small radius. Otherwise it feels "sticky".
+    const segmentFirstPointId = activeTool === 'segment' && selectedPointId ? selectedPointId : null;
+    const snappedOther = getSnappingPoint(
+      wx,
+      wy,
+      SNAP_PX,
+      segmentFirstPointId ?? undefined,
+      activeTool === 'move',
+    );
+    const segmentAOnlySnapPx = isTabletMode ? 14 : 10;
+    const snappedA = segmentFirstPointId
+      ? getSnappingPoint(wx, wy, segmentAOnlySnapPx, undefined, activeTool === 'move')
+      : null;
+    const snapped =
+      segmentFirstPointId && snappedA?.id === segmentFirstPointId ? snappedA : snappedOther;
 
     // NÁSTROJ: POSUN PLÁTNA (PAN)
     if (activeTool === 'pan') {
@@ -2735,11 +2830,14 @@ export function FreeGeometryEditor({
     // V tablet módu úhloměr nepoužívá 2-bodový workflow
     if (activeTool === 'angle' && isTabletMode) return;
     if (['segment', 'line', 'lineDashed', 'circle', 'angle'].includes(activeTool)) {
+      const segmentSecondPointSnapPx = isTabletMode ? 18 : 12;
+      const snapThreshold =
+        activeTool === 'segment' && selectedPointId !== null ? segmentSecondPointSnapPx : SNAP_PX;
       // Nejprve bod vs. průsečík jako u getSnapPosition, ale u kružnice preferuj existující bod,
       // aby se střed (typicky označený bod) nepřichytil na blízký průsečík/projekci a "neuskočil".
       const snapPos = activeTool === 'circle'
         ? getSnapPositionPreferPoint(wx, wy, SNAP_PX)
-        : getSnapPosition(wx, wy, SNAP_PX);
+        : getSnapPosition(wx, wy, snapThreshold);
       const SNAP_MATCH_ON_POINT_PX = 2;
       let snappedShape: GeoPoint | null = null;
       if (activeTool === 'circle') {
@@ -2747,7 +2845,7 @@ export function FreeGeometryEditor({
         // Otherwise the snap might pick a nearby intersection/projection and the intended center/radius point "jumps".
         snappedShape = getSnappingPoint(wx, wy, SNAP_PX);
       } else if (snapPos) {
-        const p = getSnappingPoint(snapPos.x, snapPos.y, SNAP_PX);
+        const p = getSnappingPoint(snapPos.x, snapPos.y, snapThreshold);
         if (p) {
           const dPx = Math.hypot((p.x - snapPos.x) * scale, (p.y - snapPos.y) * scale);
           if (dPx <= SNAP_MATCH_ON_POINT_PX) snappedShape = p;
@@ -3119,7 +3217,31 @@ export function FreeGeometryEditor({
     }
 
     // Hover logic for points
-    const snapped = getSnappingPoint(wx, wy, SNAP_PX, undefined, activeTool === 'move');
+    // For segment 2nd point selection, snap to other points only in a smaller radius,
+    // and to the first point (A) in an even smaller radius (so it doesn't feel "sticky").
+    const segmentFirstPointIdForHover = activeTool === 'segment' && selectedPointId ? selectedPointId : null;
+    const segmentAOnlySnapPxHover = isTabletMode ? 14 : 10;
+    const segmentOtherSnapPxHover = isTabletMode ? 18 : 12;
+    const snapped =
+      segmentFirstPointIdForHover
+        ? (() => {
+            const snappedOther = getSnappingPoint(
+              wx,
+              wy,
+              segmentOtherSnapPxHover,
+              segmentFirstPointIdForHover,
+              activeTool === 'move',
+            );
+            const snappedA = getSnappingPoint(
+              wx,
+              wy,
+              segmentAOnlySnapPxHover,
+              undefined,
+              activeTool === 'move',
+            );
+            return snappedA?.id === segmentFirstPointIdForHover ? snappedA : snappedOther;
+          })()
+        : getSnappingPoint(wx, wy, SNAP_PX, undefined, activeTool === 'move');
     // For point tool: don't highlight existing points — snap to lines/intersections instead
     setHoveredPointId(activeTool === 'point' ? null : (snapped ? snapped.id : null));
     mousePosRef.current = { x: wx, y: wy };
@@ -3726,6 +3848,12 @@ export function FreeGeometryEditor({
             // point would cause other shapes (lines, perpendiculars, circles) to jump.
             // Use shapesStateRef (always current) instead of `shapes` (stale closure).
             if (newShape.type === 'circle' || newShape.type === 'circleArc') {
+              // Only auto-reposition the radius handle when it is an unlabeled helper point created for the circle.
+              // If the user picked an existing labeled point (e.g. A lying on a line), moving it would break constraints.
+              const isUnlabeledRadiusHandle = !String(p2data.label ?? '').trim();
+              if (!isUnlabeledRadiusHandle) {
+                // keep the point exactly where it is
+              } else {
               const currentShapes = shapesStateRef.current;
               const usedByOtherShape = currentShapes.some(s => {
                 // Shapes store dependencies in `points` and `definition`.
@@ -3742,6 +3870,7 @@ export function FreeGeometryEditor({
                     ? { ...pt, x: p1data.x + Math.cos(Math.PI / 4) * r, y: p1data.y + Math.sin(Math.PI / 4) * r }
                     : pt
                 ));
+              }
               }
             }
             if (newShape.type === 'segment') {
@@ -8682,53 +8811,36 @@ export function FreeGeometryEditor({
             </h3>
 
             <div className="flex-1 overflow-y-auto space-y-4 mb-4">
-              {/* Body vybraných tvarů + přímo vybraný bod */}
-              {(() => {
-                const relevantPointIds = new Set<string>();
-                const relevantShapes: typeof shapes = [];
-
-                if (selection) {
-                  relevantPointIds.add(selection);
-                  shapes.forEach(s => {
-                    if (s.points.includes(selection!)) {
-                      relevantShapes.push(s);
-                      s.points.forEach(pid => relevantPointIds.add(pid));
-                    }
-                  });
-                }
-                selectedShapeIds.forEach(sid => {
-                  const s = shapes.find(sh => sh.id === sid);
-                  if (s) {
-                    relevantShapes.push(s);
-                    s.points.forEach(pid => relevantPointIds.add(pid));
-                  }
-                });
-
-                const uniqueShapes = [...new Map(relevantShapes.map(s => [s.id, s])).values()];
-                const relevantPoints = points.filter(p => relevantPointIds.has(p.id));
-
-                return (
-                  <>
-                    {/* Body */}
-                    {relevantPoints.length > 0 && (
-                      <div>
-                        <div className={`text-xs font-medium mb-2 uppercase tracking-wider ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>Body</div>
-                        <div className="space-y-2">
-                          {relevantPoints.map(pt => (
-                            <div key={pt.id} className="flex items-center gap-3">
+              {(renameDraft.pointIds.length === 0 && renameDraft.shapeIds.length === 0) ? (
+                <div className={`text-sm ${darkMode ? 'text-[#9aa5ce]' : 'text-gray-600'}`}>
+                  Vyber bod nebo tvar, který chceš přejmenovat.
+                </div>
+              ) : (
+                <>
+                  {/* Body */}
+                  {renameDraft.pointIds.length > 0 && (
+                    <div>
+                      <div className={`text-xs font-medium mb-2 uppercase tracking-wider ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>Body</div>
+                      <div className="space-y-2">
+                        {renameDraft.pointIds.map(pid => {
+                          const current = renameDraft.pointsById[pid] ?? '';
+                          return (
+                            <div key={pid} className="flex items-center gap-3">
                               <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
                                 darkMode ? 'bg-blue-900/50 text-blue-400' : 'bg-blue-100 text-blue-600'
                               } font-bold text-sm`}>
-                                {pt.label}
+                                {current || '•'}
                               </div>
                               <input
                                 type="text"
-                                value={pt.label}
+                                value={current}
+                                placeholder="Název bodu"
                                 onChange={(e) => {
-                                  const newLabel = e.target.value.trim();
-                                  if (newLabel) {
-                                    setPoints(prev => prev.map(p => p.id === pt.id ? { ...p, label: newLabel } : p));
-                                  }
+                                  const next = e.target.value;
+                                  setRenameDraft(prev => ({
+                                    ...prev,
+                                    pointsById: { ...prev.pointsById, [pid]: next },
+                                  }));
                                 }}
                                 maxLength={3}
                                 className={`flex-1 px-3 py-2 rounded-lg border text-center text-lg font-bold ${
@@ -8736,57 +8848,135 @@ export function FreeGeometryEditor({
                                 } focus:outline-none focus:ring-2 focus:ring-blue-500`}
                               />
                             </div>
-                          ))}
-                        </div>
+                          );
+                        })}
                       </div>
-                    )}
+                    </div>
+                  )}
 
-                    {/* Tvary (přímky, kružnice) - ne úsečky */}
-                    {uniqueShapes.filter(s => s.type !== 'segment').length > 0 && (
-                      <div>
-                        <div className={`text-xs font-medium mb-2 uppercase tracking-wider ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>Tvary</div>
-                        <div className="space-y-2">
-                          {uniqueShapes.filter(s => s.type !== 'segment').map(shape => {
-                            const typeLabel = shape.type === 'line' ? 'Přímka' : shape.type === 'lineDashed' ? 'Čárkovaná čára' : shape.type === 'ray' ? 'Polopřímka' : shape.type === 'circle' ? 'Kružnice' : shape.type === 'circleArc' ? 'Výsek kružnice' : shape.type;
-                            return (
-                              <div key={shape.id} className="flex items-center gap-3">
-                                <div className={`px-2 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                                  darkMode ? 'bg-purple-900/50 text-purple-400' : 'bg-purple-100 text-purple-600'
-                                } font-medium text-xs`}>
-                                  {typeLabel}
-                                </div>
-                                <input
-                                  type="text"
-                                  value={shape.label}
-                                  onChange={(e) => {
-                                    const newLabel = e.target.value.trim();
-                                    if (newLabel) {
-                                      setShapes(prev => prev.map(s => s.id === shape.id ? { ...s, label: newLabel } : s));
-                                    }
-                                  }}
-                                  maxLength={5}
-                                  className={`flex-1 px-3 py-2 rounded-lg border text-center text-lg font-bold font-mono italic ${
-                                    darkMode ? 'bg-[#414868] border-[#565f89] text-[#c0caf5]' : 'bg-white border-gray-300 text-gray-900'
-                                  } focus:outline-none focus:ring-2 focus:ring-blue-500`}
-                                />
+                  {/* Tvary (přímky, kružnice) - ne úsečky */}
+                  {renameDraft.shapeIds.length > 0 && (
+                    <div>
+                      <div className={`text-xs font-medium mb-2 uppercase tracking-wider ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>Tvary</div>
+                      <div className="space-y-2">
+                        {renameDraft.shapeIds.map(sid => {
+                          const shape = shapes.find(s => s.id === sid);
+                          if (!shape || shape.type === 'segment') return null;
+                          const typeLabel = shape.type === 'line' ? 'Přímka' : shape.type === 'lineDashed' ? 'Čárkovaná čára' : shape.type === 'ray' ? 'Polopřímka' : shape.type === 'circle' ? 'Kružnice' : shape.type === 'circleArc' ? 'Výsek kružnice' : shape.type;
+                          const current = renameDraft.shapesById[sid] ?? '';
+                          return (
+                            <div key={sid} className="flex items-center gap-3">
+                              <div className={`px-2 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                                darkMode ? 'bg-purple-900/50 text-purple-400' : 'bg-purple-100 text-purple-600'
+                              } font-medium text-xs`}>
+                                {typeLabel}
                               </div>
-                            );
-                          })}
-                        </div>
+                              <input
+                                type="text"
+                                value={current}
+                                placeholder="Název tvaru"
+                                onChange={(e) => {
+                                  const next = e.target.value;
+                                  setRenameDraft(prev => ({
+                                    ...prev,
+                                    shapesById: { ...prev.shapesById, [sid]: next },
+                                  }));
+                                }}
+                                maxLength={5}
+                                className={`flex-1 px-3 py-2 rounded-lg border text-center text-lg font-bold font-mono italic ${
+                                  darkMode ? 'bg-[#414868] border-[#565f89] text-[#c0caf5]' : 'bg-white border-gray-300 text-gray-900'
+                                } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                              />
+                            </div>
+                          );
+                        })}
                       </div>
-                    )}
-                  </>
-                );
-              })()}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
 
-            <button
-              onClick={() => setShowRenameModal(false)}
-              onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setShowRenameModal(false); }}
-              className="w-full py-3 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-500 transition-all"
-            >
-              Hotovo
-            </button>
+            {(() => {
+              const commitRename = () => {
+                const pointEdits = renameDraft.pointIds.map(id => ({
+                  id,
+                  next: (renameDraft.pointsById[id] ?? '').trim(),
+                }));
+                const shapeEdits = renameDraft.shapeIds.map(id => ({
+                  id,
+                  next: (renameDraft.shapesById[id] ?? '').trim(),
+                }));
+
+                const invalid = [...pointEdits, ...shapeEdits].find(e => !e.next);
+                if (invalid) {
+                  toast.error('Název nesmí být prázdný.');
+                  return;
+                }
+
+                // Points must stay uniquely labeled (otherwise it looks like a point "disappeared").
+                const existingPointLabels = new Set(
+                  points
+                    .filter(p => !p.hidden)
+                    .filter(p => !pointEdits.some(e => e.id === p.id))
+                    .map(p => p.label)
+                    .filter(Boolean),
+                );
+                const nextPointLabels = new Set<string>();
+                for (const e of pointEdits) {
+                  if (existingPointLabels.has(e.next) || nextPointLabels.has(e.next)) {
+                    toast.error(`Bod s názvem "${e.next}" už existuje.`);
+                    return;
+                  }
+                  nextPointLabels.add(e.next);
+                }
+
+                const existingShapeLabels = new Set(
+                  shapes
+                    .filter(s => s.type !== 'segment')
+                    .filter(s => !shapeEdits.some(e => e.id === s.id))
+                    .map(s => s.label)
+                    .filter(Boolean),
+                );
+                const nextShapeLabels = new Set<string>();
+                for (const e of shapeEdits) {
+                  if (existingShapeLabels.has(e.next) || nextShapeLabels.has(e.next)) {
+                    toast.error(`Tvar s názvem "${e.next}" už existuje.`);
+                    return;
+                  }
+                  nextShapeLabels.add(e.next);
+                }
+
+                setPoints(prev =>
+                  prev.map(p => {
+                    const upd = pointEdits.find(e => e.id === p.id);
+                    return upd ? { ...p, hidden: false, label: upd.next } : p;
+                  }),
+                );
+                setShapes(prev =>
+                  prev.map(s => {
+                    const upd = shapeEdits.find(e => e.id === s.id);
+                    return upd ? { ...s, label: upd.next } : s;
+                  }),
+                );
+                setShowRenameModal(false);
+              };
+
+              return (
+                <button
+                  onClick={commitRename}
+                  onTouchEnd={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    commitRename();
+                  }}
+                  className="w-full py-3 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-500 transition-all"
+                >
+                  Hotovo
+                </button>
+              );
+            })()}
+
           </div>
         </div>
       )}
