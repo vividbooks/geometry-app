@@ -65,6 +65,7 @@ type AssignmentRow = {
   instruction_text: string;
   instruction_image: string | null;
   instruction_steps?: unknown;
+  initial_canvas_snapshot?: unknown;
 };
 
 class StudentAssignmentErrorBoundary extends Component<
@@ -107,7 +108,8 @@ export default function StudentAssignmentPage() {
   const [darkMode, setDarkMode] = useState(false);
 
   const [gateName, setGateName] = useState('');
-  const [studentName, setStudentName] = useState<string | null>(null);
+  /** Jméno pro odevzdání — prázdné = doplní se dialogem při odevzdání (pokud není v sessionStorage) */
+  const [studentName, setStudentName] = useState('');
   const [submitNameOpen, setSubmitNameOpen] = useState(false);
   const [studentNote, setStudentNote] = useState('');
 
@@ -185,6 +187,9 @@ export default function StudentAssignmentPage() {
         }
         setAssignment(data as AssignmentRow);
         setStepIndex(0);
+        // Always show instructions panel when opening an assignment.
+        // (Session storage might have it collapsed from a previous visit.)
+        setAsideCollapsed(false);
         setLoadState('ready');
       } catch (e) {
         if (!cancelled) {
@@ -258,13 +263,13 @@ export default function StudentAssignmentPage() {
 
     const saved =
       assignmentId ? sessionStorage.getItem(nameStorageKey(assignmentId))?.trim() : '';
-    const known = studentName?.trim() || saved;
+    const known = studentName.trim() || saved;
     if (known) {
       void performSubmit(encoded, known);
       return;
     }
 
-    setGateName(saved ?? '');
+    setGateName(studentName.trim() || saved || '');
     setSubmitNameOpen(true);
   }, [assignmentId, studentName, performSubmit, collectGeometrySubmission]);
 
@@ -288,6 +293,18 @@ export default function StudentAssignmentPage() {
 
   const instructionView = useMemo(() => {
     return assignment ? assignmentInstructionDisplay(assignment) : null;
+  }, [assignment]);
+
+  const initialCanvasSnapshot = useMemo<GeometrySubmissionSnapshot | null>(() => {
+    const raw = assignment?.initial_canvas_snapshot;
+    if (!raw || typeof raw !== 'object') return null;
+    const s = raw as any;
+    if (!Array.isArray(s.points) || !Array.isArray(s.shapes)) return null;
+    return {
+      points: s.points,
+      shapes: s.shapes,
+      freehandPaths: Array.isArray(s.freehandPaths) ? s.freehandPaths : [],
+    } as GeometrySubmissionSnapshot;
   }, [assignment]);
 
   const stepsCount = instructionView?.kind === 'steps' ? instructionView.steps.length : 0;
@@ -355,6 +372,7 @@ export default function StudentAssignmentPage() {
               onDarkModeChange={setDarkMode}
               deviceType="computer"
               embedInAssignment
+              initialCanvasSnapshot={initialCanvasSnapshot}
               submissionSnapshotRef={submissionSnapshotRef}
               assignmentToolbarRightOffsetPx={asideCollapsed ? 16 : asideWidth}
             projectionImageSrc={projectionSrc}
@@ -625,15 +643,28 @@ export default function StudentAssignmentPage() {
                 />
               </section>
 
-              <div className="rounded-lg border border-white/10 bg-[#4f566b] px-3 py-2 text-xs text-[#c8cedf]">
-                {studentName ? (
-                  <span>
-                    <span className="font-medium text-white">Jméno:</span> {studentName}
-                  </span>
-                ) : (
-                  <span className="text-[#9ca3bc]">Jméno se doplní při odevzdání.</span>
-                )}
-              </div>
+              <section className="space-y-1.5 rounded-lg border border-white/10 bg-[#4f566b] px-3 py-2">
+                <Label htmlFor="student-name-inline" className="text-xs font-medium text-[#c8cedf]">
+                  Tvé jméno{' '}
+                  <span className="font-normal text-[#9ca3bc]">(pro učitele)</span>
+                </Label>
+                <Input
+                  id="student-name-inline"
+                  type="text"
+                  autoComplete="name"
+                  value={studentName}
+                  onChange={e => {
+                    const v = e.target.value;
+                    setStudentName(v);
+                    if (assignmentId) {
+                      const t = v.trim();
+                      if (t) sessionStorage.setItem(nameStorageKey(assignmentId), t);
+                      else sessionStorage.removeItem(nameStorageKey(assignmentId));
+                    }
+                  }}
+                  className="h-9 w-full rounded-lg border border-white/15 bg-[#3d4456] px-3 py-2 text-sm text-white outline-none transition-shadow focus-visible:border-[#fbc02d]/50 focus-visible:ring-2 focus-visible:ring-[#fbc02d]/25"
+                />
+              </section>
             </div>
 
             <footer className="shrink-0 border-t border-[#4a5163] bg-[#4a5163] p-4">
