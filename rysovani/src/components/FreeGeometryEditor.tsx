@@ -689,6 +689,8 @@ export function FreeGeometryEditor({
   const [editableSteps, setEditableSteps] = useState<RecordedStep[]>([]);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [showRenameModal, setShowRenameModal] = useState(false);
+  const [circleRadiusDraft, setCircleRadiusDraft] = useState<string>('');
+  const [segmentLengthDraft, setSegmentLengthDraft] = useState<string>('');
   const [renameDraft, setRenameDraft] = useState<{
     pointIds: string[];
     shapeIds: string[];
@@ -728,6 +730,24 @@ export function FreeGeometryEditor({
   const effectiveProjectionOpacity = embedInAssignment
     ? projectionOpacity
     : (freeProjection?.opacity ?? 0.35);
+
+  const formatCmInput = (v: number) =>
+    Number.isFinite(v) ? v.toFixed(1).replace('.', ',') : '';
+  const parseCmInput = (raw: string): number | null => {
+    const t = raw.trim();
+    if (!t) return null;
+    const normalized = t.replace(',', '.');
+    const n = Number(normalized);
+    return Number.isFinite(n) ? n : NaN;
+  };
+
+  useEffect(() => {
+    if (circleInput.visible) setCircleRadiusDraft(formatCmInput(circleInput.radius));
+  }, [circleInput.visible]);
+
+  useEffect(() => {
+    if (segmentInput.visible) setSegmentLengthDraft(formatCmInput(segmentInput.length));
+  }, [segmentInput.visible]);
 
   useEffect(() => {
     if (!showRenameModal) return;
@@ -7550,7 +7570,7 @@ export function FreeGeometryEditor({
         >
           <Ruler className="size-4" />
           {segmentInput.active 
-            ? `${segmentInput.length} cm` 
+            ? `${segmentInput.length.toFixed(1).replace('.', ',')} cm` 
             : 'Nastavit délku'
           }
         </button>
@@ -7830,12 +7850,29 @@ export function FreeGeometryEditor({
                 </label>
                 <div className="relative">
                     <input 
-                        type="number"
-                        min="0.5"
-                        max="50"
-                        step="0.5"
-                        value={circleInput.radius}
-                        onChange={(e) => setCircleInput(prev => ({ ...prev, radius: Math.max(0.5, Number(e.target.value)) }))}
+                        type="text"
+                        inputMode="decimal"
+                        value={circleRadiusDraft}
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          setCircleRadiusDraft(raw);
+                          const parsed = parseCmInput(raw);
+                          if (parsed == null) return;
+                          if (Number.isNaN(parsed)) return;
+                          const clamped = Math.min(50, Math.max(0.5, parsed));
+                          setCircleInput(prev => ({ ...prev, radius: clamped }));
+                        }}
+                        onBlur={() => {
+                          const parsed = parseCmInput(circleRadiusDraft);
+                          if (parsed == null) return; // keep empty
+                          if (Number.isNaN(parsed)) {
+                            setCircleRadiusDraft(formatCmInput(circleInput.radius));
+                            return;
+                          }
+                          const clamped = Math.min(50, Math.max(0.5, parsed));
+                          setCircleInput(prev => ({ ...prev, radius: clamped }));
+                          setCircleRadiusDraft(formatCmInput(clamped));
+                        }}
                         className={`w-full p-3 text-center text-3xl font-bold rounded-xl border-2 transition-all outline-none ${
                         darkMode 
                             ? 'bg-[#414868] border-[#565f89] text-[#c0caf5] focus:border-[#7aa2f7]' 
@@ -7850,7 +7887,11 @@ export function FreeGeometryEditor({
             <div className="mb-4 px-1">
                 <Slider
                     value={[circleInput.radius]}
-                    onValueChange={(vals) => setCircleInput(prev => ({ ...prev, radius: vals[0] }))}
+                    onValueChange={(vals) => {
+                      const v = vals[0];
+                      setCircleInput(prev => ({ ...prev, radius: v }));
+                      setCircleRadiusDraft(formatCmInput(v));
+                    }}
                     min={0.5}
                     max={20}
                     step={0.5}
@@ -7859,8 +7900,15 @@ export function FreeGeometryEditor({
                     {[1, 3, 5, 10, 15].map((val) => (
                         <button 
                             key={val} 
-                            onClick={() => setCircleInput(prev => ({ ...prev, radius: val }))}
-                            onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setCircleInput(prev => ({ ...prev, radius: val })); }}
+                            onClick={() => {
+                              setCircleInput(prev => ({ ...prev, radius: val }));
+                              setCircleRadiusDraft(formatCmInput(val));
+                            }}
+                            onTouchEnd={(e) => {
+                              e.preventDefault(); e.stopPropagation();
+                              setCircleInput(prev => ({ ...prev, radius: val }));
+                              setCircleRadiusDraft(formatCmInput(val));
+                            }}
                             className={`flex flex-col items-center gap-1 px-2 py-1.5 rounded-lg transition-all ${
                                 Math.abs(circleInput.radius - val) <= 0.5
                                     ? 'bg-blue-600 text-white scale-105' 
@@ -8043,12 +8091,29 @@ export function FreeGeometryEditor({
                 </label>
                 <div className="relative">
                     <input 
-                        type="number"
-                        min="0.5"
-                        max="50"
-                        step="0.5"
-                        value={segmentInput.length}
-                        onChange={(e) => setSegmentInput(prev => ({ ...prev, length: Number(e.target.value) }))}
+                        type="text"
+                        inputMode="decimal"
+                        value={segmentLengthDraft}
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          setSegmentLengthDraft(raw);
+                          const parsed = parseCmInput(raw);
+                          if (parsed == null) return;
+                          if (Number.isNaN(parsed)) return;
+                          const clamped = Math.min(50, Math.max(0.5, parsed));
+                          setSegmentInput(prev => ({ ...prev, length: clamped }));
+                        }}
+                        onBlur={() => {
+                          const parsed = parseCmInput(segmentLengthDraft);
+                          if (parsed == null) return; // keep empty
+                          if (Number.isNaN(parsed)) {
+                            setSegmentLengthDraft(formatCmInput(segmentInput.length));
+                            return;
+                          }
+                          const clamped = Math.min(50, Math.max(0.5, parsed));
+                          setSegmentInput(prev => ({ ...prev, length: clamped }));
+                          setSegmentLengthDraft(formatCmInput(clamped));
+                        }}
                         className={`w-full p-3 text-center text-3xl font-bold rounded-xl border-2 transition-all outline-none ${
                         darkMode 
                             ? 'bg-[#414868] border-[#565f89] text-[#c0caf5] focus:border-[#7aa2f7]' 
@@ -8063,7 +8128,11 @@ export function FreeGeometryEditor({
             <div className="mb-6 px-1">
                 <Slider
                     value={[segmentInput.length]}
-                    onValueChange={(vals) => setSegmentInput(prev => ({ ...prev, length: vals[0] }))}
+                    onValueChange={(vals) => {
+                      const v = vals[0];
+                      setSegmentInput(prev => ({ ...prev, length: v }));
+                      setSegmentLengthDraft(formatCmInput(v));
+                    }}
                     min={0.5}
                     max={20}
                     step={0.5}
@@ -8072,7 +8141,10 @@ export function FreeGeometryEditor({
                     {[1, 3, 5, 10, 15].map((val) => (
                         <button 
                             key={val} 
-                            onClick={() => setSegmentInput(prev => ({ ...prev, length: val }))}
+                            onClick={() => {
+                              setSegmentInput(prev => ({ ...prev, length: val }));
+                              setSegmentLengthDraft(formatCmInput(val));
+                            }}
                             className={`flex flex-col items-center gap-1 px-2 py-1.5 rounded-lg transition-all ${
                                 Math.abs(segmentInput.length - val) <= 0.5
                                     ? 'bg-blue-600 text-white scale-105' 
@@ -8097,7 +8169,14 @@ export function FreeGeometryEditor({
             {/* Action Button */}
             <button
                 onClick={() => {
-                  setSegmentInput(prev => ({ ...prev, active: true, visible: false, mode: 'fixed' }));
+                  const parsed = parseCmInput(segmentLengthDraft);
+                  if (parsed == null || Number.isNaN(parsed)) {
+                    toast.error('Zadej délku úsečky.');
+                    return;
+                  }
+                  const clamped = Math.min(50, Math.max(0.5, parsed));
+                  setSegmentInput(prev => ({ ...prev, length: clamped, active: true, visible: false, mode: 'fixed' }));
+                  setSegmentLengthDraft(formatCmInput(clamped));
                   setActiveTool('segment');
                 }}
                 className="w-full py-3 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-700 flex items-center justify-center gap-2 shadow-lg shadow-blue-500/30 transition-all active:scale-95 text-sm"
