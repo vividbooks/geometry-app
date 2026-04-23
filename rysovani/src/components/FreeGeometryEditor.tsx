@@ -1999,7 +1999,7 @@ export function FreeGeometryEditor({
   );
 
   // Global snap radius in screen pixels (smaller = less "sticky" snapping).
-  const SNAP_PX = isTabletMode ? 8 : 6;
+  const SNAP_PX = isTabletMode ? 10 : 6;
 
   const getSnappingPoint = (wx: number, wy: number, threshold = SNAP_PX, excludeId?: string, skipHiddenPoints = false) => {
     const threshWorld = threshold / scale;
@@ -3979,15 +3979,26 @@ export function FreeGeometryEditor({
                 `\\text{Výsek kružnice } ${latexIt(newShape.label)} \\text{ se středem } ${latexIt(lS)} \\text{, } poloměrem ${decimalForLatex(r)} \\text{ cm}`
               );
             } else if (newShape.type === 'ray') {
-              const lV = getPointLabel(p1data.id);
-              const angleVal = angleInput.value || 0;
+              const lA = getPointLabel(p1data.id);
+              const lB = getPointLabel(p2data.id);
+              const hasB = lB !== '?' && lB !== '';
+              const notation = hasB ? `${newShape.label} = ${lA}${lB}` : `polopřímka ${newShape.label}`;
+              const latex = hasB
+                ? `${newShape.label} = \\overrightarrow{${lA}${lB}}`
+                : `\\text{polopřímka } ${newShape.label}`;
+              const desc = hasB
+                ? `Polopřímka ${newShape.label} z bodu ${lA} procházející bodem ${lB}`
+                : `Polopřímka ${newShape.label} z bodu ${lA}`;
+              const descLatex = hasB
+                ? `\\text{Polopřímka } ${latexIt(newShape.label)} \\text{ z bodu } ${latexIt(lA)} \\text{ procházející bodem } ${latexIt(lB)}`
+                : `\\text{Polopřímka } ${latexIt(newShape.label)} \\text{ z bodu } ${latexIt(lA)}`;
               addConstructionStep(
-                'angle',
-                `∠ = ${angleVal}°, polopřímka z ${lV}`,
-                `\\angle = ${angleVal}^{\\circ},\\; \\text{polopřímka z } ${lV}`,
-                `Vynesení úhlu ${angleVal}° z bodu ${lV}`,
+                'ray',
+                notation,
+                latex,
+                desc,
                 [newShape.id],
-                `\\text{Vynesení úhlu } ${angleVal}^{\\circ} \\text{ z bodu } ${latexIt(lV)}`
+                descLatex
               );
             }
           }
@@ -5980,8 +5991,8 @@ export function FreeGeometryEditor({
         const showFirstDot = p1draft.hidden || !String(p1draft.label ?? '').trim();
         if (showFirstDot) {
           drawConstructionDot(p1draft.x, p1draft.y);
+          drawConstructionDot(p2draft.x, p2draft.y);
         }
-        drawConstructionDot(p2draft.x, p2draft.y);
         ctx.restore();
       }
     }
