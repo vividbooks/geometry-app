@@ -775,12 +775,15 @@ export function FreeGeometryEditor({
     const uniqueShapeIds = [
       ...new Set(relevantShapes.filter(s => s.type !== 'segment').map(s => s.id)),
     ];
-    // If we're renaming shapes, don't show point rename inputs (too noisy/confusing).
-    // Points are renamed only when explicitly selected without any shapes selected.
-    const pointIds =
-      uniqueShapeIds.length > 0
-        ? []
-        : [...relevantPointIds].filter(pid => points.some(p => p.id === pid));
+    // Rename intent:
+    // - If a point is selected and there are NO explicitly selected shapes, prefer renaming the point
+    //   (even if multiple shapes pass through it).
+    // - If shapes are explicitly selected, rename shapes.
+    const renamePointOnly = Boolean(selection && selectedShapeIds.length === 0);
+    const pointIds = renamePointOnly
+      ? (points.some(p => p.id === selection) ? [selection] : [])
+      : [];
+    const shapeIds = renamePointOnly ? [] : uniqueShapeIds;
 
     const pointsById: Record<string, string> = {};
     for (const pid of pointIds) {
@@ -788,14 +791,14 @@ export function FreeGeometryEditor({
       if (p) pointsById[pid] = p.label;
     }
     const shapesById: Record<string, string> = {};
-    for (const sid of uniqueShapeIds) {
+    for (const sid of shapeIds) {
       const s = shapes.find(ss => ss.id === sid);
       if (s) shapesById[sid] = s.label;
     }
 
     setRenameDraft({
       pointIds,
-      shapeIds: uniqueShapeIds,
+      shapeIds,
       pointsById,
       shapesById,
     });
@@ -1209,6 +1212,7 @@ export function FreeGeometryEditor({
       tools: [
         { id: 'segment', label: 'Úsečka', icon: Minus },
         { id: 'line', label: 'Přímka', icon: Minus },
+        { id: 'ray', label: 'Polopřímka', icon: Minus },
         { id: 'perpendicular', label: 'Kolmice', icon: Minus },
         { id: '__popup__segment_fixed', label: 'Úsečka o rozměru', icon: Ruler },
         { id: 'lineDashed', label: 'Čárkovaná čára', icon: Icons.DashedLine }
@@ -2682,6 +2686,29 @@ export function FreeGeometryEditor({
       }
 
       if (!promotedHidden) {
+        // If there's a hidden construction point exactly here (common for protractor-created angles),
+        // promote it even when we didn't snap to an intersection/line.
+        const hiddenNearby = points.find(
+          p =>
+            p.hidden &&
+            Math.sqrt((p.x - px) ** 2 + (p.y - py) ** 2) * scale < 6,
+        );
+        if (hiddenNearby) {
+          const assignedLabel = promoteToVisiblePoint(hiddenNearby.id);
+          triggerEffect(px, py, '#3b82f6');
+          if (assignedLabel)
+            addConstructionStep(
+              'point',
+              assignedLabel,
+              assignedLabel,
+              `Bod ${assignedLabel}`,
+              [hiddenNearby.id],
+              descLatexPoint(assignedLabel),
+            );
+          clearSelectionAfterPlacement();
+          return;
+        }
+
         // Check if a labeled point is already very close to this position
         const alreadyThere = points.some(p => p.label && Math.sqrt((p.x - px) ** 2 + (p.y - py) ** 2) * scale < 6);
         if (!alreadyThere) {
@@ -2846,10 +2873,10 @@ export function FreeGeometryEditor({
        return;
     }
 
-    // 4. NÁSTROJE TVARŮ (ÚSEČKA, PŘÍMKA, KRUŽNICE, ÚHEL)
+    // 4. NÁSTROJE TVARŮ (ÚSEČKA, PŘÍMKA, POLOPŘÍMKA, KRUŽNICE, ÚHEL)
     // V tablet módu úhloměr nepoužívá 2-bodový workflow
     if (activeTool === 'angle' && isTabletMode) return;
-    if (['segment', 'line', 'lineDashed', 'circle', 'angle'].includes(activeTool)) {
+    if (['segment', 'line', 'lineDashed', 'ray', 'circle', 'angle'].includes(activeTool)) {
       const segmentSecondPointSnapPx = isTabletMode ? 18 : 12;
       const snapThreshold =
         activeTool === 'segment' && selectedPointId !== null ? segmentSecondPointSnapPx : SNAP_PX;
@@ -2882,7 +2909,13 @@ export function FreeGeometryEditor({
           (activeTool === 'circle' && isTabletMode && selectedPointId === null); // Tablet circle first click handled by its own section with intersection snapping
         
         if (!skipAutoPoint) {
-          const isHidden = activeTool === 'line' || activeTool === 'lineDashed';
+          // Auto-created points:
+          // - line/lineDashed: always hidden helper points (clean look)
+          // - ray: hide ONLY the 2nd point (direction helper) when clicked on empty canvas
+          const isHidden =
+            activeTool === 'line' ||
+            activeTool === 'lineDashed' ||
+            (activeTool === 'ray' && selectedPointId !== null);
           // Pro kružnici: pokud je už vybraný první bod (střed), druhý bod (na obvodu) nemá label
           const isCircleRadiusPoint = activeTool === 'circle' && selectedPointId !== null;
           const intFallback = snapPos ? null : findNearestIntersection(wx, wy);
@@ -7784,6 +7817,7 @@ export function FreeGeometryEditor({
           if (activeTool === 'segment' && selectedPointId) text = segmentInput.active ? `Vyber směr (fixní délka ${segmentInput.length} cm)` : 'Vyber druhý bod úsečky';
           else if (activeTool === 'line' && selectedPointId) text = 'Vyber druhý bod přímky';
           else if (activeTool === 'lineDashed' && selectedPointId) text = 'Vyber druhý bod čárkované přímky';
+          else if (activeTool === 'ray' && selectedPointId) text = 'Vyber druhý bod polopřímky';
           else if (activeTool === 'circle' && !isTabletMode && selectedPointId) text = 'Vyber bod na obvodu (poloměr)';
           else if (activeTool === 'angle' && !isTabletMode && selectedPointId) text = 'Vyber bod na rameni úhlu';
           if (text) content = <span>{text}</span>;
