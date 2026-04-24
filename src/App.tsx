@@ -9,7 +9,6 @@ import { FlatObjectPage } from './components/viewer/FlatObjectPage';
 import { RysovaniPage } from './components/rysovani/RysovaniPage';
 import { TutorialPage } from './components/tutorial/TutorialPage';
 import { getObjectDef } from './data/objects';
-import { AuthGate } from './components/auth/AuthGate';
 import { Toaster } from './components/ui/sonner';
 
 const StudentAssignmentPage = lazy(() => import('./app/pages/StudentAssignmentPage'));
@@ -35,7 +34,7 @@ export default function App() {
   const routerBase = import.meta.env.BASE_URL.replace(/\/$/, '');
 
   return (
-    <AuthGate>
+    <>
       <Toaster position="bottom-center" />
       <BrowserRouter basename={routerBase}>
         <Routes>
@@ -68,6 +67,6 @@ export default function App() {
           <Route path="/:objectId" element={<SmartObjectPage />} />
         </Routes>
       </BrowserRouter>
-    </AuthGate>
+    </>
   );
 }
