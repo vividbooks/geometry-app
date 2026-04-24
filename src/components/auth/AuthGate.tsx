@@ -9,9 +9,7 @@ const AUTH_CHECK_URL =
 const AUTH_REDIRECT_URL =
   import.meta.env.VITE_AUTH_REDIRECT_URL?.trim() ||
   "https://app.vividbooks.com";
-const ENABLE_AUTH_GATE =
-  !import.meta.env.DEV &&
-  import.meta.env.VITE_ENABLE_AUTH_GATE !== "false";
+const ENABLE_AUTH_GATE = false;
 
 function readCookie(name: string): string | null {
   const entries = document.cookie.split(";").map((part) => part.trim());
@@ -42,6 +40,8 @@ function isBypassedHost(hostname: string): boolean {
   return (
     isLocalDevHost(hostname) ||
     hostname === "vividboard.cz" ||
+    hostname === "app.vividboard.cz" ||
+    hostname === "dev.vividboard.cz" ||
     hostname.endsWith(".vividboard.cz")
   );
 }
