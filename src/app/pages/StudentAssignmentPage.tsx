@@ -370,7 +370,7 @@ export default function StudentAssignmentPage() {
               onBack={() => {}}
               darkMode={darkMode}
               onDarkModeChange={setDarkMode}
-              deviceType="computer"
+              deviceType="board"
               embedInAssignment
               initialCanvasSnapshot={initialCanvasSnapshot}
               submissionSnapshotRef={submissionSnapshotRef}
