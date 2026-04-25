@@ -42,6 +42,8 @@ import {
   Grid2X2,
   Eraser,
   ImagePlus,
+  Lock,
+  Unlock,
 } from 'lucide-react';
 import { useIsMobile } from './ui/use-mobile';
 import { Slider } from './ui/slider';
@@ -187,6 +189,7 @@ export interface GeoPoint {
   y: number;
   label: string;
   hidden?: boolean;
+  locked?: boolean;
 }
 
 export interface FreehandPath {
@@ -202,6 +205,7 @@ export interface GeoShape {
   type: 'segment' | 'line' | 'lineDashed' | 'lineDashDot' | 'ray' | 'circle' | 'circleArc';
   label: string;
   points: string[]; // IDs bodů, na kterých tvar závisí
+  locked?: boolean;
   definition: {
     p1Id: string;
     p2Id?: string; // Pro kružnici je to bod na obvodu
@@ -1148,6 +1152,62 @@ export function FreeGeometryEditor({
     }
     // čerchovaná: čárka–mezera–tečka–mezera
     ctx.setLineDash([12 / scaleForDash, 7 / scaleForDash, 2 / scaleForDash, 7 / scaleForDash]);
+  };
+
+  const isPointLocked = (pointId: string): boolean => {
+    const p = pointsStateRef.current.find(pt => pt.id === pointId);
+    if (p?.locked) return true;
+    // If the point belongs to any locked shape, treat it as locked for movement.
+    return shapesStateRef.current.some(s => s.locked && s.points?.includes(pointId));
+  };
+
+  const areAnyPointsLocked = (pointIds: Iterable<string>): boolean => {
+    for (const id of pointIds) {
+      if (isPointLocked(id)) return true;
+    }
+    return false;
+  };
+
+  const isAnySelectedShapeLocked = (): boolean =>
+    selectedShapeIds.some(id => shapesStateRef.current.find(s => s.id === id)?.locked);
+
+  const getSelectionLockState = (): 'none' | 'locked' | 'unlocked' | 'mixed' => {
+    const hasPoint = Boolean(selection);
+    const hasShapes = selectedShapeIds.length > 0;
+    if (!hasPoint && !hasShapes) return 'none';
+    if (hasPoint && !hasShapes && selection) return isPointLocked(selection) ? 'locked' : 'unlocked';
+    if (hasShapes) {
+      const lockedFlags = selectedShapeIds
+        .map(id => Boolean(shapesStateRef.current.find(s => s.id === id)?.locked));
+      const any = lockedFlags.some(Boolean);
+      const all = lockedFlags.every(Boolean);
+      return all ? 'locked' : any ? 'mixed' : 'unlocked';
+    }
+    return 'unlocked';
+  };
+
+  const toggleLockSelection = () => {
+    const lockState = getSelectionLockState();
+    const nextLocked = lockState !== 'locked'; // mixed/unlocked => lock; locked => unlock
+
+    // Point-only selection (no shapes selected)
+    if (selection && selectedShapeIds.length === 0) {
+      if (nextLocked && shapesStateRef.current.some(s => s.locked && s.points?.includes(selection))) {
+        // already effectively locked via shape; still allow explicit lock for clarity
+      }
+      setPoints(prev => prev.map(p => p.id === selection ? { ...p, locked: nextLocked } : p));
+      toast.message(nextLocked ? 'Bod zamčen.' : 'Bod odemčen.');
+      return;
+    }
+
+    if (selectedShapeIds.length > 0) {
+      const ids = new Set(selectedShapeIds);
+      setShapes(prev => prev.map(s => ids.has(s.id) ? { ...s, locked: nextLocked } : s));
+      toast.message(nextLocked ? 'Tvar(y) zamčen.' : 'Tvar(y) odemčen.');
+      return;
+    }
+
+    toast.message('Nejdřív vyber objekt.');
   };
 
   // --- SVG IKONY ---
@@ -2557,11 +2617,42 @@ export function FreeGeometryEditor({
     // 1. NÁSTROJ: POSUN (MOVE) — výběr bodů i tvarů + group drag
     if (activeTool === 'move') {
       if (snapped) {
+        // Locked point cannot be moved (but can still be selected).
+        if (isPointLocked(snapped.id)) {
+          setSelection(snapped.id);
+          if (!(e.ctrlKey || e.metaKey)) setSelectedShapeIds([]);
+          toast.message('Objekt je zamčený.');
+          return;
+        }
+
+        // Circle radius handle: when user grabs the handle point (p2Id),
+        // do NOT group-drag the whole circle; drag only this point to resize.
+        const circleForHandleDrag = shapes.find(
+          s =>
+            (s.type === 'circle' || s.type === 'circleArc') &&
+            selectedShapeIds.includes(s.id) &&
+            s.definition.p2Id === snapped.id,
+        );
+        if (circleForHandleDrag) {
+          suppressHistoryRef.current = true;
+          didDragSinceSuppressRef.current = false;
+          draggedPointIdRef.current = snapped.id;
+          setDraggedPointId(snapped.id);
+          setSelection(snapped.id);
+          // Keep the circle selected; do not clear selectedShapeIds.
+          return;
+        }
+
         // Bod je součástí vybraných tvarů? => group drag
         const isPartOfSelection = selectedShapeIds.length > 0 && shapes.some(s => 
           selectedShapeIds.includes(s.id) && s.points.includes(snapped.id)
         );
         if (isPartOfSelection) {
+          if (isAnySelectedShapeLocked()) {
+            setSelection(snapped.id);
+            toast.message('Objekt je zamčený.');
+            return;
+          }
           // Začít group drag všech bodů vybraných tvarů
           suppressHistoryRef.current = true;
           didDragSinceSuppressRef.current = false;
@@ -2569,6 +2660,11 @@ export function FreeGeometryEditor({
           shapes.forEach(s => {
             if (selectedShapeIds.includes(s.id)) s.points.forEach(pid => allPointIds.add(pid));
           });
+          if (areAnyPointsLocked(allPointIds)) {
+            setSelection(snapped.id);
+            toast.message('Objekt je zamčený.');
+            return;
+          }
           groupDragRef.current = {
             startWx: wx, startWy: wy,
             pointSnapshots: points.filter(p => allPointIds.has(p.id)).map(p => ({ id: p.id, x: p.x, y: p.y }))
@@ -2585,6 +2681,7 @@ export function FreeGeometryEditor({
         // Zkusit vybrat tvar kliknutím
         const clickedShapeId = getHoveredShapeAtPoint(wx, wy);
         if (clickedShapeId) {
+          const clickedLocked = Boolean(shapes.find(s => s.id === clickedShapeId)?.locked);
           const alreadySelected = selectedShapeIds.includes(clickedShapeId);
           if (e.ctrlKey || e.metaKey) {
             // Ctrl+klik: přepnout výběr (bez zahájení tahu)
@@ -2598,12 +2695,24 @@ export function FreeGeometryEditor({
             if (!alreadySelected) {
               setSelectedShapeIds([clickedShapeId]);
             }
+            if (clickedLocked) {
+              toast.message('Objekt je zamčený.');
+              setSelection(null);
+              setSelectedFreehandIds([]);
+              return;
+            }
             const effectiveIds = alreadySelected ? selectedShapeIds : [clickedShapeId];
             const allPointIds = new Set<string>();
             shapes.forEach(s => {
               if (effectiveIds.includes(s.id)) s.points.forEach(pid => allPointIds.add(pid));
             });
             if (allPointIds.size > 0) {
+              if (areAnyPointsLocked(allPointIds)) {
+                toast.message('Objekt je zamčený.');
+                setSelection(null);
+                setSelectedFreehandIds([]);
+                return;
+              }
               suppressHistoryRef.current = true;
               didDragSinceSuppressRef.current = false;
               groupDragRef.current = {
@@ -2646,6 +2755,31 @@ export function FreeGeometryEditor({
 
     // 1b. NÁSTROJ: GUMA (ERASER) — smaže bod nebo tvar pod kurzorem
     if (activeTool === 'eraser') {
+      const eraseSelectedShapes = () => {
+        const ids = new Set(selectedShapeIds);
+        if (ids.size === 0) return false;
+        const pointIdsToDelete = new Set<string>();
+        shapes.forEach(s => {
+          if (ids.has(s.id)) s.points.forEach(pid => pointIdsToDelete.add(pid));
+        });
+        setShapes(prev => prev.filter(s => !ids.has(s.id)));
+        // Remove anchor points that are not used by remaining shapes and have no label
+        const remainingShapes = shapes.filter(s => !ids.has(s.id));
+        const usedPointIds = new Set<string>();
+        remainingShapes.forEach(s => s.points.forEach(pid => usedPointIds.add(pid)));
+        setPoints(prev =>
+          prev.filter(p => {
+            if (!pointIdsToDelete.has(p.id)) return true;
+            if (usedPointIds.has(p.id)) return true;
+            if (p.label) return true;
+            return false;
+          }),
+        );
+        setSelectedShapeIds([]);
+        setSelection(null);
+        return true;
+      };
+
       // Prefer snapped point (click on point deletes it)
       if (snapped) {
         deletePoint(snapped.id);
@@ -2654,6 +2788,9 @@ export function FreeGeometryEditor({
       // Otherwise delete the hovered shape (keep labeled points)
       const shapeId = hoveredShapeForMove ?? getHoveredShapeAtPoint(wx, wy);
       if (shapeId) {
+        // If the clicked shape is selected, erase the whole selection.
+        if (selectedShapeIds.includes(shapeId) && eraseSelectedShapes()) return;
+
         const erasedShape = shapes.find(s => s.id === shapeId);
         setShapes(prev => prev.filter(s => s.id !== shapeId));
         if (erasedShape) {
@@ -2667,6 +2804,8 @@ export function FreeGeometryEditor({
             return false;
           }));
         }
+        // Clear selection if we erased the selected item.
+        if (selectedShapeIds.includes(shapeId)) setSelectedShapeIds([]);
         return;
       }
       const freehandId = getFreehandPathAtPoint(wx, wy);
@@ -2885,7 +3024,9 @@ export function FreeGeometryEditor({
              width: 20,
              isHighlight: true,
            }]);
-           lastHighlightPointRef.current = end;
+          // Finish the straight highlight after the 2nd click.
+          // Next highlight requires a new click to set the start point again.
+          lastHighlightPointRef.current = null;
          }
          clearSelectionAfterPlacement();
          return;
@@ -3374,7 +3515,9 @@ export function FreeGeometryEditor({
       const snapMap = new Map(gd.pointSnapshots.map(s => [s.id, s]));
       setPoints(prev => prev.map(p => {
         const snap = snapMap.get(p.id);
-        return snap ? { ...p, x: snap.x + dx, y: snap.y + dy } : p;
+        if (!snap) return p;
+        if (p.locked) return p;
+        return { ...p, x: snap.x + dx, y: snap.y + dy };
       }));
       return;
     }
@@ -3383,6 +3526,14 @@ export function FreeGeometryEditor({
     // Use ref to avoid stale closure — draggedPointIdRef is always current
     const currentDragId = draggedPointIdRef.current;
     if (activeTool === 'move' && currentDragId) {
+      if (isPointLocked(currentDragId)) {
+        dragSnapPreviewRef.current = null;
+        draggedPointPosRef.current = null;
+        draggedPointIdRef.current = null;
+        setDraggedPointId(null);
+        toast.message('Objekt je zamčený.');
+        return;
+      }
       // Only snap to shapes (lines/circles), never to labeled points or intersections
       const excludeIds = new Set([currentDragId]);
       dragSnapPreviewRef.current = snapToNearestShape(wx, wy, SNAP_PX, excludeIds);
@@ -3396,7 +3547,11 @@ export function FreeGeometryEditor({
           const pos = draggedPointPosRef.current;
           const id = draggedPointIdRef.current;
           if (pos && id) {
-            setPoints(prev => prev.map(p => p.id === id ? { ...p, x: pos.x, y: pos.y } : p));
+            setPoints(prev => prev.map(p => {
+              if (p.id !== id) return p;
+              if (p.locked) return p;
+              return { ...p, x: pos.x, y: pos.y };
+            }));
           }
         });
       }
@@ -5065,27 +5220,31 @@ export function FreeGeometryEditor({
           drawLabel(ctx, pos, shape.label, darkMode ? '#9ca3af' : '#6b7280', 0, 0);
         }
         
-        // Malý kontrolní bod (handle) na obvodu pro změnu velikosti
-        const isHandleHovered = p2.id === hoveredPointId;
-        const isHandleDragged = p2.id === draggedPointId;
-        ctx.save();
-        
-        // Glow efekt při hoveru
-        if (isHandleHovered || isHandleDragged) {
+        // Malý kontrolní bod (handle) na obvodu pro změnu velikosti:
+        // zobrazit jen když je kružnice aktivní (vybraná).
+        const isCircleActive = activeTool === 'move' && selectedShapeIds.includes(shape.id);
+        if (isCircleActive) {
+          const isHandleHovered = p2.id === hoveredPointId;
+          const isHandleDragged = p2.id === draggedPointId;
+          ctx.save();
+
+          // Glow efekt při hoveru
+          if (isHandleHovered || isHandleDragged) {
+            ctx.beginPath();
+            ctx.arc(p2.x, p2.y, sx(12), 0, Math.PI * 2);
+            ctx.fillStyle = darkMode ? 'rgba(122, 162, 247, 0.2)' : 'rgba(59, 130, 246, 0.2)';
+            ctx.fill();
+          }
+
           ctx.beginPath();
-          ctx.arc(p2.x, p2.y, sx(12), 0, Math.PI * 2);
-          ctx.fillStyle = darkMode ? 'rgba(122, 162, 247, 0.2)' : 'rgba(59, 130, 246, 0.2)';
+          ctx.arc(p2.x, p2.y, sx(isHandleHovered || isHandleDragged ? 7 : 6), 0, Math.PI * 2);
+          ctx.fillStyle = darkMode ? '#7aa2f7' : '#3b82f6';
           ctx.fill();
+          ctx.strokeStyle = darkMode ? '#c0caf5' : '#ffffff';
+          ctx.lineWidth = sx(2);
+          ctx.stroke();
+          ctx.restore();
         }
-        
-        ctx.beginPath();
-        ctx.arc(p2.x, p2.y, sx(isHandleHovered || isHandleDragged ? 7 : 6), 0, Math.PI * 2);
-        ctx.fillStyle = darkMode ? '#7aa2f7' : '#3b82f6';
-        ctx.fill();
-        ctx.strokeStyle = darkMode ? '#c0caf5' : '#ffffff';
-        ctx.lineWidth = sx(2);
-        ctx.stroke();
-        ctx.restore();
         
         if (showMeasurements) {
              const cm = (r / PIXELS_PER_CM).toFixed(1).replace('.', ',');
@@ -5544,12 +5703,17 @@ export function FreeGeometryEditor({
       const p = getLivePoint(pRaw);
       if (p.hidden) return; // Skip hidden points
       
-      // Handle pro změnu poloměru kružnice — vždy vykreslit jako modré kolečko s dvojšipkou
+      // Handle pro změnu poloměru kružnice:
+      // zobrazit jen když je daná kružnice vybraná nástrojem Výběr (move).
       const circleShapeForHandle = shapes.find(
         s => (s.type === 'circle' || s.type === 'circleArc') && s.definition.p2Id === p.id
       );
       const isCircleRadiusPoint = !!circleShapeForHandle;
       if (isCircleRadiusPoint) {
+        const showCircleHandle =
+          activeTool === 'move' && selectedShapeIds.includes(circleShapeForHandle!.id);
+        if (!showCircleHandle) return;
+
         const usedByOtherShape = shapes.some(
           s => s.type !== 'circle' && s.type !== 'circleArc' && s.points.includes(p.id)
         );
@@ -7365,16 +7529,21 @@ export function FreeGeometryEditor({
                 // Zobrazit ikonu aktuálně aktivního nástroje ve skupině
                 const activeToolInGroup = group.tools.find(t => t.id === activeTool);
                 const DisplayIcon = activeToolInGroup ? activeToolInGroup.icon : group.icon;
+                const canRename = (selection || selectedShapeIds.length > 0) && !selectedFreehandIds.length;
                 
                 return (
                     <div key={group.id} className="relative group/tool">
+                        <div className="relative">
                         <button
+                            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                             onClick={(e) => {
                                 e.stopPropagation();
                                 if (group.tools.length === 1) {
-                                    setActiveTool(group.tools[0].id as ToolType);
+                                    const nextTool = group.tools[0].id as ToolType;
+                                    setActiveTool(nextTool);
                                     setSelectedPointId(null);
                                     setActiveGroup(null);
+                                    if (nextTool !== 'move') clearSelectionAfterPlacement();
                                 } else {
                                     setActiveGroup(prev => prev === group.id ? null : group.id);
                                 }
@@ -7383,9 +7552,11 @@ export function FreeGeometryEditor({
                                 e.preventDefault();
                                 e.stopPropagation();
                                 if (group.tools.length === 1) {
-                                    setActiveTool(group.tools[0].id as ToolType);
+                                    const nextTool = group.tools[0].id as ToolType;
+                                    setActiveTool(nextTool);
                                     setSelectedPointId(null);
                                     setActiveGroup(null);
+                                    if (nextTool !== 'move') clearSelectionAfterPlacement();
                                 } else {
                                     setActiveGroup(prev => prev === group.id ? null : group.id);
                                 }
@@ -7402,6 +7573,36 @@ export function FreeGeometryEditor({
                                 }`} />
                             )}
                         </button>
+
+                        {/* Rename ("název") next to the selection tool */}
+                        {group.id === 'group_move' && canRename && (
+                          <div className="absolute left-full top-1/2 -translate-y-1/2 ml-[18px] flex items-center gap-2">
+                            <button
+                              onClick={() => setShowRenameModal(true)}
+                              onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setShowRenameModal(true); }}
+                              className="w-12 flex flex-col items-center justify-center rounded-xl bg-blue-50 text-blue-500 hover:bg-blue-100 transition-colors py-2 shadow-sm"
+                              title="Název"
+                            >
+                              <Pencil className="w-5 h-5" />
+                              <span className="text-[9px] font-bold mt-0.5 leading-tight">název</span>
+                            </button>
+
+                            <button
+                              onClick={(e) => { e.stopPropagation(); toggleLockSelection(); }}
+                              onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); toggleLockSelection(); }}
+                              className="w-12 flex flex-col items-center justify-center rounded-xl bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors py-2 shadow-sm"
+                              title={getSelectionLockState() === 'locked' ? 'Odemknout' : 'Zamknout'}
+                            >
+                              {getSelectionLockState() === 'locked' ? (
+                                <Lock className="w-5 h-5" />
+                              ) : (
+                                <Unlock className="w-5 h-5" />
+                              )}
+                              <span className="text-[9px] font-bold mt-0.5 leading-tight">zámek</span>
+                            </button>
+                          </div>
+                        )}
+                        </div>
                         {/* Submenu - čistě stavové, bez group-hover */}
                         {group.tools.length > 1 && activeGroup === group.id && (
                             <div 
@@ -7415,18 +7616,23 @@ export function FreeGeometryEditor({
                                     return (
                                         <button
                                             key={tool.id}
+                                            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                                             onClick={(e) => {
                                                 e.stopPropagation();
-                                                setActiveTool(tool.id as ToolType);
+                                                const nextTool = tool.id as ToolType;
+                                                setActiveTool(nextTool);
                                                 setSelectedPointId(null);
                                                 setActiveGroup(null);
+                                                if (nextTool !== 'move') clearSelectionAfterPlacement();
                                             }}
                                             onTouchEnd={(e) => {
                                                 e.preventDefault();
                                                 e.stopPropagation();
-                                                setActiveTool(tool.id as ToolType);
+                                                const nextTool = tool.id as ToolType;
+                                                setActiveTool(nextTool);
                                                 setSelectedPointId(null);
                                                 setActiveGroup(null);
+                                                if (nextTool !== 'move') clearSelectionAfterPlacement();
                                             }}
                                             className={`flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
                                                 activeTool === tool.id ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-50'
@@ -7478,13 +7684,25 @@ export function FreeGeometryEditor({
                      return null;
                 }
 
+                const canRename = (selection || selectedShapeIds.length > 0) && !selectedFreehandIds.length;
+
+                // Show rename action next to the "Výběr" tool (group_move) always.
+                // If nothing is selected, the modal still allows renaming the construction title.
+                const showRenameNextToSelect = group.id === 'group_move';
+
                 return (
                     <div key={group.id} className={`relative w-full flex justify-center transition-all duration-300 ${isOther ? 'opacity-30 grayscale cursor-pointer' : ''}`}>
+                        <div className={showRenameNextToSelect ? 'flex items-center gap-2' : ''}>
                          {/* Main Button */}
                          <button
+                            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                             onClick={(e) => {
                                 e.stopPropagation();
+                                // Switching away from selection mode: clear current selection immediately,
+                                // even if we only open a submenu (e.g. "pero" group).
+                                clearSelectionAfterPlacement();
                                 if (isOther || group.tools.length === 1) {
+                                    if (group.tools[0].id !== 'move') clearSelectionAfterPlacement();
                                     handleToolMenuClick(group.tools[0].id, setCircleInput, setActiveTool, setSelectedPointId, setActiveGroup, setSegmentInput, setPerpTabletState, isTabletMode, setCircleTabletState);
                                 } else {
                                     setActiveGroup(isMenuOpen ? null : group.id);
@@ -7493,7 +7711,9 @@ export function FreeGeometryEditor({
                             onTouchEnd={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
+                                clearSelectionAfterPlacement();
                                 if (isOther || group.tools.length === 1) {
+                                    if (group.tools[0].id !== 'move') clearSelectionAfterPlacement();
                                     handleToolMenuClick(group.tools[0].id, setCircleInput, setActiveTool, setSelectedPointId, setActiveGroup, setSegmentInput, setPerpTabletState, isTabletMode, setCircleTabletState);
                                 } else {
                                     setActiveGroup(isMenuOpen ? null : group.id);
@@ -7507,6 +7727,21 @@ export function FreeGeometryEditor({
                                 </div>
                             </div>
                          </button>
+
+                         {/* Rename button next to selection tool */}
+                         {showRenameNextToSelect && (
+                           <button
+                             onClick={() => setShowRenameModal(true)}
+                             onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setShowRenameModal(true); }}
+                             className={`w-12 flex flex-col items-center justify-center rounded-xl transition-colors py-2 ${
+                               canRename ? 'bg-blue-50 text-blue-500 hover:bg-blue-100' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                             }`}
+                           >
+                             <Pencil className="w-5 h-5" />
+                             <span className="text-[9px] font-bold mt-0.5 leading-tight">název</span>
+                           </button>
+                         )}
+                        </div>
 
                          {/* Submenu - čistě stavové, bez group-hover */}
                          {group.tools.length > 1 && isMenuOpen && (
@@ -7529,13 +7764,16 @@ export function FreeGeometryEditor({
                                  return (
                                  <button
                                     key={tool.id}
+                                    onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                                     onClick={(e) => {
                                         e.stopPropagation();
+                                        if (tool.id !== 'move') clearSelectionAfterPlacement();
                                         handleToolMenuClick(tool.id, setCircleInput, setActiveTool, setSelectedPointId, setActiveGroup, setSegmentInput, setPerpTabletState, isTabletMode, setCircleTabletState);
                                     }}
                                     onTouchEnd={(e) => {
                                         e.preventDefault();
                                         e.stopPropagation();
+                                        if (tool.id !== 'move') clearSelectionAfterPlacement();
                                         handleToolMenuClick(tool.id, setCircleInput, setActiveTool, setSelectedPointId, setActiveGroup, setSegmentInput, setPerpTabletState, isTabletMode, setCircleTabletState);
                                     }}
                                     className={`flex rounded-xl text-sm font-medium transition-colors ${
@@ -7574,18 +7812,6 @@ export function FreeGeometryEditor({
 
              {/* Separator */}
              <div className="h-8"></div>
-
-             {/* Bottom: Rename + Trash when selected */}
-             {(selection || selectedShapeIds.length > 0) && !selectedFreehandIds.length && (
-             <button
-                 onClick={() => setShowRenameModal(true)}
-                 onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setShowRenameModal(true); }}
-                 className="w-12 flex flex-col items-center justify-center rounded-xl bg-blue-50 text-blue-500 hover:bg-blue-100 transition-colors py-2"
-             >
-                 <Pencil className="w-5 h-5" />
-                 <span className="text-[9px] font-bold mt-0.5 leading-tight">název</span>
-             </button>
-             )}
 
              {/* Eraser tool button */}
              <button
