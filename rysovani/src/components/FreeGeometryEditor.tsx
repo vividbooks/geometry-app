@@ -59,7 +59,7 @@ import Papir from '../imports/Papir';
 
 // --- TYPY ---
 
-type ToolType = 'move' | 'point' | 'segment' | 'line' | 'lineDashed' | 'ray' | 'circle' | 'angle' | 'distance' | 'perpendicular' | 'pan' | 'paper' | 'freehand' | 'highlighter' | 'highlighterStraight' | 'eraser';
+type ToolType = 'move' | 'point' | 'segment' | 'line' | 'lineDashed' | 'lineDashDot' | 'ray' | 'circle' | 'angle' | 'distance' | 'perpendicular' | 'pan' | 'paper' | 'freehand' | 'highlighter' | 'highlighterStraight' | 'eraser';
 
 type TracePoint = { x: number; y: number };
 
@@ -199,7 +199,7 @@ export interface FreehandPath {
 
 export interface GeoShape {
   id: string;
-  type: 'segment' | 'line' | 'lineDashed' | 'ray' | 'circle' | 'circleArc';
+  type: 'segment' | 'line' | 'lineDashed' | 'lineDashDot' | 'ray' | 'circle' | 'circleArc';
   label: string;
   points: string[]; // IDs bodů, na kterých tvar závisí
   definition: {
@@ -214,7 +214,7 @@ export interface GeoShape {
 
 interface AnimationState {
   isActive: boolean;
-  type: 'segment' | 'line' | 'lineDashed' | 'ray' | 'circle' | 'circleArc' | 'angle' | null;
+  type: 'segment' | 'line' | 'lineDashed' | 'lineDashDot' | 'ray' | 'circle' | 'circleArc' | 'angle' | null;
   startTime: number;
   p1: { x: number, y: number } | null;
   p2: { x: number, y: number } | null;
@@ -339,7 +339,7 @@ interface FreeGeometryEditorProps {
 
 interface RecordedStep {
   id: string;
-  actionType: 'create-point' | 'create-segment' | 'create-line' | 'create-line-dashed' | 'create-ray' | 'create-circle' | 'create-angle' | 'move-point' | 'delete' | 'freehand';
+  actionType: 'create-point' | 'create-segment' | 'create-line' | 'create-line-dashed' | 'create-line-dashdot' | 'create-ray' | 'create-circle' | 'create-angle' | 'move-point' | 'delete' | 'freehand';
   description: string;
   notation?: string; // LaTeX notation for construction log
   snapshot: {
@@ -1122,6 +1122,7 @@ export function FreeGeometryEditor({
       case 'create-segment': return <Minus className="size-4" />;
       case 'create-line': return <ArrowUpDown className="size-4" />;
       case 'create-line-dashed': return <ArrowUpDown className="size-4" />;
+      case 'create-line-dashdot': return <ArrowUpDown className="size-4" />;
       case 'create-ray': return <ArrowRight className="size-4" />;
       case 'create-circle': return <Circle className="size-4" />;
       case 'create-angle': return <span className="text-xs font-bold">∠</span>;
@@ -1130,6 +1131,23 @@ export function FreeGeometryEditor({
       case 'freehand': return <Pencil className="size-4" />;
       default: return <Dot className="size-4" />;
     }
+  };
+
+  const applyLineStyle = (
+    ctx: CanvasRenderingContext2D,
+    style: 'solid' | 'dashed' | 'dashdot',
+    scaleForDash: number = 1
+  ) => {
+    if (style === 'solid') {
+      ctx.setLineDash([]);
+      return;
+    }
+    if (style === 'dashed') {
+      ctx.setLineDash([12 / scaleForDash, 8 / scaleForDash]);
+      return;
+    }
+    // čerchovaná: čárka–mezera–tečka–mezera
+    ctx.setLineDash([12 / scaleForDash, 7 / scaleForDash, 2 / scaleForDash, 7 / scaleForDash]);
   };
 
   // --- SVG IKONY ---
@@ -1176,6 +1194,11 @@ export function FreeGeometryEditor({
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round">
         <line x1="3" y1="12" x2="21" y2="12" strokeDasharray="5 4" />
       </svg>
+    ),
+    DashDotLine: () => (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round">
+        <line x1="3" y1="12" x2="21" y2="12" strokeDasharray="6 3 1.2 3" />
+      </svg>
     )
   };
 
@@ -1215,7 +1238,8 @@ export function FreeGeometryEditor({
         { id: 'ray', label: 'Polopřímka', icon: Minus },
         { id: 'perpendicular', label: 'Kolmice', icon: Minus },
         { id: '__popup__segment_fixed', label: 'Úsečka o rozměru', icon: Ruler },
-        { id: 'lineDashed', label: 'Čárkovaná čára', icon: Icons.DashedLine }
+        { id: 'lineDashed', label: 'Čárkovaná čára', icon: Icons.DashedLine },
+        { id: 'lineDashDot', label: 'Čerchovaná čára', icon: Icons.DashDotLine }
       ]
     },
     {
@@ -1408,11 +1432,12 @@ export function FreeGeometryEditor({
       if (shapes.length > prev.shapes.length && points.length > prev.points.length) {
         // Vytváří se tvar + body současně -> zaznamenat pouze tvar
         const newShape = shapes[shapes.length - 1];
-        const typeNames: Record<string, string> = { segment: 'úsečky', line: 'přímky', lineDashed: 'čárkované přímky', ray: 'polopřímky', circle: 'kružnice', angle: 'úhlu' };
+    const typeNames: Record<string, string> = { segment: 'úsečky', line: 'přímky', lineDashed: 'čárkované přímky', lineDashDot: 'čerchované přímky', ray: 'polopřímky', circle: 'kružnice', angle: 'úhlu' };
         description = `Vytvoření ${typeNames[newShape.type] || newShape.type} ${newShape.label}`;
         if (newShape.type === 'segment') actionType = 'create-segment';
         else if (newShape.type === 'line') actionType = 'create-line';
         else if (newShape.type === 'lineDashed') actionType = 'create-line-dashed';
+        else if (newShape.type === 'lineDashDot') actionType = 'create-line-dashdot';
         else if (newShape.type === 'ray') actionType = 'create-ray';
         else if (newShape.type === 'circle' || newShape.type === 'circleArc') actionType = 'create-circle';
         else if (newShape.type === 'angle') actionType = 'create-angle';
@@ -1420,11 +1445,12 @@ export function FreeGeometryEditor({
       } else if (shapes.length > prev.shapes.length) {
         // Pouze tvar (bez nových bodů)
         const newShape = shapes[shapes.length - 1];
-        const typeNames: Record<string, string> = { segment: 'úsečky', line: 'přímky', lineDashed: 'čárkované přímky', ray: 'polopřímky', circle: 'kružnice', angle: 'úhlu' };
+        const typeNames: Record<string, string> = { segment: 'úsečky', line: 'přímky', lineDashed: 'čárkované přímky', lineDashDot: 'čerchované přímky', ray: 'polopřímky', circle: 'kružnice', angle: 'úhlu' };
         description = `Vytvoření ${typeNames[newShape.type] || newShape.type} ${newShape.label}`;
         if (newShape.type === 'segment') actionType = 'create-segment';
         else if (newShape.type === 'line') actionType = 'create-line';
         else if (newShape.type === 'lineDashed') actionType = 'create-line-dashed';
+        else if (newShape.type === 'lineDashDot') actionType = 'create-line-dashdot';
         else if (newShape.type === 'ray') actionType = 'create-ray';
         else if (newShape.type === 'circle' || newShape.type === 'circleArc') actionType = 'create-circle';
         else if (newShape.type === 'angle') actionType = 'create-angle';
@@ -1645,7 +1671,7 @@ export function FreeGeometryEditor({
     return 'A' + (points.length + 1);
   };
 
-  const getNextShapeLabel = (type: 'segment' | 'line' | 'lineDashed' | 'circle' | 'circleArc' | 'ray') => {
+  const getNextShapeLabel = (type: 'segment' | 'line' | 'lineDashed' | 'lineDashDot' | 'circle' | 'circleArc' | 'ray') => {
     if (type === 'circle' || type === 'circleArc') {
       const labels = ['k', 'l', 'm', 'n', 'o'];
       for (const char of labels) {
@@ -2142,7 +2168,7 @@ export function FreeGeometryEditor({
 
   // Helper: najde nejbližší průsečík dvou čar/kružnic v okolí bodu
   const findNearestIntersection = (wx: number, wy: number, threshold = SNAP_PX): {x: number, y: number} | null => {
-    const lineShapes = shapes.filter(s => ['line', 'lineDashed', 'segment', 'ray'].includes(s.type));
+    const lineShapes = shapes.filter(s => ['line', 'lineDashed', 'lineDashDot', 'segment', 'ray'].includes(s.type));
     const circleShapes = shapes.filter(s => s.type === 'circle' || s.type === 'circleArc');
     const effectiveThreshold = threshold; // already accounts for tablet mode via SNAP_PX
     const thresh = effectiveThreshold / scale;
@@ -2876,7 +2902,7 @@ export function FreeGeometryEditor({
     // 4. NÁSTROJE TVARŮ (ÚSEČKA, PŘÍMKA, POLOPŘÍMKA, KRUŽNICE, ÚHEL)
     // V tablet módu úhloměr nepoužívá 2-bodový workflow
     if (activeTool === 'angle' && isTabletMode) return;
-    if (['segment', 'line', 'lineDashed', 'ray', 'circle', 'angle'].includes(activeTool)) {
+    if (['segment', 'line', 'lineDashed', 'lineDashDot', 'ray', 'circle', 'angle'].includes(activeTool)) {
       const segmentSecondPointSnapPx = isTabletMode ? 18 : 12;
       const snapThreshold =
         activeTool === 'segment' && selectedPointId !== null ? segmentSecondPointSnapPx : SNAP_PX;
@@ -2915,6 +2941,7 @@ export function FreeGeometryEditor({
           const isHidden =
             activeTool === 'line' ||
             activeTool === 'lineDashed' ||
+            activeTool === 'lineDashDot' ||
             (activeTool === 'ray' && selectedPointId !== null);
           // Pro kružnici: pokud je už vybraný první bod (střed), druhý bod (na obvodu) nemá label
           const isCircleRadiusPoint = activeTool === 'circle' && selectedPointId !== null;
@@ -3074,7 +3101,7 @@ export function FreeGeometryEditor({
         }
 
         if (activeTool === 'circle') pendingCircleCenterRef.current = null;
-        startConstructionAnimation(activeTool as 'segment'|'line'|'lineDashed'|'circle'|'ray', p1, p2);
+        startConstructionAnimation(activeTool as 'segment'|'line'|'lineDashed'|'lineDashDot'|'circle'|'ray', p1, p2);
         setSelectedPointId(null);
       }
     }
@@ -3730,7 +3757,7 @@ export function FreeGeometryEditor({
 
   // --- ANIMACE ---
   const startConstructionAnimation = (
-    type: 'segment' | 'line' | 'lineDashed' | 'circle' | 'circleArc' | 'ray',
+    type: 'segment' | 'line' | 'lineDashed' | 'lineDashDot' | 'circle' | 'circleArc' | 'ray',
     p1: { x: number; y: number; id: string },
     p2: { x: number; y: number; id: string },
     arcSpanRad?: number
@@ -3739,7 +3766,7 @@ export function FreeGeometryEditor({
     const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
     const radius = Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2);
 
-    if (type === 'segment' || type === 'line' || type === 'lineDashed' || type === 'ray') {
+    if (type === 'segment' || type === 'line' || type === 'lineDashed' || type === 'lineDashDot' || type === 'ray') {
       pendingToolVisualizationRef.current = {
         type: 'ruler',
         p1: { x: p1.x, y: p1.y },
@@ -3956,6 +3983,15 @@ export function FreeGeometryEditor({
               const desc = hasLabels ? `Čárkovaná přímka ${newShape.label} procházející body ${lA}, ${lB}` : `Čárkovaná přímka ${newShape.label}`;
               const descLatexD = hasLabels ? descLatexLine(newShape.label, lA, lB, true) : descLatexLineShort(newShape.label, true);
               addConstructionStep('lineDashed', notation, latex, desc, [newShape.id], descLatexD);
+            } else if (newShape.type === 'lineDashDot') {
+              const lA = getPointLabel(p1data.id);
+              const lB = getPointLabel(p2data.id);
+              const hasLabels = lA !== '?' && lB !== '?' && lA !== '' && lB !== '';
+              const notation = hasLabels ? `${newShape.label} = ${lA}${lB}` : `čerchovaná přímka ${newShape.label}`;
+              const latex = hasLabels ? `${newShape.label} = ${lA}${lB}` : `\\text{čerchovaná přímka } ${newShape.label}`;
+              const desc = hasLabels ? `Čerchovaná přímka ${newShape.label} procházející body ${lA}, ${lB}` : `Čerchovaná přímka ${newShape.label}`;
+              const descLatexDD = hasLabels ? descLatexLine(newShape.label, lA, lB, false) : descLatexLineShort(newShape.label, false);
+              addConstructionStep('line', notation, latex, desc, [newShape.id], descLatexDD);
             } else if (newShape.type === 'circle') {
               const lS = getPointLabel(p1data.id);
               const r = distanceCm(p1data.x, p1data.y, p2data.x, p2data.y);
@@ -4997,6 +5033,18 @@ export function FreeGeometryEditor({
           const pos = getShapeLabelDrawPosition(shape.id, target);
           drawLabel(ctx, pos, shape.label, darkMode ? '#9ca3af' : '#6b7280', 0, 0);
         }
+      } else if (shape.type === 'lineDashDot') {
+        ctx.save();
+        applyLineStyle(ctx, 'dashdot');
+        drawLine(ctx, p1, p2, 1, darkMode ? '#e5e7eb' : '#1f2937', 2, false);
+        ctx.restore();
+        {
+          const lineAng = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+          const pad = SHAPE_LABEL_PAD_SCREEN_PX / scale;
+          const target = pickLineShapeLabelWorld(shape.id, p1, p2, lineAng, 1.1, pad);
+          const pos = getShapeLabelDrawPosition(shape.id, target);
+          drawLabel(ctx, pos, shape.label, darkMode ? '#9ca3af' : '#6b7280', 0, 0);
+        }
       } else if (shape.type === 'ray') {
         drawRay(ctx, p1, p2, 1, darkMode ? '#e5e7eb' : '#1f2937');
         {
@@ -5152,18 +5200,19 @@ export function FreeGeometryEditor({
           ctx.strokeStyle = selGlow;
           ctx.lineWidth = 16;
           ctx.stroke();
-        } else if (shape.type === 'line' || shape.type === 'lineDashed') {
+        } else if (shape.type === 'line' || shape.type === 'lineDashed' || shape.type === 'lineDashDot') {
           const dx = sp2.x - sp1.x, dy = sp2.y - sp1.y;
           const len = Math.sqrt(dx*dx+dy*dy) || 1;
           const EXT = 100000;
-          if (shape.type === 'lineDashed') ctx.setLineDash([14, 10]);
+          if (shape.type === 'lineDashed') applyLineStyle(ctx, 'dashed');
+          else if (shape.type === 'lineDashDot') applyLineStyle(ctx, 'dashdot');
           ctx.beginPath();
           ctx.moveTo(sp1.x - dx/len*EXT, sp1.y - dy/len*EXT);
           ctx.lineTo(sp1.x + dx/len*EXT, sp1.y + dy/len*EXT);
           ctx.strokeStyle = selGlow;
           ctx.lineWidth = 16;
           ctx.stroke();
-          if (shape.type === 'lineDashed') ctx.setLineDash([]);
+          if (shape.type === 'lineDashed' || shape.type === 'lineDashDot') applyLineStyle(ctx, 'solid');
         } else if (shape.type === 'ray') {
           const dx = sp2.x - sp1.x, dy = sp2.y - sp1.y;
           const len = Math.sqrt(dx*dx+dy*dy) || 1;
@@ -5203,7 +5252,7 @@ export function FreeGeometryEditor({
           ctx.strokeStyle = selColor;
           ctx.lineWidth = 3;
           ctx.stroke();
-        } else if (shape.type === 'line' || shape.type === 'lineDashed') {
+        } else if (shape.type === 'line' || shape.type === 'lineDashed' || shape.type === 'lineDashDot') {
           const dx = sp2.x - sp1.x, dy = sp2.y - sp1.y;
           const len = Math.sqrt(dx*dx+dy*dy) || 1;
           const EXT = 100000;
@@ -5259,11 +5308,11 @@ export function FreeGeometryEditor({
             ctx.stroke();
           } else {
             let start = sp1, end = sp2;
-            if (shape.type === 'line' || shape.type === 'lineDashed' || shape.type === 'ray') {
+            if (shape.type === 'line' || shape.type === 'lineDashed' || shape.type === 'lineDashDot' || shape.type === 'ray') {
               const dx = sp2.x - sp1.x, dy = sp2.y - sp1.y;
               const len = Math.sqrt(dx*dx+dy*dy) || 1;
               const EXT = 100000;
-              if (shape.type === 'line' || shape.type === 'lineDashed') start = { ...sp1, x: sp1.x - dx/len*EXT, y: sp1.y - dy/len*EXT };
+              if (shape.type === 'line' || shape.type === 'lineDashed' || shape.type === 'lineDashDot') start = { ...sp1, x: sp1.x - dx/len*EXT, y: sp1.y - dy/len*EXT };
               end = { ...sp1, x: sp1.x + dx/len*EXT, y: sp1.y + dy/len*EXT };
             }
             ctx.beginPath();
@@ -5271,9 +5320,10 @@ export function FreeGeometryEditor({
             ctx.lineTo(end.x, end.y);
             ctx.strokeStyle = hoverColor;
             ctx.lineWidth = 8;
-            if (shape.type === 'lineDashed') ctx.setLineDash([12, 8]);
+            if (shape.type === 'lineDashed') applyLineStyle(ctx, 'dashed');
+            else if (shape.type === 'lineDashDot') applyLineStyle(ctx, 'dashdot');
             ctx.stroke();
-            if (shape.type === 'lineDashed') ctx.setLineDash([]);
+            if (shape.type === 'lineDashed' || shape.type === 'lineDashDot') applyLineStyle(ctx, 'solid');
           }
           ctx.restore();
         }
@@ -5354,6 +5404,30 @@ export function FreeGeometryEditor({
              const cx = start.x + (end.x - start.x) * drawProg;
              const cy = start.y + (end.y - start.y) * drawProg;
              drawPenTip(ctx, cx, cy, activeColor);
+        }
+      } else if (type === 'lineDashDot') {
+        const dx = p2.x - p1.x;
+        const dy = p2.y - p1.y;
+        const len = Math.sqrt(dx*dx + dy*dy);
+        const extend = 1000;
+        const start = { x: p1.x - dx/len * extend, y: p1.y - dy/len * extend };
+        const end = { x: p2.x + dx/len * extend, y: p2.y + dy/len * extend };
+
+        if (len <= 200) {
+          const nx = dx / len;
+          const ny = dy / len;
+          const rStart = { x: p1.x - nx * 360, y: p1.y - ny * 360 };
+          const rEnd = { x: p1.x + nx * 440, y: p1.y + ny * 440 };
+          drawRuler(ctx, rStart, rEnd, progress);
+        } else {
+          drawRuler(ctx, p1, p2, progress);
+        }
+        drawLine(ctx, p1, p2, progress, activeColor, activeWidth, false, true);
+
+        if (progress > pIn && progress < pDrawEnd) {
+          const cx = start.x + (end.x - start.x) * drawProg;
+          const cy = start.y + (end.y - start.y) * drawProg;
+          drawPenTip(ctx, cx, cy, activeColor);
         }
       } else if (type === 'ray') {
          drawRuler(ctx, p1, p2, progress);
@@ -5559,7 +5633,7 @@ export function FreeGeometryEditor({
 
       // Zjistit, jestli je bod součástí nebo leží na nějaké přímce/úsečce/paprsku
       const lineShape = shapes.find(s => {
-        if (!['segment', 'line', 'lineDashed', 'ray'].includes(s.type)) return false;
+        if (!['segment', 'line', 'lineDashed', 'lineDashDot', 'ray'].includes(s.type)) return false;
         if (s.definition.p1Id === p.id || s.definition.p2Id === p.id) return true; // definiční bod
         // Zkontrolovat, zda bod leží na přímce (vzdálenost < 3px)
         const sp1 = points.find(pt => pt.id === s.definition.p1Id);
@@ -5915,6 +5989,26 @@ export function FreeGeometryEditor({
              ctx.stroke();
              ctx.restore();
 
+         } else if (activeTool === 'lineDashDot') {
+             if (!isTabletMode) {
+               drawRuler(ctx, p1, p2, 0.5);
+             }
+             const dx = p2.x - p1.x;
+             const dy = p2.y - p1.y;
+             const len = Math.sqrt(dx*dx + dy*dy);
+             const extend = 1000;
+             const start = { x: p1.x - dx/len * extend, y: p1.y - dy/len * extend };
+             const end = { x: p2.x + dx/len * extend, y: p2.y + dy/len * extend };
+             ctx.save();
+             applyLineStyle(ctx, 'dashdot');
+             ctx.beginPath();
+             ctx.moveTo(start.x, start.y);
+             ctx.lineTo(end.x, end.y);
+             ctx.strokeStyle = ghostColor;
+             ctx.lineWidth = ghostLW;
+             ctx.stroke();
+             ctx.restore();
+
          } else if (activeTool === 'ray') {
              if (!isTabletMode) {
                drawRuler(ctx, p1, p2, 0.5);
@@ -5972,7 +6066,7 @@ export function FreeGeometryEditor({
       !animState.isActive &&
       !circleInput.visible &&
       mousePosRef.current &&
-      ['line', 'lineDashed', 'ray'].includes(activeTool)
+      ['line', 'lineDashed', 'lineDashDot', 'ray'].includes(activeTool)
     ) {
       const p1draft = points.find(p => p.id === selectedPointId);
       const p2draft = mousePosRef.current;
@@ -6534,7 +6628,7 @@ export function FreeGeometryEditor({
     }
   };
 
-  const drawSegment = (ctx: CanvasRenderingContext2D, p1: {x:number, y:number}, p2: {x:number, y:number}, progress: number, color: string, width = 2, dashed = false) => {
+  const drawSegment = (ctx: CanvasRenderingContext2D, p1: {x:number, y:number}, p2: {x:number, y:number}, progress: number, color: string, width = 2, dashed = false, dashDot = false) => {
     if (progress <= 0) return;
     
     // Logic from TriangleConstruction
@@ -6552,8 +6646,9 @@ export function FreeGeometryEditor({
       y: p1.y + (p2.y - p1.y) * drawProgress
     };
 
-    if (dashed) ctx.save();
-    if (dashed) ctx.setLineDash([12, 8]);
+    if (dashed || dashDot) ctx.save();
+    if (dashed) applyLineStyle(ctx, 'dashed');
+    if (dashDot) applyLineStyle(ctx, 'dashdot');
 
     ctx.beginPath();
     ctx.moveTo(p1.x, p1.y);
@@ -6563,10 +6658,10 @@ export function FreeGeometryEditor({
     ctx.lineCap = 'round';
     ctx.stroke();
 
-    if (dashed) ctx.restore();
+    if (dashed || dashDot) ctx.restore();
   };
 
-  const drawLine = (ctx: CanvasRenderingContext2D, p1: {x:number, y:number}, p2: {x:number, y:number}, progress: number, color: string, width = 2, dashed = false) => {
+  const drawLine = (ctx: CanvasRenderingContext2D, p1: {x:number, y:number}, p2: {x:number, y:number}, progress: number, color: string, width = 2, dashed = false, dashDot = false) => {
     // Přímka přesahuje body
     const dx = p2.x - p1.x;
     const dy = p2.y - p1.y;
@@ -6584,7 +6679,7 @@ export function FreeGeometryEditor({
       y: p1.y + dy/len * EXTEND
     };
 
-    drawSegment(ctx, start, end, progress, color, width, dashed);
+    drawSegment(ctx, start, end, progress, color, width, dashed, dashDot);
   };
 
   const drawRay = (ctx: CanvasRenderingContext2D, p1: {x:number, y:number}, p2: {x:number, y:number}, progress: number, color: string, width = 2) => {
@@ -7828,6 +7923,7 @@ export function FreeGeometryEditor({
           if (activeTool === 'segment' && selectedPointId) text = segmentInput.active ? `Vyber směr (fixní délka ${segmentInput.length} cm)` : 'Vyber druhý bod úsečky';
           else if (activeTool === 'line' && selectedPointId) text = 'Vyber druhý bod přímky';
           else if (activeTool === 'lineDashed' && selectedPointId) text = 'Vyber druhý bod čárkované přímky';
+          else if (activeTool === 'lineDashDot' && selectedPointId) text = 'Vyber druhý bod čerchované přímky';
           else if (activeTool === 'ray' && selectedPointId) text = 'Vyber druhý bod polopřímky';
           else if (activeTool === 'circle' && !isTabletMode && selectedPointId) text = 'Vyber bod na obvodu (poloměr)';
           else if (activeTool === 'angle' && !isTabletMode && selectedPointId) text = 'Vyber bod na rameni úhlu';
@@ -8986,7 +9082,7 @@ export function FreeGeometryEditor({
                         {renameDraft.shapeIds.map(sid => {
                           const shape = shapes.find(s => s.id === sid);
                           if (!shape || shape.type === 'segment') return null;
-                          const typeLabel = shape.type === 'line' ? 'Přímka' : shape.type === 'lineDashed' ? 'Čárkovaná čára' : shape.type === 'ray' ? 'Polopřímka' : shape.type === 'circle' ? 'Kružnice' : shape.type === 'circleArc' ? 'Výsek kružnice' : shape.type;
+                          const typeLabel = shape.type === 'line' ? 'Přímka' : shape.type === 'lineDashed' ? 'Čárkovaná čára' : shape.type === 'lineDashDot' ? 'Čerchovaná čára' : shape.type === 'ray' ? 'Polopřímka' : shape.type === 'circle' ? 'Kružnice' : shape.type === 'circleArc' ? 'Výsek kružnice' : shape.type;
                           const current = renameDraft.shapesById[sid] ?? '';
                           return (
                             <div key={sid} className="flex items-center gap-3">
