@@ -44,6 +44,7 @@ import {
   ImagePlus,
   Lock,
   Unlock,
+  Palette,
 } from 'lucide-react';
 import { useIsMobile } from './ui/use-mobile';
 import { Slider } from './ui/slider';
@@ -644,6 +645,34 @@ export function FreeGeometryEditor({
   const [showGrid, setShowGrid] = useState(false);
   const canvasWarningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [canvasWarning, setCanvasWarning] = useState<string | null>(null);
+
+  // Highlight color (for highlighter + highlighterStraight)
+  const HIGHLIGHT_COLORS = useMemo(() => ([
+    { id: 'yellow', label: 'Žlutá', rgba: 'rgba(250, 204, 21, 0.4)', swatch: '#facc15' },
+    { id: 'green', label: 'Zelená', rgba: 'rgba(34, 197, 94, 0.35)', swatch: '#22c55e' },
+    { id: 'blue', label: 'Modrá', rgba: 'rgba(59, 130, 246, 0.30)', swatch: '#3b82f6' },
+    { id: 'pink', label: 'Růžová', rgba: 'rgba(236, 72, 153, 0.30)', swatch: '#ec4899' },
+  ] as const), []);
+  type HighlightColorId = typeof HIGHLIGHT_COLORS[number]['id'];
+  const [highlightColorId, setHighlightColorId] = useState<HighlightColorId>('yellow');
+  const [showHighlightPalette, setShowHighlightPalette] = useState(false);
+
+  const highlightColor = useMemo(() => {
+    return HIGHLIGHT_COLORS.find(c => c.id === highlightColorId) ?? HIGHLIGHT_COLORS[0];
+  }, [HIGHLIGHT_COLORS, highlightColorId]);
+
+  // Use a ref for immediate updates (avoid 1-frame lag in preview strokes).
+  const highlightColorRgbaRef = useRef<string>(highlightColor.rgba);
+  useEffect(() => {
+    highlightColorRgbaRef.current = highlightColor.rgba;
+  }, [highlightColor.rgba]);
+
+  useEffect(() => {
+    // Close palette when leaving highlight tools.
+    if (activeTool !== 'highlighter' && activeTool !== 'highlighterStraight') {
+      if (showHighlightPalette) setShowHighlightPalette(false);
+    }
+  }, [activeTool, showHighlightPalette]);
   
   const showCanvasWarning = (msg: string) => {
     if (canvasWarningTimerRef.current) clearTimeout(canvasWarningTimerRef.current);
@@ -665,6 +694,7 @@ export function FreeGeometryEditor({
   const [hoveredShapeForMove, setHoveredShapeForMove] = useState<string | null>(null);
   const marqueeRef = useRef<{startX: number, startY: number, endX: number, endY: number} | null>(null);
   const groupDragRef = useRef<{ startWx: number; startWy: number; pointSnapshots: {id: string; x: number; y: number}[] } | null>(null);
+  const prevActiveToolRef = useRef<ToolType>('move');
 
   const PIXELS_PER_CM = 50; // Základní jednotka: 50px = 1cm (odpovídá mřížce)
   /** Kolmý odstup popisku písmena od čáry/kružnice — ve světě = px / scale (jako u bodů) */
@@ -3020,7 +3050,7 @@ export function FreeGeometryEditor({
            setFreehandPaths(prev => [...prev, {
              id: crypto.randomUUID(),
              points: [start, end],
-             color: 'rgba(250, 204, 21, 0.4)',
+             color: highlightColorRgbaRef.current,
              width: 20,
              isHighlight: true,
            }]);
@@ -3693,7 +3723,7 @@ export function FreeGeometryEditor({
             setFreehandPaths(prev => [...prev, {
                 id: crypto.randomUUID(),
                 points: currentPathRef.current!,
-                color: isHL ? 'rgba(250, 204, 21, 0.4)' : '#3b82f6',
+                color: isHL ? highlightColorRgbaRef.current : '#3b82f6',
                 width: isHL ? 20 : 2,
                 isHighlight: isHL || undefined,
             }]);
@@ -4974,10 +5004,10 @@ export function FreeGeometryEditor({
     if (activeTool === 'highlighter' && currentPathRef.current && currentPathRef.current.length >= 1) {
         const path = currentPathRef.current;
         ctx.beginPath();
-        ctx.strokeStyle = darkMode ? 'rgba(250, 204, 21, 0.4)' : 'rgba(250, 204, 21, 0.4)';
+        ctx.strokeStyle = highlightColorRgbaRef.current;
         ctx.lineWidth = 20 / scale;
         if (path.length === 1) {
-            ctx.fillStyle = 'rgba(250, 204, 21, 0.4)';
+            ctx.fillStyle = highlightColorRgbaRef.current;
             ctx.arc(path[0].x, path[0].y, 10/scale, 0, Math.PI * 2);
             ctx.fill();
         } else {
@@ -5000,7 +5030,7 @@ export function FreeGeometryEditor({
       ctx.save();
       ctx.globalAlpha = 0.45;
       ctx.beginPath();
-      ctx.strokeStyle = 'rgba(250, 204, 21, 0.65)';
+      ctx.strokeStyle = highlightColorRgbaRef.current;
       ctx.lineWidth = 20 / scale;
       ctx.setLineDash([6 / scale, 5 / scale]);
       ctx.moveTo(a.x, a.y);
@@ -7127,6 +7157,11 @@ export function FreeGeometryEditor({
     setPerpBaseId(null);
     setSelectedPointId(null);
     setAngleInput(prev => ({ ...prev, visible: false }));
+    // Straight highlighter should always start with an explicit click (never inherit the last point
+    // from a previous free highlight stroke).
+    if (activeTool === 'highlighterStraight' && prevActiveToolRef.current !== 'highlighterStraight') {
+      lastHighlightPointRef.current = null;
+    }
     if (activeTool !== 'highlighter' && activeTool !== 'highlighterStraight') {
       lastHighlightPointRef.current = null;
     }
@@ -7144,6 +7179,7 @@ export function FreeGeometryEditor({
     }
     anglePerpLineHoverFromMoveRef.current = false;
     setHoveredShape(null);
+    prevActiveToolRef.current = activeTool;
   }, [activeTool]);
 
   const getContainerCursor = (): string => {
@@ -7574,32 +7610,79 @@ export function FreeGeometryEditor({
                             )}
                         </button>
 
-                        {/* Rename ("název") next to the selection tool */}
-                        {group.id === 'group_move' && canRename && (
+                        {/* Context actions next to the selection tool */}
+                        {group.id === 'group_move' && (canRename || activeTool === 'highlighter' || activeTool === 'highlighterStraight') && (
                           <div className="absolute left-full top-1/2 -translate-y-1/2 ml-[18px] flex items-center gap-2">
-                            <button
-                              onClick={() => setShowRenameModal(true)}
-                              onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setShowRenameModal(true); }}
-                              className="w-12 flex flex-col items-center justify-center rounded-xl bg-blue-50 text-blue-500 hover:bg-blue-100 transition-colors py-2 shadow-sm"
-                              title="Název"
-                            >
-                              <Pencil className="w-5 h-5" />
-                              <span className="text-[9px] font-bold mt-0.5 leading-tight">název</span>
-                            </button>
+                            {(activeTool === 'highlighter' || activeTool === 'highlighterStraight') && (
+                              <div className="relative">
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); setShowHighlightPalette(v => !v); }}
+                                  onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setShowHighlightPalette(v => !v); }}
+                                  className="w-12 flex flex-col items-center justify-center rounded-xl bg-white text-gray-700 hover:bg-gray-50 transition-colors py-2 shadow-sm border border-gray-200"
+                                  title="Barva zvýraznění"
+                                >
+                                  <Palette className="w-5 h-5" />
+                                  <span className="text-[9px] font-bold mt-0.5 leading-tight">barva</span>
+                                </button>
 
-                            <button
-                              onClick={(e) => { e.stopPropagation(); toggleLockSelection(); }}
-                              onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); toggleLockSelection(); }}
-                              className="w-12 flex flex-col items-center justify-center rounded-xl bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors py-2 shadow-sm"
-                              title={getSelectionLockState() === 'locked' ? 'Odemknout' : 'Zamknout'}
-                            >
-                              {getSelectionLockState() === 'locked' ? (
-                                <Lock className="w-5 h-5" />
-                              ) : (
-                                <Unlock className="w-5 h-5" />
-                              )}
-                              <span className="text-[9px] font-bold mt-0.5 leading-tight">zámek</span>
-                            </button>
+                                {showHighlightPalette && (
+                                  <div
+                                    className="absolute left-0 top-full mt-2 z-50 rounded-2xl bg-white shadow-[0_10px_30px_rgba(0,0,0,0.15)] border border-gray-100 p-2"
+                                    onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                                    onTouchStart={(e) => { e.stopPropagation(); }}
+                                  >
+                                    <div className="flex items-center gap-2 px-1 py-1">
+                                      {HIGHLIGHT_COLORS.map(c => (
+                                        <button
+                                          key={c.id}
+                                          onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            highlightColorRgbaRef.current = c.rgba;
+                                            setHighlightColorId(c.id);
+                                            setShowHighlightPalette(false);
+                                          }}
+                                          onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setHighlightColorId(c.id); setShowHighlightPalette(false); }}
+                                          className={`h-8 w-8 rounded-full border transition-all ${
+                                            c.id === highlightColorId ? 'border-gray-900 ring-2 ring-gray-900/10' : 'border-gray-200 hover:border-gray-400'
+                                          }`}
+                                          style={{ background: c.swatch }}
+                                          title={c.label}
+                                        />
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {canRename && (
+                              <>
+                                <button
+                                  onClick={() => setShowRenameModal(true)}
+                                  onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setShowRenameModal(true); }}
+                                  className="w-12 flex flex-col items-center justify-center rounded-xl bg-blue-50 text-blue-500 hover:bg-blue-100 transition-colors py-2 shadow-sm"
+                                  title="Název"
+                                >
+                                  <Pencil className="w-5 h-5" />
+                                  <span className="text-[9px] font-bold mt-0.5 leading-tight">název</span>
+                                </button>
+
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); toggleLockSelection(); }}
+                                  onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); toggleLockSelection(); }}
+                                  className="w-12 flex flex-col items-center justify-center rounded-xl bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors py-2 shadow-sm"
+                                  title={getSelectionLockState() === 'locked' ? 'Odemknout' : 'Zamknout'}
+                                >
+                                  {getSelectionLockState() === 'locked' ? (
+                                    <Lock className="w-5 h-5" />
+                                  ) : (
+                                    <Unlock className="w-5 h-5" />
+                                  )}
+                                  <span className="text-[9px] font-bold mt-0.5 leading-tight">zámek</span>
+                                </button>
+                              </>
+                            )}
                           </div>
                         )}
                         </div>
@@ -7645,8 +7728,9 @@ export function FreeGeometryEditor({
                                 })}
                             </div>
                         )}
-                        {/* Tooltip (jen pro skupiny s 1 nástrojem) */}
-                        {group.tools.length === 1 && (
+                        {/* Tooltip (jen pro skupiny s 1 nástrojem)
+                            - u "Výběr" by překážel kontextovým tlačítkům (název/zámek/barva) */}
+                        {group.tools.length === 1 && group.id !== 'group_move' && (
                             <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-black/80 text-white text-xs rounded-lg whitespace-nowrap opacity-0 group-hover/tool:opacity-100 transition-opacity pointer-events-none">
                                 {group.label}
                             </div>
