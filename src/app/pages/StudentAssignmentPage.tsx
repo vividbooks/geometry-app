@@ -37,6 +37,20 @@ const DEFAULT_ASIDE_PX = 288;
 // Feature flag: keep detection code, hide UI for now.
 const SHOW_OBJECT_DETECT_UI = false;
 
+function detectPreferredGeometryDeviceType(): 'board' | 'computer' {
+  if (typeof window === 'undefined') return 'computer';
+  try {
+    const coarsePointer = window.matchMedia?.('(pointer: coarse)')?.matches ?? false;
+    const noHover = window.matchMedia?.('(hover: none)')?.matches ?? false;
+    const touchPoints = Number((navigator as any)?.maxTouchPoints ?? 0);
+    // Prefer "board/tablet" only when the environment looks touch-first.
+    if (coarsePointer || (touchPoints > 0 && noHover)) return 'board';
+    return 'computer';
+  } catch {
+    return 'computer';
+  }
+}
+
 function readAsideWidth(): number {
   if (typeof sessionStorage === 'undefined') return DEFAULT_ASIDE_PX;
   const v = Number(sessionStorage.getItem(ASIDE_W_KEY));
@@ -106,6 +120,9 @@ export default function StudentAssignmentPage() {
   const [assignment, setAssignment] = useState<AssignmentRow | null>(null);
   const [stepIndex, setStepIndex] = useState(0);
   const [darkMode, setDarkMode] = useState(false);
+  const [preferredDeviceType, setPreferredDeviceType] = useState<'board' | 'computer'>(
+    detectPreferredGeometryDeviceType(),
+  );
 
   const [gateName, setGateName] = useState('');
   /** Jméno pro odevzdání — prázdné = doplní se dialogem při odevzdání (pokud není v sessionStorage) */
@@ -161,6 +178,9 @@ export default function StudentAssignmentPage() {
       setLoadState('error');
       return;
     }
+    // Only when opening a student assignment: auto-pick tablet vs PC defaults.
+    // (Free drawing keeps user choice via the manual toggle.)
+    setPreferredDeviceType(detectPreferredGeometryDeviceType());
     const saved = sessionStorage.getItem(nameStorageKey(assignmentId));
     if (saved?.trim()) setStudentName(saved.trim());
     const savedNote = sessionStorage.getItem(noteStorageKey(assignmentId));
@@ -370,7 +390,7 @@ export default function StudentAssignmentPage() {
               onBack={() => {}}
               darkMode={darkMode}
               onDarkModeChange={setDarkMode}
-              deviceType="board"
+              deviceType={preferredDeviceType}
               embedInAssignment
               initialCanvasSnapshot={initialCanvasSnapshot}
               submissionSnapshotRef={submissionSnapshotRef}
