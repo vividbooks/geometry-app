@@ -1901,7 +1901,8 @@ export function FreeGeometryEditor({
       pendingCircleCenterRef.current = null;
       // Remove the orphaned center point (only if it's not used by any shape)
       setPoints(prev => {
-        const usedByShape = shapes.some(s =>
+        // IMPORTANT: use ref-backed shapes to avoid stale closure deleting a valid point.
+        const usedByShape = shapesStateRef.current.some(s =>
           s.definition.p1Id === pendingId || s.definition.p2Id === pendingId
         );
         if (usedByShape) return prev;
@@ -5740,14 +5741,16 @@ export function FreeGeometryEditor({
       );
       const isCircleRadiusPoint = !!circleShapeForHandle;
       if (isCircleRadiusPoint) {
-        const showCircleHandle =
-          activeTool === 'move' && selectedShapeIds.includes(circleShapeForHandle!.id);
-        if (!showCircleHandle) return;
-
         const usedByOtherShape = shapes.some(
           s => s.type !== 'circle' && s.type !== 'circleArc' && s.points.includes(p.id)
         );
-        if (!p.label && !usedByOtherShape) {
+        // Hide ONLY unlabeled helper radius points. If the user picked an existing labeled point
+        // on the circle, keep it visible as a normal point.
+        const isHelperRadiusHandle = !p.label && !usedByOtherShape;
+        if (isHelperRadiusHandle) {
+          const showCircleHandle =
+            activeTool === 'move' && selectedShapeIds.includes(circleShapeForHandle!.id);
+          if (!showCircleHandle) return;
           // Vykreslit jako táhlo (handle) — NE jako bod
           const center = points.find(pt => pt.id === circleShapeForHandle!.definition.p1Id);
           if (center) {
