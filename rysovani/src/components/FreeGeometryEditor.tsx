@@ -7320,7 +7320,7 @@ export function FreeGeometryEditor({
         }`}
         title={isTabletMode ? 'Klasický režim' : 'Režim pro tabule a tablety'}
       >
-        {isTabletMode ? '📱 Tabule' : '🖥️ PC'}
+        {isTabletMode ? '📱 Tablet' : '🖥️ PC'}
       </button>
     </>
   );

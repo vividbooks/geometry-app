@@ -16,7 +16,15 @@ import {
   BookOpen,
   Square,
   Box,
+  Info,
 } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 // SVG illustrations from rysovani design
 import TabuleIllustration from '../../../rysovani/src/imports/Group23925';
@@ -479,6 +487,7 @@ export function Landing({ mode }: { mode: LandingMode }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const taskLibrary = useMemo(() => [...TASK_LIBRARY], []);
   const config = MODE_CONFIG[mode];
+  const [helpOpen, setHelpOpen] = useState(false);
   const tabFromUrl = searchParams.get('tab');
   const activeFilter: ViewFilter = (tabFromUrl && config.filters.includes(tabFromUrl as ViewFilter))
     ? tabFromUrl as ViewFilter
@@ -546,8 +555,160 @@ export function Landing({ mode }: { mode: LandingMode }) {
               {HEADING_MAP[f]}
             </button>
           ))}
+          <button
+            type="button"
+            onClick={() => setHelpOpen(true)}
+            onTouchEnd={(e) => {
+              e.preventDefault();
+              setHelpOpen(true);
+            }}
+            title="Nápověda k ovládání rýsování"
+            style={{
+              fontFamily: "'Fenomen Sans', sans-serif",
+              padding: '12px 22px',
+              borderRadius: '9999px',
+              fontSize: '16px',
+              fontWeight: 600,
+              border: '2px solid #4e5871',
+              background: 'white',
+              color: '#4e5871',
+              transition: 'all 200ms',
+              cursor: 'pointer',
+              margin: '4px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '10px',
+            }}
+          >
+            <Info size={18} aria-hidden />
+            Nápověda
+          </button>
         </div>
       </div>
+
+      <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Nápověda</DialogTitle>
+            <DialogDescription>
+              Ovládání rýsování + zadávání a tvorba úkolů.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div style={{ fontFamily: "'Fenomen Sans', sans-serif", color: '#4e5871', fontSize: 15, lineHeight: 1.55 }}>
+            <div style={{ marginBottom: 10, fontSize: 13, opacity: 0.8 }}>
+              Tip: dialog jde zavřít klávesou <strong>Esc</strong>.
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontWeight: 700, color: '#09056f', marginBottom: 6 }}>Plátno (posun a zoom)</div>
+              <ul style={{ margin: 0, paddingLeft: 20 }}>
+                <li><strong>Posun plátna</strong>: zvol nástroj <strong>Posun plátna</strong> a táhni.</li>
+                <li><strong>Zoom</strong>: kolečko myši / trackpad; na dotyku <strong>pinch</strong> (2 prsty).</li>
+                <li><strong>Dva prsty</strong> na dotyku: zároveň <strong>zoom + posun</strong> podle pohybu středu gest.</li>
+              </ul>
+            </div>
+
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontWeight: 700, color: '#09056f', marginBottom: 6 }}>Výběr a úpravy</div>
+              <ul style={{ margin: 0, paddingLeft: 20 }}>
+                <li><strong>Klik</strong> vybere bod nebo tvar (když je zapnutý nástroj Výběr/Posun).</li>
+                <li><strong>Esc</strong> zruší výběr a vrátí editor do výchozího stavu.</li>
+              </ul>
+            </div>
+
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontWeight: 700, color: '#09056f', marginBottom: 6 }}>Mazání</div>
+              <ul style={{ margin: 0, paddingLeft: 20 }}>
+                <li><strong>Delete</strong> nebo <strong>Backspace</strong> smaže vybraný bod / vybrané tvary / vybranou volnou kresbu.</li>
+              </ul>
+            </div>
+
+            <div style={{ marginBottom: 18 }}>
+              <div style={{ fontWeight: 700, color: '#09056f', marginBottom: 6 }}>Historie</div>
+              <ul style={{ margin: 0, paddingLeft: 20 }}>
+                <li><strong>Ctrl+Z</strong>: zpět (Undo)</li>
+                <li><strong>Ctrl+Y</strong> nebo <strong>Ctrl+Shift+Z</strong>: znovu (Redo)</li>
+              </ul>
+            </div>
+
+            <div
+              style={{
+                height: 1,
+                background: '#e5e7eb',
+                margin: '18px 0',
+              }}
+            />
+
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontWeight: 800, color: '#09056f', marginBottom: 8 }}>Úkoly (zadání pro studenty)</div>
+              <div style={{ fontSize: 14, opacity: 0.85, marginBottom: 10 }}>
+                Záložka <strong>Úkoly</strong> je určená pro učitele: vybereš hotové zadání z knihovny, nebo vytvoříš nové a pošleš studentům odkaz / QR.
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontWeight: 700, color: '#1e1b4b', marginBottom: 6 }}>Knihovna úkolů</div>
+                <ul style={{ margin: 0, paddingLeft: 20 }}>
+                  <li>
+                    Otevři záložku <strong>Úkoly</strong> – uvidíš seznam hotových zadání.
+                  </li>
+                  <li>
+                    U každého zadání můžeš <strong>Otevřít</strong> náhled, <strong>zkopírovat odkaz</strong> pro studenty nebo zobrazit <strong>QR kód</strong>.
+                  </li>
+                  <li>
+                    Tlačítko <strong>Upravit</strong> načte zadání do editoru, kde si ho můžeš upravit a uložit jako nové.
+                  </li>
+                </ul>
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontWeight: 700, color: '#1e1b4b', marginBottom: 6 }}>Vytvořit úkol</div>
+                <ul style={{ margin: 0, paddingLeft: 20 }}>
+                  <li>
+                    V části <strong>Vytvořit úkol</strong> můžeš (volitelně) vyplnit <strong>Název zadání</strong>.
+                  </li>
+                  <li>
+                    Přidej jeden nebo více <strong>kroků zadání</strong> – studentům se zobrazí jako očíslovaný seznam.
+                  </li>
+                  <li>
+                    Ke kroku lze přidat <strong>obrázek</strong> (soubor) nebo použít tlačítko <strong>Narýsovat</strong> a vložit rýsování jako obrázek.
+                  </li>
+                  <li>
+                    Volitelné <strong>Sdílené plátno</strong>: v rýsování použij tlačítko <strong>Sdílet plátno</strong> (zkopíruje odkaz), odkaz vlož sem a dej <strong>Vložit plátno</strong>.
+                    Úkol se pak studentům otevře s připraveným výchozím plátnem.
+                  </li>
+                  <li>
+                    Klikni na <strong>Publikovat úkol</strong> – zobrazí se odkaz, který můžeš <strong>zkopírovat</strong> nebo promítnout jako <strong>QR kód</strong>.
+                  </li>
+                </ul>
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontWeight: 700, color: '#1e1b4b', marginBottom: 6 }}>Editovat úkol podle odkazu</div>
+                <ul style={{ margin: 0, paddingLeft: 20 }}>
+                  <li>
+                    Vlož <strong>URL</strong> studentské stránky nebo přímo <strong>UUID</strong> zadání.
+                  </li>
+                  <li>
+                    Tlačítko <strong>Načíst a editovat</strong> načte obsah do editoru – po úpravě se ukládá jako <strong>nové</strong> zadání.
+                  </li>
+                </ul>
+              </div>
+
+              <div>
+                <div style={{ fontWeight: 700, color: '#1e1b4b', marginBottom: 6 }}>Co uvidí student</div>
+                <ul style={{ margin: 0, paddingLeft: 20 }}>
+                  <li>
+                    Student otevře odkaz/QR, vyplní jméno a vpravo vidí zadání; na plátně vypracuje konstrukci/rýsování.
+                  </li>
+                  <li>
+                    Pokud je v zadání použité <strong>sdílené plátno</strong>, student začíná z připraveného výchozího stavu.
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Dlaždice */}
       <div
@@ -599,52 +760,6 @@ export function Landing({ mode }: { mode: LandingMode }) {
               {drawingItems.map((item) => (
                 <DrawingCard key={item.id} item={item} />
               ))}
-            </div>
-            <div
-              style={{
-                marginTop: '32px',
-                maxWidth: '640px',
-                padding: '20px 22px',
-                borderRadius: '20px',
-                border: '1px solid #e5e7eb',
-                background: '#fafafa',
-              }}
-            >
-              <div
-                style={{
-                  fontFamily: "'Fenomen Sans', sans-serif",
-                  fontSize: '15px',
-                  fontWeight: 600,
-                  color: '#09056f',
-                  marginBottom: '12px',
-                }}
-              >
-                Novinky ve volném rýsování
-              </div>
-              <ul
-                style={{
-                  fontFamily: "'Fenomen Sans', sans-serif",
-                  fontSize: '15px',
-                  lineHeight: 1.55,
-                  color: '#4e5871',
-                  margin: 0,
-                  paddingLeft: '20px',
-                  fontWeight: 400,
-                }}
-              >
-                <li style={{ marginBottom: '8px' }}>
-                  <strong>Zvýraznění podle pravítka</strong> — v menu pod tužkou; rovné úseky zvýraznění po dvou kliknutích (jako při držení Shift u klasického zvýraznění).
-                </li>
-                <li style={{ marginBottom: '8px' }}>
-                  <strong>Čárkovaná čára</strong> — v nabídce Konstrukce (čárkovaná přímka vedle klasické přímky).
-                </li>
-                <li style={{ marginBottom: '8px' }}>
-                  <strong>Výsek kružnice</strong> — v režimu kružítko lze narýsovat jen část obvodu (oblouk), ne jen celou kružnici.
-                </li>
-                <li>
-                  Popisky bodů uhýbají čarám, aby byly vždy viditelné.
-                </li>
-              </ul>
             </div>
           </>
         )}
