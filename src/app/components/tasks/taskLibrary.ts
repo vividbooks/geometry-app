@@ -76,6 +76,11 @@ export const TASK_LIBRARY: TaskLibraryEntry[] = [
     title: 'Úkol',
     assignmentId: 'c596a498-a022-4941-9f72-6650fd3a24b9',
   },
+  {
+    key: '159169ae-480a-4c9e-964f-62b81cf11376',
+    title: 'Úkol',
+    assignmentId: '159169ae-480a-4c9e-964f-62b81cf11376',
+  },
 ];
 
 /** Absolutni src pro <img> (Vite base + relativni cesta z public). */
