@@ -32,6 +32,11 @@ export const TASK_LIBRARY: TaskLibraryEntry[] = [
     assignmentId: '0b929f76-a736-4002-82e5-92383547a88c',
   },
   {
+    key: '4eebb8f0-07fb-4859-bcfb-13df932c27e4',
+    title: 'Úkol',
+    assignmentId: '4eebb8f0-07fb-4859-bcfb-13df932c27e4',
+  },
+  {
     key: 'f5b65da4-c347-4517-85ea-a5dbf43ba982',
     title: 'Úkol',
     assignmentId: 'f5b65da4-c347-4517-85ea-a5dbf43ba982',
