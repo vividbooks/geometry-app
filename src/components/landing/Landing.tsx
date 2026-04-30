@@ -175,6 +175,19 @@ function AngleTransferCardArt() {
   );
 }
 
+/** Dva úhly u společného vrcholu — náznak sčítání (vnitřní a vnější oblouk). */
+function AngleSumCardArt() {
+  return (
+    <svg width={88} height={88} viewBox="0 0 88 88" fill="none" aria-hidden style={{ opacity: 0.72 }}>
+      <path d="M 14 58 H 72" stroke="#4e5871" strokeWidth={2.75} strokeLinecap="round" />
+      <path d="M 14 58 L 52 32" stroke="#4e5871" strokeWidth={2.75} strokeLinecap="round" />
+      <path d="M 14 58 L 62 22" stroke="#4e5871" strokeWidth={2.75} strokeLinecap="round" />
+      <path d="M 26 58 A 12 12 0 0 1 24.5 49" stroke="#7c5cde" strokeWidth={2.15} fill="none" strokeLinecap="round" />
+      <path d="M 30 58 A 20 20 0 0 1 26 44" stroke="#5b4ddb" strokeWidth={2.25} fill="none" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 const constructionItems: ConstructionItem[] = [
   {
     id: 'bisector',
@@ -229,6 +242,15 @@ const constructionItems: ConstructionItem[] = [
     headerPreview: <AngleTransferCardArt />,
     color: '#f0e7ff',
     recordingId: 'dx91ahfi9z',
+  },
+  {
+    id: 'recording-scitani-uhlu',
+    title: 'Sčítání úhlů',
+    description: 'Sestroj úhel se stejnou velikostí jako součet dvou daných úhlů — krok po kroku.',
+    grade: '7. ročník',
+    headerPreview: <AngleSumCardArt />,
+    color: '#dff5f0',
+    recordingId: 's2t6yhuozz',
   },
 ];
 
