@@ -188,6 +188,18 @@ function AngleSumCardArt() {
   );
 }
 
+/** Úhel a jeho osa (rozpůlující přímka). */
+function AngleAxisCardArt() {
+  return (
+    <svg width={88} height={88} viewBox="0 0 88 88" fill="none" aria-hidden style={{ opacity: 0.72 }}>
+      <path d="M 44 62 L 22 34" stroke="#4e5871" strokeWidth={2.75} strokeLinecap="round" />
+      <path d="M 44 62 L 66 34" stroke="#4e5871" strokeWidth={2.75} strokeLinecap="round" />
+      <path d="M 44 62 L 44 20" stroke="#c026d3" strokeWidth={2.5} strokeLinecap="round" strokeDasharray="5 4" />
+      <path d="M 38 54 A 12 12 0 0 1 50 54" stroke="#5b4ddb" strokeWidth={2.15} fill="none" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 const constructionItems: ConstructionItem[] = [
   {
     id: 'bisector',
@@ -251,6 +263,15 @@ const constructionItems: ConstructionItem[] = [
     headerPreview: <AngleSumCardArt />,
     color: '#dff5f0',
     recordingId: 's2t6yhuozz',
+  },
+  {
+    id: 'recording-osa-uhlu',
+    title: 'Osa úhlu',
+    description: 'Narýsuj osu zadaného úhlu — interaktivní postup krok po kroku.',
+    grade: '7. ročník',
+    headerPreview: <AngleAxisCardArt />,
+    color: '#fde8f3',
+    recordingId: 'ebji7kh3i8',
   },
 ];
 
