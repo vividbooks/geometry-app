@@ -153,9 +153,26 @@ interface ConstructionItem {
   title: string;
   description: string;
   grade: string;
-  icon: React.ElementType;
+  /** Ikona v horní části karty; vynecháš, pokud používáš `headerPreview`. */
+  icon?: React.ElementType;
+  /** Vlastní výkres místo Lucide ikony (např. náznak úhlu). */
+  headerPreview?: React.ReactNode;
   color: string;
-  view: string;
+  /** Rýsování menu view (bez záznamu). */
+  view?: string;
+  /** Sdílený záznam z editoru — při kliknutí `/rysovani?recording=…`. */
+  recordingId?: string;
+}
+
+/** Jednoduchý náčrt úhlu pro kartu konstrukce (vrchol, ramena, oblouk). */
+function AngleTransferCardArt() {
+  return (
+    <svg width={88} height={88} viewBox="0 0 88 88" fill="none" aria-hidden style={{ opacity:0.72 }}>
+      <path d="M 16 60 H 70" stroke="#4e5871" strokeWidth={2.75} strokeLinecap="round" />
+      <path d="M 16 60 L 58 24" stroke="#4e5871" strokeWidth={2.75} strokeLinecap="round" />
+      <path d="M 32 60 A 16 16 0 0 1 27.8 46.2" stroke="#5b4ddb" strokeWidth={2.25} fill="none" strokeLinecap="round" />
+    </svg>
+  );
 }
 
 const constructionItems: ConstructionItem[] = [
@@ -203,6 +220,15 @@ const constructionItems: ConstructionItem[] = [
     icon: Shapes,
     color: '#e8f5e9',
     view: 'angle-triangle',
+  },
+  {
+    id: 'recording-prehravani-uhlu',
+    title: 'Přenášení úhlu',
+    description: 'Přenes úhel na novou přímku — interaktivní postup krok po kroku.',
+    grade: '7. ročník',
+    headerPreview: <AngleTransferCardArt />,
+    color: '#f0e7ff',
+    recordingId: 'dx91ahfi9z',
   },
 ];
 
@@ -404,10 +430,13 @@ function DrawingCard({ item }: { item: DrawingItem }) {
 function ConstructionCard({ item }: { item: ConstructionItem }) {
   const navigate = useNavigate();
   const Icon = item.icon;
+  const target = item.recordingId
+    ? `/rysovani?recording=${encodeURIComponent(item.recordingId)}`
+    : `/rysovani?view=${item.view}`;
   return (
     <div
-      onClick={() => navigate(`/rysovani?view=${item.view}`)}
-      onTouchEnd={(e) => { e.preventDefault(); navigate(`/rysovani?view=${item.view}`); }}
+      onClick={() => navigate(target)}
+      onTouchEnd={(e) => { e.preventDefault(); navigate(target); }}
       role="button"
       tabIndex={0}
       style={{
@@ -447,7 +476,7 @@ function ConstructionCard({ item }: { item: ConstructionItem }) {
           backgroundColor: item.color,
         }}
       >
-        <Icon size={44} strokeWidth={1.4} style={{ color: '#4e5871', opacity: 0.6 }} />
+        {item.headerPreview ?? (Icon ? <Icon size={44} strokeWidth={1.4} style={{ color: '#4e5871', opacity: 0.6 }} /> : null)}
       </div>
 
       {/* Content */}
