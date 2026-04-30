@@ -1885,15 +1885,6 @@ export function FreeGeometryEditor({
     };
   }, []);
 
-  // Initialize compass center when compass mode opens
-  useEffect(() => {
-    if (circleInput.visible && !circleInput.center) {
-      const centerX = (canvasSize.width / 2 - offset.x) / scale;
-      const centerY = (canvasSize.height / 2 - offset.y) / scale;
-      setCircleInput(prev => ({ ...prev, center: { x: centerX, y: centerY } }));
-    }
-  }, [circleInput.visible, circleInput.center]);
-
   // Cleanup pending circle center when tool changes or circle creation is cancelled
   useEffect(() => {
     if (activeTool !== 'circle' && pendingCircleCenterRef.current) {
@@ -2540,7 +2531,11 @@ export function FreeGeometryEditor({
       return;
     }
     if (circleInput.visible && !circleInput.center) {
-      return; // Center not yet initialized
+      const snap = getSnapPositionPreferPoint(wx, wy, 30);
+      const snapX = snap ? snap.x : wx;
+      const snapY = snap ? snap.y : wy;
+      setCircleInput(prev => ({ ...prev, center: { x: snapX, y: snapY } }));
+      return;
     }
 
     if (angleInput.visible) {
@@ -6540,6 +6535,19 @@ export function FreeGeometryEditor({
          drawPenTip(ctx, angleInput.customVertex.x, angleInput.customVertex.y, '#f97316');
     }
 
+    // Režim kružítko–rozměr: před výběrem středu — náhled místa kliknutí (žádná kružnice)
+    if (circleInput.visible && !circleInput.center && mousePosRef.current && !animState.isActive) {
+      const mx = mousePosRef.current.x;
+      const my = mousePosRef.current.y;
+      const snap = getSnapPositionPreferPoint(mx, my, 30);
+      const px = snap ? snap.x : mx;
+      const py = snap ? snap.y : my;
+      ctx.save();
+      ctx.globalAlpha = darkMode ? 0.92 : 0.88;
+      drawPenTip(ctx, px, py, darkMode ? '#7aa2f7' : '#3b82f6');
+      ctx.restore();
+    }
+
     // 4b. COMPASS MODE — náhled podle režimu; poloměr i „Narýsovat“ vždy ve směru handle (stejný úhel všude)
     if (circleInput.visible && circleInput.center) {
          const cc = circleInput.center;
@@ -7985,17 +7993,25 @@ export function FreeGeometryEditor({
       {!recordingState.showPlayer && activeTool === 'circle' && !circleInput.visible && !(isTabletMode && circleTabletState.active) && !selectedPointId && (
         <button
           onClick={() => {
-            const cx = (canvasSize.width / 2 - offset.x) / scale;
-            const cy = (canvasSize.height / 2 - offset.y) / scale;
-            setCircleInput(prev => ({ ...prev, visible: true, center: { x: cx, y: cy } }));
+            setCircleInput(prev => ({
+              ...prev,
+              visible: true,
+              center: null,
+              isDraggingCenter: false,
+              isDraggingHandle: false,
+            }));
             setCircleTabletState({ active: false, centerId: null, center: null, radius: 150, isDraggingHandle: false, handlePos: null });
             setSelectedPointId(null);
           }}
           onTouchEnd={(e) => {
             e.preventDefault(); e.stopPropagation();
-            const cx = (canvasSize.width / 2 - offset.x) / scale;
-            const cy = (canvasSize.height / 2 - offset.y) / scale;
-            setCircleInput(prev => ({ ...prev, visible: true, center: { x: cx, y: cy } }));
+            setCircleInput(prev => ({
+              ...prev,
+              visible: true,
+              center: null,
+              isDraggingCenter: false,
+              isDraggingHandle: false,
+            }));
             setCircleTabletState({ active: false, centerId: null, center: null, radius: 150, isDraggingHandle: false, handlePos: null });
             setSelectedPointId(null);
           }}
@@ -8210,6 +8226,8 @@ export function FreeGeometryEditor({
               Rýsuji...
             </span>
           );
+        } else if (circleInput.visible && !circleInput.center) {
+          content = <span>Klikni na plátno – výběr středu kružnice</span>;
         } else if (isTabletMode && (activeTool === 'perpendicular' || activeTool === 'circle' || activeTool === 'angle')) {
           let tabletText = '';
           if (activeTool === 'perpendicular') {
@@ -8293,7 +8311,7 @@ export function FreeGeometryEditor({
                      Kružítko - Rozměr
                    </h3>
                    <p className={`text-[10px] mt-1 ${darkMode ? 'text-[#565f89]' : 'text-gray-400'}`}>
-                     Táhni střed nebo handle na plátně
+                     Nejprve klikni na plátno (střed), pak táhni střed nebo handle
                    </p>
               </div>
             
