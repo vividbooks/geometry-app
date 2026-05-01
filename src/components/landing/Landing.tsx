@@ -11,6 +11,7 @@ import {
   Ruler,
   Shapes,
   FlipHorizontal,
+  CircleDot,
   ArrowRight,
   Pencil,
   BookOpen,
@@ -218,6 +219,16 @@ const constructionItems: ConstructionItem[] = [
     icon: FlipHorizontal,
     color: '#f5f8d0',
     view: 'axial-symmetry',
+  },
+  {
+    id: 'recording-stredova-soum',
+    title: 'Středově souměrný obraz',
+    description:
+      'Obraz trojúhelníku ve středové souměrnosti podle daného středu — interaktivní postup krok po kroku.',
+    grade: '6. ročník',
+    icon: CircleDot,
+    color: '#e8ecff',
+    recordingId: 'c586tcyll1',
   },
   {
     id: 'triangle-sss',

@@ -86,6 +86,36 @@ export const TASK_LIBRARY: TaskLibraryEntry[] = [
     title: 'Úkol',
     assignmentId: '98662fb0-80ba-4549-b675-8b1e97000dfc',
   },
+  {
+    key: '8e9975f0-3f7a-4b77-8cae-79f5ff93d10e',
+    title: 'Osová souměrnost 1',
+    assignmentId: '8e9975f0-3f7a-4b77-8cae-79f5ff93d10e',
+  },
+  {
+    key: '9415e7a8-5cdb-499c-a1a2-b4873816ec57',
+    title: 'Osová souměrnost 2',
+    assignmentId: '9415e7a8-5cdb-499c-a1a2-b4873816ec57',
+  },
+  {
+    key: '8e7c1435-66a7-4890-9fe1-eeda0cde8beb',
+    title: 'Osová souměrnost 3',
+    assignmentId: '8e7c1435-66a7-4890-9fe1-eeda0cde8beb',
+  },
+  {
+    key: 'f9a4741a-b4c0-4ef7-b290-2c3a65118d75',
+    title: 'Středová souměrnost 1',
+    assignmentId: 'f9a4741a-b4c0-4ef7-b290-2c3a65118d75',
+  },
+  {
+    key: 'cc0c2450-e4fc-4d2a-b11a-fe25a3571d80',
+    title: 'Středová souměrnost 2',
+    assignmentId: 'cc0c2450-e4fc-4d2a-b11a-fe25a3571d80',
+  },
+  {
+    key: 'e9ce3925-a2c9-4086-b579-15280cff2375',
+    title: 'Středová souměrnost 3',
+    assignmentId: 'e9ce3925-a2c9-4086-b579-15280cff2375',
+  },
 ];
 
 /** Absolutni src pro <img> (Vite base + relativni cesta z public). */

@@ -52,6 +52,7 @@ import {
   type TaskLibraryEntry,
 } from './taskLibrary';
 import { parseAssignmentIdFromUrlOrUuid } from '@/app/utils/assignmentUrl';
+import { normalizeInitialCanvasSnapshot } from '@/app/utils/assignmentCanvasFixes';
 import {
   firstStepImage,
   instructionStepsToFallbackText,
@@ -515,7 +516,7 @@ export function TasksSheet({
 
       setTitle(String((data as any).title ?? '').trim());
       setSteps(nextSteps.length > 0 ? nextSteps : [{ text: '', image: null }]);
-      const snap = (data as any).initial_canvas_snapshot;
+      const snap = normalizeInitialCanvasSnapshot(assignmentId, (data as any).initial_canvas_snapshot);
       if (snap && typeof snap === 'object') {
         const s = snap as any;
         if (Array.isArray(s.points) && Array.isArray(s.shapes)) {

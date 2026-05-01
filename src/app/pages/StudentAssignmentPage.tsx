@@ -19,6 +19,7 @@ import { Label } from '@/components/ui/label';
 import { getSupabase } from '@/lib/supabase';
 import { CIRCUIT_ASSIGNMENTS_TABLE, CIRCUIT_SUBMISSIONS_TABLE } from '@/lib/circuitTables';
 import { submissionPublicUrl } from '../utils/appUrl';
+import { normalizeInitialCanvasSnapshot } from '../utils/assignmentCanvasFixes';
 import { assignmentInstructionDisplay } from '../utils/instructionSteps';
 import { toast } from 'sonner';
 
@@ -316,7 +317,10 @@ export default function StudentAssignmentPage() {
   }, [assignment]);
 
   const initialCanvasSnapshot = useMemo<GeometrySubmissionSnapshot | null>(() => {
-    const raw = assignment?.initial_canvas_snapshot;
+    const raw =
+      assignmentId && assignment?.initial_canvas_snapshot != null
+        ? normalizeInitialCanvasSnapshot(assignmentId, assignment.initial_canvas_snapshot)
+        : assignment?.initial_canvas_snapshot;
     if (!raw || typeof raw !== 'object') return null;
     const s = raw as any;
     if (!Array.isArray(s.points) || !Array.isArray(s.shapes)) return null;
@@ -325,7 +329,7 @@ export default function StudentAssignmentPage() {
       shapes: s.shapes,
       freehandPaths: Array.isArray(s.freehandPaths) ? s.freehandPaths : [],
     } as GeometrySubmissionSnapshot;
-  }, [assignment]);
+  }, [assignment, assignmentId]);
 
   const stepsCount = instructionView?.kind === 'steps' ? instructionView.steps.length : 0;
   const activeStep =
