@@ -45,6 +45,7 @@ import {
   Lock,
   Unlock,
   Palette,
+  Sparkles,
 } from 'lucide-react';
 import { useIsMobile } from './ui/use-mobile';
 import { Slider } from './ui/slider';
@@ -207,6 +208,10 @@ export interface GeoShape {
   label: string;
   points: string[]; // IDs bodů, na kterých tvar závisí
   locked?: boolean;
+  /** Tenší čára (přepínač Tenká linka). */
+  thinStroke?: boolean;
+  /** Výraznější barva čáry (přepínač Zvýraznění). */
+  emphasisStroke?: boolean;
   definition: {
     p1Id: string;
     p2Id?: string; // Pro kružnici je to bod na obvodu
@@ -451,6 +456,21 @@ function circleArcRadiusHandlePos(
   return ey >= sy ? { x: ex, y: ey } : { x: sx, y: sy };
 }
 
+const EMPTY_PROTECTED_IDS = new Set<string>();
+/** Úkol bez výchozího sdíleného plátna — žádné ID k ochraně. */
+const EMPTY_ASSIGNMENT_BASELINE_IDS = {
+  points: EMPTY_PROTECTED_IDS,
+  shapes: EMPTY_PROTECTED_IDS,
+  freehand: EMPTY_PROTECTED_IDS,
+};
+
+/** Tloušťka tahu ve světových souřadnicích pro „tenká linka“ (běžný tvar ≈ 2). */
+const SHAPE_THIN_STROKE_WORLD = 0.28;
+/** Modré halo výběru (světové jednotky). */
+const SELECTION_GLOW_STROKE_WORLD = 8.5;
+/** Modrý obrys výběru (světové jednotky). */
+const SELECTION_OUTLINE_STROKE_WORLD = 1.75;
+
 // --- HLAVNÍ KOMPONENTA ---
 
 export function FreeGeometryEditor({
@@ -541,6 +561,18 @@ export function FreeGeometryEditor({
   useEffect(() => {
     shapesStateRef.current = shapes;
   }, [shapes]);
+
+  /** Počáteční stav plátna v úkolu (sdílené plátno) — nesmí jít smazat při řešení. */
+  const assignmentBaselineProtectedIds = useMemo(() => {
+    if (!embedInAssignment || !initialCanvasSnapshot) return EMPTY_ASSIGNMENT_BASELINE_IDS;
+    return {
+      points: new Set(initialCanvasSnapshot.points.map(p => p.id)),
+      shapes: new Set(initialCanvasSnapshot.shapes.map(s => s.id)),
+      freehand: new Set((initialCanvasSnapshot.freehandPaths ?? []).map(f => f.id)),
+    };
+  }, [embedInAssignment, initialCanvasSnapshot]);
+  const assignmentBaselineProtectedRef = useRef(assignmentBaselineProtectedIds);
+  assignmentBaselineProtectedRef.current = assignmentBaselineProtectedIds;
 
   // Assets
   const rulerImageRef = useRef<HTMLImageElement | null>(null);
@@ -1240,6 +1272,56 @@ export function FreeGeometryEditor({
     toast.message('Nejdřív vyber objekt.');
   };
 
+  const getSelectionThinStrokeState = (): 'noShapes' | 'allThin' | 'mixed' | 'normal' => {
+    if (selectedShapeIds.length === 0) return 'noShapes';
+    const list = shapesStateRef.current;
+    const flags = selectedShapeIds.map(id => Boolean(list.find(s => s.id === id)?.thinStroke));
+    const any = flags.some(Boolean);
+    const all = flags.every(Boolean);
+    if (all) return 'allThin';
+    if (any) return 'mixed';
+    return 'normal';
+  };
+
+  const getSelectionEmphasisStrokeState = (): 'noShapes' | 'allEmphasis' | 'mixed' | 'normal' => {
+    if (selectedShapeIds.length === 0) return 'noShapes';
+    const list = shapesStateRef.current;
+    const flags = selectedShapeIds.map(id => Boolean(list.find(s => s.id === id)?.emphasisStroke));
+    const any = flags.some(Boolean);
+    const all = flags.every(Boolean);
+    if (all) return 'allEmphasis';
+    if (any) return 'mixed';
+    return 'normal';
+  };
+
+  const toggleThinStrokeOnSelection = () => {
+    if (selectedShapeIds.length === 0) return;
+    const st = getSelectionThinStrokeState();
+    const nextThin = st !== 'allThin';
+    const ids = new Set(selectedShapeIds);
+    setShapes(prev =>
+      prev.map(s =>
+        ids.has(s.id)
+          ? { ...s, ...(nextThin ? { thinStroke: true } : { thinStroke: undefined }) }
+          : s,
+      ),
+    );
+  };
+
+  const toggleEmphasisStrokeOnSelection = () => {
+    if (selectedShapeIds.length === 0) return;
+    const st = getSelectionEmphasisStrokeState();
+    const nextEm = st !== 'allEmphasis';
+    const ids = new Set(selectedShapeIds);
+    setShapes(prev =>
+      prev.map(s =>
+        ids.has(s.id)
+          ? { ...s, ...(nextEm ? { emphasisStroke: true } : { emphasisStroke: undefined }) }
+          : s,
+      ),
+    );
+  };
+
   // --- SVG IKONY ---
   const Icons = {
     Move: () => (
@@ -1360,7 +1442,13 @@ export function FreeGeometryEditor({
   ];
 
   // --- MAZÁNÍ ---
+  const deleteGeometrySelectionRunnerRef = useRef<(() => void) | null>(null);
+
   const deletePoint = (id: string) => {
+    if (assignmentBaselineProtectedRef.current.points.has(id)) {
+      toast.message('Část zadání ze sdíleného plátna nelze smazat.');
+      return;
+    }
     // Effect
     const p = points.find(pt => pt.id === id);
     if (p) triggerEffect(p.x, p.y, '#ef4444');
@@ -1372,6 +1460,48 @@ export function FreeGeometryEditor({
     // 3. Zrušit výběr
     if (selection === id) setSelection(null);
     if (selectedPointId === id) setSelectedPointId(null);
+  };
+
+  deleteGeometrySelectionRunnerRef.current = () => {
+    const prot = assignmentBaselineProtectedRef.current;
+    if (selectedFreehandIds.length > 0) {
+      const idsToDelete = new Set(selectedFreehandIds.filter(id => !prot.freehand.has(id)));
+      if (idsToDelete.size === 0) {
+        toast.message('Část zadání ze sdíleného plátna nelze smazat.');
+        return;
+      }
+      setFreehandPaths(prev => prev.filter(p => !idsToDelete.has(p.id)));
+      setSelectedFreehandIds([]);
+      return;
+    }
+    if (selectedShapeIds.length > 0) {
+      const shapeIdsToDelete = new Set(selectedShapeIds.filter(id => !prot.shapes.has(id)));
+      if (shapeIdsToDelete.size === 0) {
+        toast.message('Část zadání ze sdíleného plátna nelze smazat.');
+        return;
+      }
+      const pointIdsToDelete = new Set<string>();
+      shapes.forEach(s => {
+        if (shapeIdsToDelete.has(s.id)) {
+          s.points.forEach(pid => pointIdsToDelete.add(pid));
+        }
+      });
+      setShapes(prev => prev.filter(s => !shapeIdsToDelete.has(s.id)));
+      const remainingShapes = shapes.filter(s => !shapeIdsToDelete.has(s.id));
+      const usedPointIds = new Set<string>();
+      remainingShapes.forEach(s => s.points.forEach(pid => usedPointIds.add(pid)));
+      setPoints(prev =>
+        prev.filter(p => {
+          if (prot.points.has(p.id)) return true;
+          return !pointIdsToDelete.has(p.id) || usedPointIds.has(p.id);
+        }),
+      );
+      setSelectedShapeIds([]);
+      return;
+    }
+    if (selection) {
+      deletePoint(selection);
+    }
   };
 
   useEffect(() => {
@@ -1390,29 +1520,7 @@ export function FreeGeometryEditor({
       }
 
       if ((e.key === 'Delete' || e.key === 'Backspace') && (selection || selectedShapeIds.length > 0 || selectedFreehandIds.length > 0)) {
-        if (selectedFreehandIds.length > 0) {
-          const idsToDelete = new Set(selectedFreehandIds);
-          setFreehandPaths(prev => prev.filter(p => !idsToDelete.has(p.id)));
-          setSelectedFreehandIds([]);
-        } else if (selectedShapeIds.length > 0) {
-          // Smazat vybrané tvary a jejich definiční body
-          const shapeIdsToDelete = new Set(selectedShapeIds);
-          const pointIdsToDelete = new Set<string>();
-          shapes.forEach(s => {
-            if (shapeIdsToDelete.has(s.id)) {
-              s.points.forEach(pid => pointIdsToDelete.add(pid));
-            }
-          });
-          setShapes(prev => prev.filter(s => !shapeIdsToDelete.has(s.id)));
-          // Smazat body, které nejsou používané jinými tvary
-          const remainingShapes = shapes.filter(s => !shapeIdsToDelete.has(s.id));
-          const usedPointIds = new Set<string>();
-          remainingShapes.forEach(s => s.points.forEach(pid => usedPointIds.add(pid)));
-          setPoints(prev => prev.filter(p => !pointIdsToDelete.has(p.id) || usedPointIds.has(p.id)));
-          setSelectedShapeIds([]);
-        } else if (selection) {
-          deletePoint(selection);
-        }
+        deleteGeometrySelectionRunnerRef.current?.();
       }
       if (e.key === 'Escape') {
         setActiveTool('move');
@@ -2781,9 +2889,15 @@ export function FreeGeometryEditor({
 
     // 1b. NÁSTROJ: GUMA (ERASER) — smaže bod nebo tvar pod kurzorem
     if (activeTool === 'eraser') {
+      const prot = assignmentBaselineProtectedRef.current;
       const eraseSelectedShapes = () => {
-        const ids = new Set(selectedShapeIds);
-        if (ids.size === 0) return false;
+        const ids = new Set(selectedShapeIds.filter(id => !prot.shapes.has(id)));
+        if (ids.size === 0) {
+          if (selectedShapeIds.some(id => prot.shapes.has(id))) {
+            toast.message('Část zadání ze sdíleného plátna nelze smazat.');
+          }
+          return false;
+        }
         const pointIdsToDelete = new Set<string>();
         shapes.forEach(s => {
           if (ids.has(s.id)) s.points.forEach(pid => pointIdsToDelete.add(pid));
@@ -2795,6 +2909,7 @@ export function FreeGeometryEditor({
         remainingShapes.forEach(s => s.points.forEach(pid => usedPointIds.add(pid)));
         setPoints(prev =>
           prev.filter(p => {
+            if (prot.points.has(p.id)) return true;
             if (!pointIdsToDelete.has(p.id)) return true;
             if (usedPointIds.has(p.id)) return true;
             if (p.label) return true;
@@ -2817,6 +2932,11 @@ export function FreeGeometryEditor({
         // If the clicked shape is selected, erase the whole selection.
         if (selectedShapeIds.includes(shapeId) && eraseSelectedShapes()) return;
 
+        if (prot.shapes.has(shapeId)) {
+          toast.message('Část zadání ze sdíleného plátna nelze smazat.');
+          return;
+        }
+
         const erasedShape = shapes.find(s => s.id === shapeId);
         setShapes(prev => prev.filter(s => s.id !== shapeId));
         if (erasedShape) {
@@ -2824,6 +2944,7 @@ export function FreeGeometryEditor({
           const usedByOthers = new Set<string>();
           remainingShapes.forEach(s => s.points.forEach(pid => usedByOthers.add(pid)));
           setPoints(prev => prev.filter(p => {
+            if (prot.points.has(p.id)) return true;
             if (!erasedShape.points.includes(p.id)) return true;
             if (usedByOthers.has(p.id)) return true;
             if (p.label) return true;
@@ -2836,6 +2957,10 @@ export function FreeGeometryEditor({
       }
       const freehandId = getFreehandPathAtPoint(wx, wy);
       if (freehandId) {
+        if (prot.freehand.has(freehandId)) {
+          toast.message('Část zadání ze sdíleného plátna nelze smazat.');
+          return;
+        }
         setFreehandPaths(prev => prev.filter(p => p.id !== freehandId));
       }
       return;
@@ -5186,8 +5311,13 @@ export function FreeGeometryEditor({
       const p1 = getLivePoint(p1raw);
       const p2 = getLivePoint(p2raw);
 
+      const defaultStroke = darkMode ? '#e5e7eb' : '#1f2937';
+      const emphasisStrokeClr = darkMode ? '#fbbf24' : '#ea580c';
+      const strokeClr = shape.emphasisStroke ? emphasisStrokeClr : defaultStroke;
+      const strokeW = shape.thinStroke ? SHAPE_THIN_STROKE_WORLD : 2;
+
       if (shape.type === 'segment') {
-        drawSegment(ctx, p1, p2, 1, darkMode ? '#e5e7eb' : '#1f2937');
+        drawSegment(ctx, p1, p2, 1, strokeClr, strokeW);
         
         if (showMeasurements) {
             const dist = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
@@ -5197,7 +5327,7 @@ export function FreeGeometryEditor({
             drawMeasurement(ctx, (p1.x + p2.x)/2 + (-Math.sin(segAngle) * perpOff), (p1.y + p2.y)/2 + (Math.cos(segAngle) * perpOff), `${cm} cm`, segAngle);
         }
       } else if (shape.type === 'line') {
-        drawLine(ctx, p1, p2, 1, darkMode ? '#e5e7eb' : '#1f2937');
+        drawLine(ctx, p1, p2, 1, strokeClr, strokeW);
         {
           const lineAng = Math.atan2(p2.y - p1.y, p2.x - p1.x);
           const pad = SHAPE_LABEL_PAD_SCREEN_PX / scale;
@@ -5206,7 +5336,7 @@ export function FreeGeometryEditor({
           drawLabel(ctx, pos, shape.label, darkMode ? '#9ca3af' : '#6b7280', 0, 0);
         }
       } else if (shape.type === 'lineDashed') {
-        drawLine(ctx, p1, p2, 1, darkMode ? '#e5e7eb' : '#1f2937', 2, true);
+        drawLine(ctx, p1, p2, 1, strokeClr, strokeW, true);
         {
           const lineAng = Math.atan2(p2.y - p1.y, p2.x - p1.x);
           const pad = SHAPE_LABEL_PAD_SCREEN_PX / scale;
@@ -5217,7 +5347,7 @@ export function FreeGeometryEditor({
       } else if (shape.type === 'lineDashDot') {
         ctx.save();
         applyLineStyle(ctx, 'dashdot');
-        drawLine(ctx, p1, p2, 1, darkMode ? '#e5e7eb' : '#1f2937', 2, false);
+        drawLine(ctx, p1, p2, 1, strokeClr, strokeW, false, false);
         ctx.restore();
         {
           const lineAng = Math.atan2(p2.y - p1.y, p2.x - p1.x);
@@ -5227,7 +5357,7 @@ export function FreeGeometryEditor({
           drawLabel(ctx, pos, shape.label, darkMode ? '#9ca3af' : '#6b7280', 0, 0);
         }
       } else if (shape.type === 'ray') {
-        drawRay(ctx, p1, p2, 1, darkMode ? '#e5e7eb' : '#1f2937');
+        drawRay(ctx, p1, p2, 1, strokeClr, strokeW);
         {
           const lineAng = Math.atan2(p2.y - p1.y, p2.x - p1.x);
           const pad = SHAPE_LABEL_PAD_SCREEN_PX / scale;
@@ -5237,7 +5367,7 @@ export function FreeGeometryEditor({
         }
       } else if (shape.type === 'circle') {
         const r = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
-        drawCircle(ctx, p1, r, 1, darkMode ? '#e5e7eb' : '#1f2937');
+        drawCircle(ctx, p1, r, 1, strokeClr, strokeW);
         {
           const θ = Math.atan2(p2.y - p1.y, p2.x - p1.x);
           const pad = SHAPE_LABEL_PAD_SCREEN_PX / scale;
@@ -5286,8 +5416,8 @@ export function FreeGeometryEditor({
         const { start, end } = circleArcAngles(p1, p2, arcSpan);
         ctx.beginPath();
         ctx.arc(p1.x, p1.y, r, start, end);
-        ctx.strokeStyle = darkMode ? '#e5e7eb' : '#1f2937';
-        ctx.lineWidth = 2;
+        ctx.strokeStyle = strokeClr;
+        ctx.lineWidth = strokeW;
         ctx.stroke();
         const arcHandlePos = circleArcRadiusHandlePos(p1, p2, arcSpan);
         {
@@ -5356,18 +5486,18 @@ export function FreeGeometryEditor({
 
         ctx.save();
         const selColor = darkMode ? '#7aa2f7' : '#3b82f6';
-        const selGlow = darkMode ? 'rgba(122, 162, 247, 0.45)' : 'rgba(59, 130, 246, 0.35)';
+        const selGlow = darkMode ? 'rgba(122, 162, 247, 0.52)' : 'rgba(59, 130, 246, 0.44)';
         
         // Glow vrstva - výraznější
-        ctx.globalAlpha = 0.7;
+        ctx.globalAlpha = 0.68;
         ctx.shadowColor = selColor;
-        ctx.shadowBlur = 18;
+        ctx.shadowBlur = 13;
         if (shape.type === 'circle') {
           const r = Math.sqrt(Math.pow(sp2.x - sp1.x, 2) + Math.pow(sp2.y - sp1.y, 2));
           ctx.beginPath();
           ctx.arc(sp1.x, sp1.y, r, 0, Math.PI * 2);
           ctx.strokeStyle = selGlow;
-          ctx.lineWidth = 16;
+          ctx.lineWidth = SELECTION_GLOW_STROKE_WORLD;
           ctx.stroke();
         } else if (shape.type === 'circleArc') {
           const arcSpan = shape.definition.arcSpan ?? COMPASS_ARC_SPAN_RAD;
@@ -5376,14 +5506,14 @@ export function FreeGeometryEditor({
           ctx.beginPath();
           ctx.arc(sp1.x, sp1.y, r, start, end);
           ctx.strokeStyle = selGlow;
-          ctx.lineWidth = 16;
+          ctx.lineWidth = SELECTION_GLOW_STROKE_WORLD;
           ctx.stroke();
         } else if (shape.type === 'segment') {
           ctx.beginPath();
           ctx.moveTo(sp1.x, sp1.y);
           ctx.lineTo(sp2.x, sp2.y);
           ctx.strokeStyle = selGlow;
-          ctx.lineWidth = 16;
+          ctx.lineWidth = SELECTION_GLOW_STROKE_WORLD;
           ctx.stroke();
         } else if (shape.type === 'line' || shape.type === 'lineDashed' || shape.type === 'lineDashDot') {
           const dx = sp2.x - sp1.x, dy = sp2.y - sp1.y;
@@ -5395,7 +5525,7 @@ export function FreeGeometryEditor({
           ctx.moveTo(sp1.x - dx/len*EXT, sp1.y - dy/len*EXT);
           ctx.lineTo(sp1.x + dx/len*EXT, sp1.y + dy/len*EXT);
           ctx.strokeStyle = selGlow;
-          ctx.lineWidth = 16;
+          ctx.lineWidth = SELECTION_GLOW_STROKE_WORLD;
           ctx.stroke();
           if (shape.type === 'lineDashed' || shape.type === 'lineDashDot') applyLineStyle(ctx, 'solid');
         } else if (shape.type === 'ray') {
@@ -5406,20 +5536,25 @@ export function FreeGeometryEditor({
           ctx.moveTo(sp1.x, sp1.y);
           ctx.lineTo(sp1.x + dx/len*EXT, sp1.y + dy/len*EXT);
           ctx.strokeStyle = selGlow;
-          ctx.lineWidth = 16;
+          ctx.lineWidth = SELECTION_GLOW_STROKE_WORLD;
           ctx.stroke();
         }
         ctx.shadowBlur = 0;
 
-        // Obrys výběru (čárkovaný) - silnější
+        // Obrys výběru — u tenké čáry bez čárkování (jinak výběr vypadá jako přerušovaná linka).
         ctx.globalAlpha = 1;
-        ctx.setLineDash([6, 4]);
+        if (shape.thinStroke) {
+          ctx.setLineDash([]);
+          ctx.lineDashOffset = 0;
+        } else {
+          ctx.setLineDash([6, 4]);
+        }
         if (shape.type === 'circle') {
           const r = Math.sqrt(Math.pow(sp2.x - sp1.x, 2) + Math.pow(sp2.y - sp1.y, 2));
           ctx.beginPath();
           ctx.arc(sp1.x, sp1.y, r, 0, Math.PI * 2);
           ctx.strokeStyle = selColor;
-          ctx.lineWidth = 3;
+          ctx.lineWidth = SELECTION_OUTLINE_STROKE_WORLD;
           ctx.stroke();
         } else if (shape.type === 'circleArc') {
           const arcSpan = shape.definition.arcSpan ?? COMPASS_ARC_SPAN_RAD;
@@ -5428,14 +5563,14 @@ export function FreeGeometryEditor({
           ctx.beginPath();
           ctx.arc(sp1.x, sp1.y, r, start, end);
           ctx.strokeStyle = selColor;
-          ctx.lineWidth = 3;
+          ctx.lineWidth = SELECTION_OUTLINE_STROKE_WORLD;
           ctx.stroke();
         } else if (shape.type === 'segment') {
           ctx.beginPath();
           ctx.moveTo(sp1.x, sp1.y);
           ctx.lineTo(sp2.x, sp2.y);
           ctx.strokeStyle = selColor;
-          ctx.lineWidth = 3;
+          ctx.lineWidth = SELECTION_OUTLINE_STROKE_WORLD;
           ctx.stroke();
         } else if (shape.type === 'line' || shape.type === 'lineDashed' || shape.type === 'lineDashDot') {
           const dx = sp2.x - sp1.x, dy = sp2.y - sp1.y;
@@ -5445,7 +5580,7 @@ export function FreeGeometryEditor({
           ctx.moveTo(sp1.x - dx/len*EXT, sp1.y - dy/len*EXT);
           ctx.lineTo(sp1.x + dx/len*EXT, sp1.y + dy/len*EXT);
           ctx.strokeStyle = selColor;
-          ctx.lineWidth = 3;
+          ctx.lineWidth = SELECTION_OUTLINE_STROKE_WORLD;
           ctx.stroke();
         } else if (shape.type === 'ray') {
           const dx = sp2.x - sp1.x, dy = sp2.y - sp1.y;
@@ -5455,12 +5590,64 @@ export function FreeGeometryEditor({
           ctx.moveTo(sp1.x, sp1.y);
           ctx.lineTo(sp1.x + dx/len*EXT, sp1.y + dy/len*EXT);
           ctx.strokeStyle = selColor;
-          ctx.lineWidth = 3;
+          ctx.lineWidth = SELECTION_OUTLINE_STROKE_WORLD;
           ctx.stroke();
         }
         ctx.setLineDash([]);
+
         ctx.restore();
       });
+
+      ctx.save();
+      applyLineStyle(ctx, 'solid');
+      ctx.lineDashOffset = 0;
+      ctx.shadowBlur = 0;
+      ctx.shadowColor = 'transparent';
+      ctx.globalAlpha = 1;
+      selectedShapeIds.forEach(shapeId => {
+        const shape = shapes.find(s => s.id === shapeId);
+        if (!shape) return;
+        const sp1 = points.find(p => p.id === shape.definition.p1Id);
+        const sp2 = points.find(p => p.id === shape.definition.p2Id);
+        if (!sp1 || !sp2) return;
+        const topDefault = darkMode ? '#e5e7eb' : '#1f2937';
+        const topEmphasis = darkMode ? '#fbbf24' : '#ea580c';
+        const topStrokeClr = shape.emphasisStroke ? topEmphasis : topDefault;
+        const topStrokeW = shape.thinStroke ? SHAPE_THIN_STROKE_WORLD : 2;
+        const lp1 = getLivePoint(sp1);
+        const lp2 = getLivePoint(sp2);
+        if (shape.type === 'segment') {
+          drawSegment(ctx, lp1, lp2, 1, topStrokeClr, topStrokeW);
+        } else if (shape.type === 'line') {
+          drawLine(ctx, lp1, lp2, 1, topStrokeClr, topStrokeW);
+        } else if (shape.type === 'lineDashed') {
+          drawLine(ctx, lp1, lp2, 1, topStrokeClr, topStrokeW, true);
+        } else if (shape.type === 'lineDashDot') {
+          ctx.save();
+          applyLineStyle(ctx, 'dashdot');
+          drawLine(ctx, lp1, lp2, 1, topStrokeClr, topStrokeW, false, false);
+          ctx.restore();
+          applyLineStyle(ctx, 'solid');
+        } else if (shape.type === 'ray') {
+          drawRay(ctx, lp1, lp2, 1, topStrokeClr, topStrokeW);
+        } else if (shape.type === 'circle') {
+          const r = Math.sqrt(Math.pow(lp2.x - lp1.x, 2) + Math.pow(lp2.y - lp1.y, 2));
+          drawCircle(ctx, lp1, r, 1, topStrokeClr, topStrokeW);
+        } else if (shape.type === 'circleArc') {
+          const arcSpan = shape.definition.arcSpan ?? COMPASS_ARC_SPAN_RAD;
+          const r = Math.sqrt(Math.pow(lp2.x - lp1.x, 2) + Math.pow(lp2.y - lp1.y, 2));
+          const { start, end } = circleArcAngles(lp1, lp2, arcSpan);
+          ctx.setLineDash([]);
+          ctx.lineDashOffset = 0;
+          ctx.beginPath();
+          ctx.arc(lp1.x, lp1.y, r, start, end);
+          ctx.strokeStyle = topStrokeClr;
+          ctx.lineWidth = topStrokeW;
+          ctx.lineCap = 'round';
+          ctx.stroke();
+        }
+      });
+      ctx.restore();
     }
 
     // 1c. Zvýraznění hoveru tvaru pro move tool
@@ -6853,7 +7040,11 @@ export function FreeGeometryEditor({
 
     if (dashed || dashDot) ctx.save();
     if (dashed) applyLineStyle(ctx, 'dashed');
-    if (dashDot) applyLineStyle(ctx, 'dashdot');
+    else if (dashDot) applyLineStyle(ctx, 'dashdot');
+    if (!dashed && !dashDot) {
+      ctx.setLineDash([]);
+      ctx.lineDashOffset = 0;
+    }
 
     ctx.beginPath();
     ctx.moveTo(p1.x, p1.y);
@@ -6917,6 +7108,8 @@ export function FreeGeometryEditor({
     const endAngle = Math.PI * 2 * drawProgress;
 
     ctx.beginPath();
+    ctx.setLineDash([]);
+    ctx.lineDashOffset = 0;
     ctx.arc(center.x, center.y, radius, 0, endAngle);
     ctx.strokeStyle = color;
     ctx.lineWidth = width;
@@ -7205,11 +7398,32 @@ export function FreeGeometryEditor({
   };
 
   const clearAll = () => {
+    if (embedInAssignment && initialCanvasSnapshot) {
+      if (
+        confirm(
+          'Smazat všechny tvoje úpravy? Výchozí obsah ze zadání (sdílené plátno) zůstane.',
+        )
+      ) {
+        const snap = JSON.parse(JSON.stringify(initialCanvasSnapshot)) as GeometrySubmissionSnapshot;
+        setPoints(snap.points);
+        setShapes(snap.shapes);
+        setFreehandPaths(snap.freehandPaths ?? []);
+        setSelectedPointId(null);
+        setSelection(null);
+        setSelectedShapeIds([]);
+        setSelectedFreehandIds([]);
+        clearConstructionSteps();
+      }
+      return;
+    }
     if (confirm('Opravdu chceš smazat celé plátno?')) {
       setPoints([]);
       setShapes([]);
       setFreehandPaths([]);
       setSelectedPointId(null);
+      setSelection(null);
+      setSelectedShapeIds([]);
+      setSelectedFreehandIds([]);
       clearConstructionSteps();
     }
   };
@@ -7547,7 +7761,15 @@ export function FreeGeometryEditor({
 
       {/* TOOLBAR - LEFT SIDE (NEW DESIGN) */}
       {!recordingState.showPlayer && !readOnlyCanvas && !circleInput.visible && !angleInput.visible && !segmentInput.visible && (
-      <div className="absolute left-4 top-1/2 -translate-y-1/2 z-30 pointer-events-auto" style={{ touchAction: 'auto' }} onTouchStart={(e) => e.stopPropagation()}>
+      <div
+        className="absolute left-4 top-0 bottom-0 z-30 flex flex-col justify-center pointer-events-none"
+        style={{ touchAction: 'auto' }}
+      >
+        <div
+          className="pointer-events-auto"
+          style={{ touchAction: 'auto' }}
+          onTouchStart={(e) => e.stopPropagation()}
+        >
          <div className="bg-[#F2F2F2] rounded-full p-2 flex flex-col items-center shadow-sm w-[72px] py-8">
             {!embedInAssignment ? (
               <>
@@ -7623,7 +7845,7 @@ export function FreeGeometryEditor({
 
                         {/* Context actions next to the selection tool */}
                         {group.id === 'group_move' && (canRename || activeTool === 'highlighter' || activeTool === 'highlighterStraight') && (
-                          <div className="absolute left-full top-1/2 -translate-y-1/2 ml-[18px] flex items-center gap-2">
+                          <div className="absolute left-full top-[calc(50%+22px)] -translate-y-1/2 ml-[18px] flex items-start gap-2">
                             {(activeTool === 'highlighter' || activeTool === 'highlighterStraight') && (
                               <div className="relative">
                                 <button
@@ -7668,31 +7890,88 @@ export function FreeGeometryEditor({
                             )}
 
                             {canRename && (
-                              <>
-                                <button
-                                  onClick={() => setShowRenameModal(true)}
-                                  onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setShowRenameModal(true); }}
-                                  className="w-12 flex flex-col items-center justify-center rounded-xl bg-blue-50 text-blue-500 hover:bg-blue-100 transition-colors py-2 shadow-sm"
-                                  title="Název"
-                                >
-                                  <Pencil className="w-5 h-5" />
-                                  <span className="text-[9px] font-bold mt-0.5 leading-tight">název</span>
-                                </button>
+                              <div className="flex flex-col gap-2">
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowRenameModal(true)}
+                                    onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setShowRenameModal(true); }}
+                                    className="w-12 flex flex-col items-center justify-center rounded-xl bg-blue-50 text-blue-500 hover:bg-blue-100 transition-colors py-2 shadow-sm"
+                                    title="Název"
+                                  >
+                                    <Pencil className="w-5 h-5" />
+                                    <span className="text-[9px] font-bold mt-0.5 leading-tight">název</span>
+                                  </button>
 
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); toggleLockSelection(); }}
-                                  onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); toggleLockSelection(); }}
-                                  className="w-12 flex flex-col items-center justify-center rounded-xl bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors py-2 shadow-sm"
-                                  title={getSelectionLockState() === 'locked' ? 'Odemknout' : 'Zamknout'}
-                                >
-                                  {getSelectionLockState() === 'locked' ? (
-                                    <Lock className="w-5 h-5" />
-                                  ) : (
-                                    <Unlock className="w-5 h-5" />
-                                  )}
-                                  <span className="text-[9px] font-bold mt-0.5 leading-tight">zámek</span>
-                                </button>
-                              </>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); toggleLockSelection(); }}
+                                    onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); toggleLockSelection(); }}
+                                    className="w-12 flex flex-col items-center justify-center rounded-xl bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors py-2 shadow-sm"
+                                    title={getSelectionLockState() === 'locked' ? 'Odemknout' : 'Zamknout'}
+                                  >
+                                    {getSelectionLockState() === 'locked' ? (
+                                      <Lock className="w-5 h-5" />
+                                    ) : (
+                                      <Unlock className="w-5 h-5" />
+                                    )}
+                                    <span className="text-[9px] font-bold mt-0.5 leading-tight">zámek</span>
+                                  </button>
+                                </div>
+
+                                {selectedShapeIds.length > 0 && (
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleThinStrokeOnSelection();
+                                      }}
+                                      onTouchEnd={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        toggleThinStrokeOnSelection();
+                                      }}
+                                      className={`w-12 flex flex-col items-center justify-center rounded-xl transition-colors py-2 shadow-sm border ${
+                                        (() => {
+                                          const st = getSelectionThinStrokeState();
+                                          return st === 'allThin' || st === 'mixed'
+                                            ? 'bg-amber-50 text-amber-900 border-amber-200'
+                                            : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50';
+                                        })()
+                                      }`}
+                                      title="Tenká linka — přepíná mezi tenkou a normální tloušťkou"
+                                    >
+                                      <Minus className="w-5 h-5 stroke-[3]" />
+                                      <span className="text-[8px] font-bold mt-0.5 leading-tight text-center px-0.5">tenká linka</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleEmphasisStrokeOnSelection();
+                                      }}
+                                      onTouchEnd={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        toggleEmphasisStrokeOnSelection();
+                                      }}
+                                      className={`w-12 flex flex-col items-center justify-center rounded-xl transition-colors py-2 shadow-sm border ${
+                                        (() => {
+                                          const st = getSelectionEmphasisStrokeState();
+                                          return st === 'allEmphasis' || st === 'mixed'
+                                            ? 'bg-violet-50 text-violet-900 border-violet-200'
+                                            : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50';
+                                        })()
+                                      }`}
+                                      title="Zvýraznění — výraznější barva čáry"
+                                    >
+                                      <Sparkles className="w-5 h-5" />
+                                      <span className="text-[8px] font-bold mt-0.5 leading-tight text-center px-0.5">zvýraznění</span>
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
                             )}
                           </div>
                         )}
@@ -7825,16 +8104,71 @@ export function FreeGeometryEditor({
 
                          {/* Rename button next to selection tool */}
                          {showRenameNextToSelect && (
-                           <button
-                             onClick={() => setShowRenameModal(true)}
-                             onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setShowRenameModal(true); }}
-                             className={`w-12 flex flex-col items-center justify-center rounded-xl transition-colors py-2 ${
-                               canRename ? 'bg-blue-50 text-blue-500 hover:bg-blue-100' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                             }`}
-                           >
-                             <Pencil className="w-5 h-5" />
-                             <span className="text-[9px] font-bold mt-0.5 leading-tight">název</span>
-                           </button>
+                           <div className="flex flex-col gap-2 items-center mt-5">
+                             <button
+                               type="button"
+                               onClick={() => setShowRenameModal(true)}
+                               onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setShowRenameModal(true); }}
+                               className={`w-12 flex flex-col items-center justify-center rounded-xl transition-colors py-2 ${
+                                 canRename ? 'bg-blue-50 text-blue-500 hover:bg-blue-100' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                               }`}
+                             >
+                               <Pencil className="w-5 h-5" />
+                               <span className="text-[9px] font-bold mt-0.5 leading-tight">název</span>
+                             </button>
+                             {selectedShapeIds.length > 0 && (
+                               <div className="flex flex-col gap-2">
+                                 <button
+                                   type="button"
+                                   onClick={(e) => {
+                                     e.stopPropagation();
+                                     toggleThinStrokeOnSelection();
+                                   }}
+                                   onTouchEnd={(e) => {
+                                     e.preventDefault();
+                                     e.stopPropagation();
+                                     toggleThinStrokeOnSelection();
+                                   }}
+                                   className={`w-12 flex flex-col items-center justify-center rounded-xl transition-colors py-2 border ${
+                                     (() => {
+                                       const st = getSelectionThinStrokeState();
+                                       return st === 'allThin' || st === 'mixed'
+                                         ? 'bg-amber-50 text-amber-900 border-amber-200'
+                                         : 'bg-white text-gray-700 border-gray-200';
+                                     })()
+                                   }`}
+                                   title="Tenká linka"
+                                 >
+                                   <Minus className="w-5 h-5 stroke-[3]" />
+                                   <span className="text-[8px] font-bold mt-0.5 leading-tight text-center px-0.5">tenká linka</span>
+                                 </button>
+                                 <button
+                                   type="button"
+                                   onClick={(e) => {
+                                     e.stopPropagation();
+                                     toggleEmphasisStrokeOnSelection();
+                                   }}
+                                   onTouchEnd={(e) => {
+                                     e.preventDefault();
+                                     e.stopPropagation();
+                                     toggleEmphasisStrokeOnSelection();
+                                   }}
+                                   className={`w-12 flex flex-col items-center justify-center rounded-xl transition-colors py-2 border ${
+                                     (() => {
+                                       const st = getSelectionEmphasisStrokeState();
+                                       return st === 'allEmphasis' || st === 'mixed'
+                                         ? 'bg-violet-50 text-violet-900 border-violet-200'
+                                         : 'bg-white text-gray-700 border-gray-200';
+                                     })()
+                                   }`}
+                                   title="Zvýraznění"
+                                 >
+                                   <Sparkles className="w-5 h-5" />
+                                   <span className="text-[8px] font-bold mt-0.5 leading-tight text-center px-0.5">zvýraznění</span>
+                                 </button>
+                               </div>
+                             )}
+                           </div>
                          )}
                         </div>
 
@@ -7927,47 +8261,13 @@ export function FreeGeometryEditor({
              {/* Trash / Delete selection */}
              {(selection || selectedShapeIds.length > 0 || selectedFreehandIds.length > 0) ? (
              <button
-                 onClick={() => {
-                   if (selectedFreehandIds.length > 0) {
-                     const idsToDelete = new Set(selectedFreehandIds);
-                     setFreehandPaths(prev => prev.filter(p => !idsToDelete.has(p.id)));
-                     setSelectedFreehandIds([]);
-                   } else if (selectedShapeIds.length > 0) {
-                     const shapeIdsToDelete = new Set(selectedShapeIds);
-                     const pointIdsToDelete = new Set<string>();
-                     shapes.forEach(s => { if (shapeIdsToDelete.has(s.id)) s.points.forEach(pid => pointIdsToDelete.add(pid)); });
-                     setShapes(prev => prev.filter(s => !shapeIdsToDelete.has(s.id)));
-                     const remainingShapes = shapes.filter(s => !shapeIdsToDelete.has(s.id));
-                     const usedPointIds = new Set<string>();
-                     remainingShapes.forEach(s => s.points.forEach(pid => usedPointIds.add(pid)));
-                     setPoints(prev => prev.filter(p => !pointIdsToDelete.has(p.id) || usedPointIds.has(p.id)));
-                     setSelectedShapeIds([]);
-                   } else if (selection) {
-                     deletePoint(selection);
-                   }
-                 }}
+                 onClick={() => deleteGeometrySelectionRunnerRef.current?.()}
                  onTouchEnd={(e) => {
                    e.preventDefault();
                    e.stopPropagation();
-                   if (selectedFreehandIds.length > 0) {
-                     const idsToDelete = new Set(selectedFreehandIds);
-                     setFreehandPaths(prev => prev.filter(p => !idsToDelete.has(p.id)));
-                     setSelectedFreehandIds([]);
-                   } else if (selectedShapeIds.length > 0) {
-                     const shapeIdsToDelete = new Set(selectedShapeIds);
-                     const pointIdsToDelete = new Set<string>();
-                     shapes.forEach(s => { if (shapeIdsToDelete.has(s.id)) s.points.forEach(pid => pointIdsToDelete.add(pid)); });
-                     setShapes(prev => prev.filter(s => !shapeIdsToDelete.has(s.id)));
-                     const remainingShapes = shapes.filter(s => !shapeIdsToDelete.has(s.id));
-                     const usedPointIds = new Set<string>();
-                     remainingShapes.forEach(s => s.points.forEach(pid => usedPointIds.add(pid)));
-                     setPoints(prev => prev.filter(p => !pointIdsToDelete.has(p.id) || usedPointIds.has(p.id)));
-                     setSelectedShapeIds([]);
-                   } else if (selection) {
-                     deletePoint(selection);
-                   }
+                   deleteGeometrySelectionRunnerRef.current?.();
                  }}
-                 className="w-12 flex flex-col items-center justify-center rounded-xl bg-red-50 text-red-500 hover:bg-red-100 transition-colors group/trash relative py-2"
+                 className="w-12 h-12 shrink-0 flex items-center justify-center rounded-xl bg-red-50 text-red-500 hover:bg-red-100 transition-colors group/trash relative"
              >
                  <Trash2 className="w-5 h-5" />
              </button>
@@ -7986,6 +8286,7 @@ export function FreeGeometryEditor({
              )}
 
          </div>
+        </div>
       </div>
       )}
 
