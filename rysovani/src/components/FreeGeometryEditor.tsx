@@ -208,7 +208,7 @@ export interface GeoShape {
   label: string;
   points: string[]; // IDs bodů, na kterých tvar závisí
   locked?: boolean;
-  /** Tenší čára (přepínač Tenká linka). */
+  /** Tenší čára (přepínač „tenká“). */
   thinStroke?: boolean;
   /** Výraznější barva čáry (přepínač Zvýraznění). */
   emphasisStroke?: boolean;
@@ -464,7 +464,7 @@ const EMPTY_ASSIGNMENT_BASELINE_IDS = {
   freehand: EMPTY_PROTECTED_IDS,
 };
 
-/** Tloušťka tahu ve světových souřadnicích pro „tenká linka“ (běžný tvar ≈ 2). */
+/** Tloušťka tahu ve světových souřadnicích pro režim „tenká“ (běžný tvar ≈ 2). */
 const SHAPE_THIN_STROKE_WORLD = 0.28;
 /** Modré halo výběru (světové jednotky). */
 const SELECTION_GLOW_STROKE_WORLD = 8.5;
@@ -6332,75 +6332,74 @@ export function FreeGeometryEditor({
          } else if (activeTool === 'line') {
              if (!isTabletMode) {
                drawRuler(ctx, p1, p2, 0.5);
+               // Ghost line nekonečná
+               const dx = p2.x - p1.x;
+               const dy = p2.y - p1.y;
+               const len = Math.sqrt(dx*dx + dy*dy);
+               const extend = 1000;
+               const start = { x: p1.x - dx/len * extend, y: p1.y - dy/len * extend };
+               const end = { x: p2.x + dx/len * extend, y: p2.y + dy/len * extend };
+
+               ctx.beginPath();
+               ctx.moveTo(start.x, start.y);
+               ctx.lineTo(end.x, end.y);
+               ctx.strokeStyle = ghostColor;
+               ctx.lineWidth = ghostLW;
+               ctx.stroke();
              }
-             // Ghost line nekonečná
-             const dx = p2.x - p1.x;
-             const dy = p2.y - p1.y;
-             const len = Math.sqrt(dx*dx + dy*dy);
-             const extend = 1000;
-             const start = { x: p1.x - dx/len * extend, y: p1.y - dy/len * extend };
-             const end = { x: p2.x + dx/len * extend, y: p2.y + dy/len * extend };
-             
-             ctx.beginPath();
-             ctx.moveTo(start.x, start.y);
-             ctx.lineTo(end.x, end.y);
-             ctx.strokeStyle = ghostColor;
-             ctx.lineWidth = ghostLW;
-             ctx.stroke();
 
          } else if (activeTool === 'lineDashed') {
              if (!isTabletMode) {
                drawRuler(ctx, p1, p2, 0.5);
+               const dx = p2.x - p1.x;
+               const dy = p2.y - p1.y;
+               const len = Math.sqrt(dx*dx + dy*dy);
+               const extend = 1000;
+               const start = { x: p1.x - dx/len * extend, y: p1.y - dy/len * extend };
+               const end = { x: p2.x + dx/len * extend, y: p2.y + dy/len * extend };
+               ctx.save();
+               ctx.setLineDash([10, 7]);
+               ctx.beginPath();
+               ctx.moveTo(start.x, start.y);
+               ctx.lineTo(end.x, end.y);
+               ctx.strokeStyle = ghostColor;
+               ctx.lineWidth = ghostLW;
+               ctx.stroke();
+               ctx.restore();
              }
-             const dx = p2.x - p1.x;
-             const dy = p2.y - p1.y;
-             const len = Math.sqrt(dx*dx + dy*dy);
-             const extend = 1000;
-             const start = { x: p1.x - dx/len * extend, y: p1.y - dy/len * extend };
-             const end = { x: p2.x + dx/len * extend, y: p2.y + dy/len * extend };
-             ctx.save();
-             ctx.setLineDash([10, 7]);
-             ctx.beginPath();
-             ctx.moveTo(start.x, start.y);
-             ctx.lineTo(end.x, end.y);
-             ctx.strokeStyle = ghostColor;
-             ctx.lineWidth = ghostLW;
-             ctx.stroke();
-             ctx.restore();
 
          } else if (activeTool === 'lineDashDot') {
              if (!isTabletMode) {
                drawRuler(ctx, p1, p2, 0.5);
+               const dx = p2.x - p1.x;
+               const dy = p2.y - p1.y;
+               const len = Math.sqrt(dx*dx + dy*dy);
+               const extend = 1000;
+               const start = { x: p1.x - dx/len * extend, y: p1.y - dy/len * extend };
+               const end = { x: p2.x + dx/len * extend, y: p2.y + dy/len * extend };
+               ctx.save();
+               applyLineStyle(ctx, 'dashdot');
+               ctx.beginPath();
+               ctx.moveTo(start.x, start.y);
+               ctx.lineTo(end.x, end.y);
+               ctx.strokeStyle = ghostColor;
+               ctx.lineWidth = ghostLW;
+               ctx.stroke();
+               ctx.restore();
              }
-             const dx = p2.x - p1.x;
-             const dy = p2.y - p1.y;
-             const len = Math.sqrt(dx*dx + dy*dy);
-             const extend = 1000;
-             const start = { x: p1.x - dx/len * extend, y: p1.y - dy/len * extend };
-             const end = { x: p2.x + dx/len * extend, y: p2.y + dy/len * extend };
-             ctx.save();
-             applyLineStyle(ctx, 'dashdot');
-             ctx.beginPath();
-             ctx.moveTo(start.x, start.y);
-             ctx.lineTo(end.x, end.y);
-             ctx.strokeStyle = ghostColor;
-             ctx.lineWidth = ghostLW;
-             ctx.stroke();
-             ctx.restore();
 
          } else if (activeTool === 'ray') {
              if (!isTabletMode) {
                drawRuler(ctx, p1, p2, 0.5);
-             }
-             // Ghost ray
-             const dx = p2.x - p1.x;
-             const dy = p2.y - p1.y;
-             const len = Math.sqrt(dx*dx + dy*dy);
-             const extend = 2000;
-             const endRay = { x: p1.x + dx/len * extend, y: p1.y + dy/len * extend };
-             
-             drawRay(ctx, p1, endRay, 1, ghostColor, 2.5);
+               // Ghost ray
+               const dx = p2.x - p1.x;
+               const dy = p2.y - p1.y;
+               const len = Math.sqrt(dx*dx + dy*dy);
+               const extend = 2000;
+               const endRay = { x: p1.x + dx/len * extend, y: p1.y + dy/len * extend };
 
+               drawRay(ctx, p1, endRay, 1, ghostColor, 2.5);
+             }
          } else if (activeTool === 'circle') {
              // Tablet circle rendering is handled in section 4a above (independent of mousePosRef)
              if (isTabletMode && circleTabletState.active) {
@@ -7940,10 +7939,10 @@ export function FreeGeometryEditor({
                                             : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50';
                                         })()
                                       }`}
-                                      title="Tenká linka — přepíná mezi tenkou a normální tloušťkou"
+                                      title="Tenká — přepíná mezi tenkou a normální tloušťkou"
                                     >
                                       <Minus className="w-5 h-5 stroke-[3]" />
-                                      <span className="text-[8px] font-bold mt-0.5 leading-tight text-center px-0.5">tenká linka</span>
+                                      <span className="text-[8px] font-bold mt-0.5 leading-tight text-center px-0.5">tenká</span>
                                     </button>
                                     <button
                                       type="button"
@@ -8137,10 +8136,10 @@ export function FreeGeometryEditor({
                                          : 'bg-white text-gray-700 border-gray-200';
                                      })()
                                    }`}
-                                   title="Tenká linka"
+                                   title="Tenká"
                                  >
                                    <Minus className="w-5 h-5 stroke-[3]" />
-                                   <span className="text-[8px] font-bold mt-0.5 leading-tight text-center px-0.5">tenká linka</span>
+                                   <span className="text-[8px] font-bold mt-0.5 leading-tight text-center px-0.5">tenká</span>
                                  </button>
                                  <button
                                    type="button"
@@ -8323,25 +8322,6 @@ export function FreeGeometryEditor({
         >
           <Ruler className="size-4" />
           Nastavit rozměr
-        </button>
-      )}
-      
-      {/* Segment fixed length helper button */}
-      {!recordingState.showPlayer && activeTool === 'segment' && !segmentInput.visible && (
-        <button
-          onClick={() => setSegmentInput(prev => ({ ...prev, visible: true }))}
-          className={`absolute left-4 z-10 px-4 py-2 rounded-full text-sm font-medium flex items-center gap-2 transition-all hover:scale-105 ${
-            segmentInput.active 
-              ? 'bg-blue-600 text-white shadow-lg' 
-              : darkMode ? 'bg-[#24283b] text-[#c0caf5] border border-[#565f89]' : 'bg-white text-gray-600 shadow-md border'
-          }`}
-          style={{ bottom: 'calc(16px + env(safe-area-inset-bottom, 0px))' }}
-        >
-          <Ruler className="size-4" />
-          {segmentInput.active 
-            ? `${segmentInput.length.toFixed(1).replace('.', ',')} cm` 
-            : 'Nastavit délku'
-          }
         </button>
       )}
       
