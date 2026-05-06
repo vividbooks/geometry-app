@@ -260,6 +260,101 @@ export type GeometrySubmissionSnapshot = {
   freehandPaths: FreehandPath[];
 };
 
+/** Ohraničení všech objektů ve světových souřadnicích — pro vycentrování a „fit“ při otevření úkolu. */
+function computeGeometryWorldBounds(snap: GeometrySubmissionSnapshot): {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+} | null {
+  const points = snap.points ?? [];
+  const shapes = snap.shapes ?? [];
+  const freehandPaths = snap.freehandPaths ?? [];
+  const pointById = new Map(points.map(p => [p.id, p]));
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  let any = false;
+
+  const expand = (x: number, y: number) => {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    any = true;
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+  };
+
+  for (const p of points) {
+    expand(p.x, p.y);
+  }
+
+  for (const path of freehandPaths) {
+    for (const q of path.points ?? []) {
+      expand(q.x, q.y);
+    }
+  }
+
+  for (const s of shapes) {
+    const p1 = pointById.get(s.definition.p1Id);
+    const p2 = s.definition.p2Id ? pointById.get(s.definition.p2Id) : undefined;
+    if (p1) expand(p1.x, p1.y);
+    if (p2) expand(p2.x, p2.y);
+
+    if ((s.type === 'circle' || s.type === 'circleArc') && p1 && p2) {
+      const r = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+      if (r > 1e-6) {
+        expand(p1.x - r, p1.y - r);
+        expand(p1.x + r, p1.y + r);
+      }
+    }
+  }
+
+  if (!any) return null;
+  const bw = maxX - minX;
+  const bh = maxY - minY;
+  const pad = Math.max(48, 0.06 * Math.max(bw, bh));
+  return {
+    minX: minX - pad,
+    minY: minY - pad,
+    maxX: maxX + pad,
+    maxY: maxY + pad,
+  };
+}
+
+function fitViewportToAssignmentBounds(
+  bounds: { minX: number; minY: number; maxX: number; maxY: number },
+  canvasW: number,
+  canvasH: number,
+  rightReservePx: number,
+  padPx = 56,
+): { scale: number; offset: { x: number; y: number } } {
+  const visibleW = Math.max(canvasW - Math.max(0, rightReservePx), 1);
+  const bw = Math.max(bounds.maxX - bounds.minX, 1e-6);
+  const bh = Math.max(bounds.maxY - bounds.minY, 1e-6);
+  const worldCx = (bounds.minX + bounds.maxX) / 2;
+  const worldCy = (bounds.minY + bounds.maxY) / 2;
+
+  const availW = Math.max(visibleW - padPx * 2, 1);
+  const availH = Math.max(canvasH - padPx * 2, 1);
+
+  const nextScale = Math.min(availW / bw, availH / bh, 5);
+  const clampedScale = Math.max(Math.min(nextScale, 5), 0.1);
+
+  const cxScreen = visibleW / 2;
+  const cyScreen = canvasH / 2;
+
+  return {
+    scale: clampedScale,
+    offset: {
+      x: cxScreen - worldCx * clampedScale,
+      y: cyScreen - worldCy * clampedScale,
+    },
+  };
+}
+
 type CanvasSharePayloadV1 = {
   v: 1;
   snapshot: GeometrySubmissionSnapshot;
@@ -504,6 +599,8 @@ export function FreeGeometryEditor({
   const lastHandledAutoDetectIdRef = useRef<number>(0);
   const autoDetectRunningRef = useRef(false);
   const appliedUrlCanvasSnapshotRef = useRef(false);
+  /** Po načtení sdíleného plátna v úkolu — zajistí jedno vycentrování při dané velikosti okna / panelu. */
+  const assignmentSnapshotFitLayoutKeyRef = useRef<string | null>(null);
   /** Animace posunu středu popisku při změně cílové pozice (ease-out). */
   const labelAnimByPointIdRef = useRef<
     Map<string, { from: { x: number; y: number }; to: { x: number; y: number }; startMs: number }>
@@ -1992,6 +2089,50 @@ export function FreeGeometryEditor({
       window.removeEventListener('resize', measure);
     };
   }, []);
+
+  /** Zarovnání a zoom tak, aby byl obsah sdíleného plátna v úkolu vidět celý a uprostřed (včetně odsazení za panel zadání). */
+  useEffect(() => {
+    if (sharedRecording && sharedRecording.steps.length > 0) return;
+    if (!initialCanvasSnapshot) {
+      assignmentSnapshotFitLayoutKeyRef.current = null;
+      return;
+    }
+    if (!embedInAssignment && !readOnlyCanvas) return;
+    if (canvasSize.width < 8 || canvasSize.height < 8) return;
+
+    const bounds = computeGeometryWorldBounds(initialCanvasSnapshot);
+    if (!bounds) return;
+
+    const right = assignmentToolbarRightOffsetPx ?? 0;
+    const layoutKey = [
+      initialCanvasSnapshot.points.map(p => p.id).join(','),
+      initialCanvasSnapshot.shapes.map(s => s.id).join(','),
+      (initialCanvasSnapshot.freehandPaths ?? []).map(f => f.id).join(','),
+      canvasSize.width,
+      canvasSize.height,
+      right,
+    ].join('|');
+
+    if (assignmentSnapshotFitLayoutKeyRef.current === layoutKey) return;
+
+    const { scale: nextScale, offset: nextOffset } = fitViewportToAssignmentBounds(
+      bounds,
+      canvasSize.width,
+      canvasSize.height,
+      right,
+    );
+    setScale(nextScale);
+    setOffset(nextOffset);
+    assignmentSnapshotFitLayoutKeyRef.current = layoutKey;
+  }, [
+    sharedRecording,
+    embedInAssignment,
+    readOnlyCanvas,
+    initialCanvasSnapshot,
+    canvasSize.width,
+    canvasSize.height,
+    assignmentToolbarRightOffsetPx,
+  ]);
 
   // Cleanup pending circle center when tool changes or circle creation is cancelled
   useEffect(() => {

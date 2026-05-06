@@ -1,11 +1,32 @@
 
-  import { defineConfig, loadEnv } from 'vite';
+  import { defineConfig, loadEnv, type Plugin } from 'vite';
   import react from '@vitejs/plugin-react-swc';
   import tailwindcss from '@tailwindcss/vite';
   import path from 'node:path';
   import { fileURLToPath } from 'node:url';
 
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+  /** V dev bez správného base URL (/geometry-app/) Vite zobrazí jen nápovědu — přesměruj /ukol/… na /geometry-app/ukol/… */
+  function devRedirectUkolWithoutBase(): Plugin {
+    return {
+      name: 'dev-redirect-ukol-without-base',
+      configureServer(server) {
+        server.middlewares.use((req, res, next) => {
+          const raw = req.url ?? '';
+          const pathOnly = raw.split('?')[0] ?? '';
+          const search = raw.includes('?') ? '?' + raw.split('?').slice(1).join('?') : '';
+          if (pathOnly === '/ukol' || pathOnly.startsWith('/ukol/')) {
+            res.statusCode = 302;
+            res.setHeader('Location', '/geometry-app' + pathOnly + search);
+            res.end();
+            return;
+          }
+          next();
+        });
+      },
+    };
+  }
 
   export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, process.cwd(), '');
@@ -21,7 +42,11 @@
 
     return {
     base,
-    plugins: [tailwindcss(), react()],
+    plugins: [
+      ...(mode === 'development' ? [devRedirectUkolWithoutBase()] : []),
+      tailwindcss(),
+      react(),
+    ],
     css: {
       transformer: 'lightningcss',
       lightningcss: {
