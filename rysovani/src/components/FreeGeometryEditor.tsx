@@ -1362,7 +1362,7 @@ export function FreeGeometryEditor({
     if (selectedShapeIds.length > 0) {
       const ids = new Set(selectedShapeIds);
       setShapes(prev => prev.map(s => ids.has(s.id) ? { ...s, locked: nextLocked } : s));
-      toast.message(nextLocked ? 'Tvar(y) zamčen.' : 'Tvar(y) odemčen.');
+      toast.message(nextLocked ? 'Tvar zamčen.' : 'Tvar odemčen.');
       return;
     }
 
@@ -5486,10 +5486,7 @@ export function FreeGeometryEditor({
           drawLabel(ctx, pos, shape.label, darkMode ? '#9ca3af' : '#6b7280', 0, 0);
         }
       } else if (shape.type === 'lineDashDot') {
-        ctx.save();
-        applyLineStyle(ctx, 'dashdot');
-        drawLine(ctx, p1, p2, 1, strokeClr, strokeW, false, false);
-        ctx.restore();
+        drawLine(ctx, p1, p2, 1, strokeClr, strokeW, false, true);
         {
           const lineAng = Math.atan2(p2.y - p1.y, p2.x - p1.x);
           const pad = SHAPE_LABEL_PAD_SCREEN_PX / scale;
@@ -5764,11 +5761,7 @@ export function FreeGeometryEditor({
         } else if (shape.type === 'lineDashed') {
           drawLine(ctx, lp1, lp2, 1, topStrokeClr, topStrokeW, true);
         } else if (shape.type === 'lineDashDot') {
-          ctx.save();
-          applyLineStyle(ctx, 'dashdot');
-          drawLine(ctx, lp1, lp2, 1, topStrokeClr, topStrokeW, false, false);
-          ctx.restore();
-          applyLineStyle(ctx, 'solid');
+          drawLine(ctx, lp1, lp2, 1, topStrokeClr, topStrokeW, false, true);
         } else if (shape.type === 'ray') {
           drawRay(ctx, lp1, lp2, 1, topStrokeClr, topStrokeW);
         } else if (shape.type === 'circle') {
@@ -8430,42 +8423,6 @@ export function FreeGeometryEditor({
       </div>
       )}
 
-      {/* Circle fixed radius helper button */}
-      {!recordingState.showPlayer && activeTool === 'circle' && !circleInput.visible && !(isTabletMode && circleTabletState.active) && !selectedPointId && (
-        <button
-          onClick={() => {
-            setCircleInput(prev => ({
-              ...prev,
-              visible: true,
-              center: null,
-              isDraggingCenter: false,
-              isDraggingHandle: false,
-            }));
-            setCircleTabletState({ active: false, centerId: null, center: null, radius: 150, isDraggingHandle: false, handlePos: null });
-            setSelectedPointId(null);
-          }}
-          onTouchEnd={(e) => {
-            e.preventDefault(); e.stopPropagation();
-            setCircleInput(prev => ({
-              ...prev,
-              visible: true,
-              center: null,
-              isDraggingCenter: false,
-              isDraggingHandle: false,
-            }));
-            setCircleTabletState({ active: false, centerId: null, center: null, radius: 150, isDraggingHandle: false, handlePos: null });
-            setSelectedPointId(null);
-          }}
-          className={`absolute left-4 z-10 px-4 py-2 rounded-full text-sm font-medium flex items-center gap-2 transition-all hover:scale-105 ${
-            darkMode ? 'bg-[#24283b] text-[#c0caf5] border border-[#565f89]' : 'bg-white text-gray-600 shadow-md border'
-          }`}
-          style={{ bottom: 'calc(16px + env(safe-area-inset-bottom, 0px))' }}
-        >
-          <Ruler className="size-4" />
-          Nastavit rozměr
-        </button>
-      )}
-      
       {/* Perpendicular tablet mode - Narýsovat button */}
       {!recordingState.showPlayer && activeTool === 'perpendicular' && isTabletMode && perpTabletState.step === 'positioning' && perpTabletState.currentPos && (
         <button
