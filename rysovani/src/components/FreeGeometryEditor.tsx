@@ -2047,8 +2047,59 @@ export function FreeGeometryEditor({
     displayCm.includes(',') ? displayCm.replace(',', '{,}') : displayCm;
 
   const latexIt = (s: string) => `\\textit{${s}}`;
-  const descLatexPerpendicular = (q: string, p: string) =>
-    `\\text{Kolmice } ${latexIt(q)} \\text{ k přímce } ${latexIt(p)}`;
+
+  /** Označení základu kolmice v zápisu (úsečka AB, ne interní label p). */
+  const getPerpendicularBaseRef = (baseShape: GeoShape): string => {
+    const lA = getPointLabel(baseShape.definition.p1Id);
+    const lB = baseShape.definition.p2Id ? getPointLabel(baseShape.definition.p2Id) : '';
+    const hasBoth = lA !== '?' && lB !== '?' && lA !== '' && lB !== '';
+    if (baseShape.type === 'segment' && hasBoth) return `${lA}${lB}`;
+    return baseShape.label;
+  };
+
+  const getPerpendicularConstructionTexts = (qLabel: string, baseShape: GeoShape) => {
+    const baseRef = getPerpendicularBaseRef(baseShape);
+    const notation = `${qLabel} ⊥ ${baseRef}`;
+    const latex = `${qLabel} \\perp ${baseRef}`;
+    if (baseShape.type === 'segment') {
+      return {
+        notation,
+        latex,
+        description: `Kolmice ${qLabel} k úsečce ${baseRef}`,
+        descriptionLatex: `\\text{Kolmice } ${latexIt(qLabel)} \\text{ k úsečce } ${latexIt(baseRef)}`,
+      };
+    }
+    if (baseShape.type === 'lineDashed') {
+      return {
+        notation,
+        latex,
+        description: `Kolmice ${qLabel} k čárkované přímce ${baseRef}`,
+        descriptionLatex: `\\text{Kolmice } ${latexIt(qLabel)} \\text{ k čárkované přímce } ${latexIt(baseRef)}`,
+      };
+    }
+    if (baseShape.type === 'lineDashDot') {
+      return {
+        notation,
+        latex,
+        description: `Kolmice ${qLabel} k čerchované přímce ${baseRef}`,
+        descriptionLatex: `\\text{Kolmice } ${latexIt(qLabel)} \\text{ k čerchované přímce } ${latexIt(baseRef)}`,
+      };
+    }
+    if (baseShape.type === 'ray') {
+      return {
+        notation,
+        latex,
+        description: `Kolmice ${qLabel} k polopřímce ${baseRef}`,
+        descriptionLatex: `\\text{Kolmice } ${latexIt(qLabel)} \\text{ k polopřímce } ${latexIt(baseRef)}`,
+      };
+    }
+    return {
+      notation,
+      latex,
+      description: `Kolmice ${qLabel} k přímce ${baseRef}`,
+      descriptionLatex: `\\text{Kolmice } ${latexIt(qLabel)} \\text{ k přímce } ${latexIt(baseRef)}`,
+    };
+  };
   const descLatexPoint = (label: string) => `\\text{Bod } ${latexIt(label)}`;
   const descLatexLine = (lineLabel: string, lA: string, lB: string, dashed: boolean) =>
     dashed
@@ -2681,6 +2732,9 @@ export function FreeGeometryEditor({
     const baseThreshold = isTouchActive ? 80 : 50;
     let minD = isInPositioningMode ? Infinity : baseThreshold / scale;
 
+    const hoverShapePriority = (t: GeoShape['type']) =>
+      ({ segment: 4, ray: 3, lineDashed: 2, lineDashDot: 2, line: 1 } as const)[t] ?? 0;
+
     shapes.forEach(shape => {
       if (shape.type === 'segment' || shape.type === 'line' || shape.type === 'lineDashed' || shape.type === 'ray') {
         if (activeTool === 'perpendicular' && isTabletMode && perpTabletState.step === 'positioning') {
@@ -2708,7 +2762,12 @@ export function FreeGeometryEditor({
           }
 
           const res = distToSegment({ x: wx, y: wy }, start, end);
-          if (res.dist < minD) {
+          const currentShape = closest ? shapes.find(s => s.id === closest!.id) : undefined;
+          const preferCandidate =
+            res.dist < minD - 1e-6 ||
+            (Math.abs(res.dist - minD) < 1e-6 &&
+              (!currentShape || hoverShapePriority(shape.type) > hoverShapePriority(currentShape.type)));
+          if (preferCandidate) {
             minD = res.dist;
             const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
             closest = { id: shape.id, proj: res.proj, angle };
@@ -3283,14 +3342,17 @@ export function FreeGeometryEditor({
             setShapes(prev => [...prev, newLine]);
             triggerEffect(pX, pY, '#3b82f6');
             // Zápis konstrukce - kolmice
-            addConstructionStep(
-              'perpendicular',
-              `${newLine.label} ⊥ ${baseShape.label}`,
-              `${newLine.label} \\perp ${baseShape.label}`,
-              `Kolmice ${newLine.label} k přímce ${baseShape.label}`,
-              [newLine.id],
-              descLatexPerpendicular(newLine.label, baseShape.label)
-            );
+            {
+              const perpTexts = getPerpendicularConstructionTexts(newLine.label, baseShape);
+              addConstructionStep(
+                'perpendicular',
+                perpTexts.notation,
+                perpTexts.latex,
+                perpTexts.description,
+                [newLine.id],
+                perpTexts.descriptionLatex
+              );
+            }
             setActiveTool('move'); // Reset nástroje po dokončení
             clearSelectionAfterPlacement();
         }
@@ -8484,14 +8546,17 @@ export function FreeGeometryEditor({
               setShapes(prev => [...prev, newLine]);
               triggerEffect(pX, pY, '#3b82f6');
               // Zápis konstrukce - kolmice (tablet)
-              addConstructionStep(
-                'perpendicular',
-                `${newLine.label} ⊥ ${baseShape.label}`,
-                `${newLine.label} \\perp ${baseShape.label}`,
-                `Kolmice ${newLine.label} k přímce ${baseShape.label}`,
-                [newLine.id],
-                descLatexPerpendicular(newLine.label, baseShape.label)
-              );
+              {
+                const perpTexts = getPerpendicularConstructionTexts(newLine.label, baseShape);
+                addConstructionStep(
+                  'perpendicular',
+                  perpTexts.notation,
+                  perpTexts.latex,
+                  perpTexts.description,
+                  [newLine.id],
+                  perpTexts.descriptionLatex
+                );
+              }
               
               setPerpTabletState({ step: 'idle', selectedLineId: null, currentPos: null });
               setActiveTool('move');
