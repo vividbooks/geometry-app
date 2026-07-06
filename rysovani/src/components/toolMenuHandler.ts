@@ -13,7 +13,15 @@ export const handleToolMenuClick = (
   if (toolId.startsWith('__popup__')) {
     // Special popup triggers
     if (toolId === '__popup__circle_fixed') {
-      setCircleInput(prev => ({ ...prev, visible: true, center: null, isDraggingCenter: false, isDraggingHandle: false }));
+      setCircleInput(prev => ({
+        ...prev,
+        visible: true,
+        fixedRadius: true,
+        center: null,
+        isDraggingCenter: false,
+        isDraggingHandle: false,
+        mode: 'circle',
+      }));
       // Reset tablet circle state to avoid conflicts
       if (setCircleTabletState) {
         setCircleTabletState({ active: false, centerId: null, center: null, radius: 150, isDraggingHandle: false, handlePos: null });
@@ -25,6 +33,35 @@ export const handleToolMenuClick = (
     }
   } else {
     setActiveTool(toolId);
+
+    // Circle tool: always show compass immediately (no "pick center first" step).
+    if (toolId === 'circle') {
+      setCircleInput(prev => ({
+        ...prev,
+        visible: true,
+        fixedRadius: false,
+        center: null,
+        isDraggingCenter: false,
+        isDraggingHandle: false,
+        mode: 'circle',
+        freeDrawMode: 'idle',
+        arcDraw: null,
+        arcCrosshair: null,
+      }));
+    } else {
+      // Leaving the circle tool: hide compass UI so it doesn't intercept clicks.
+      setCircleInput(prev => ({
+        ...prev,
+        visible: false,
+        fixedRadius: false,
+        center: null,
+        isDraggingCenter: false,
+        isDraggingHandle: false,
+        freeDrawMode: 'idle',
+        arcDraw: null,
+        arcCrosshair: null,
+      }));
+    }
     
     // Reset perpTabletState when switching tools
     if (setPerpTabletState) {
