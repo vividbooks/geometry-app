@@ -54,6 +54,7 @@ import { handleToolMenuClick } from './toolMenuHandler';
 import { ConstructionProtocol, ConstructionStep, Latex } from './ConstructionProtocol';
 import { projectId, publicAnonKey } from '../utils/supabase/info';
 import { rafThrottle, detectDevicePerformance } from '../utils/performance';
+import { useFitPanelScale } from '../hooks/useFitPanelScale';
 
 import Pero from '../imports/Group23910-135-1585';
 import Pravitko from '../imports/Pravitko';
@@ -836,6 +837,15 @@ export function FreeGeometryEditor({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const bgCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const toolbarPanelRef = useRef<HTMLDivElement>(null);
+  const rulerDrawButtonsRef = useRef<HTMLDivElement>(null);
+  const freeCircleDrawButtonsRef = useRef<HTMLDivElement>(null);
+  const circleFixedPopupRef = useRef<HTMLDivElement>(null);
+  const segmentPopupRef = useRef<HTMLDivElement>(null);
+  const anglePopupRef = useRef<HTMLDivElement>(null);
+  const topStandaloneToolbarRef = useRef<HTMLDivElement>(null);
+  const topAssignmentToolbarRef = useRef<HTMLDivElement>(null);
+  const topAssignmentZoomRef = useRef<HTMLDivElement>(null);
   const animationFrameRef = useRef<number>();
   const projectionImgRef = useRef<{ src: string; img: HTMLImageElement; loaded: boolean } | null>(null);
   const projectionWorldRectRef = useRef<{ src: string; x: number; y: number; w: number; h: number } | null>(null);
@@ -1300,6 +1310,76 @@ export function FreeGeometryEditor({
   const [showRenameModal, setShowRenameModal] = useState(false);
   const [circleRadiusDraft, setCircleRadiusDraft] = useState<string>('');
   const [segmentLengthDraft, setSegmentLengthDraft] = useState<string>('');
+
+  const toolbarPanelScale = useFitPanelScale(
+    toolbarPanelRef,
+    [embedInAssignment, selectedShapeIds.length, activeGroup, selection],
+    { verticalPadding: 12, horizontalPadding: 28 }
+  );
+  const rulerDrawButtonsScale = useFitPanelScale(
+    rulerDrawButtonsRef,
+    [rulerToolState.drawMode, rulerToolState.drawKind],
+    { verticalPadding: 100, horizontalPadding: 8, enabled: activeTool === 'triangleRuler' && rulerToolState.active }
+  );
+  const freeCircleDrawButtonsScale = useFitPanelScale(
+    freeCircleDrawButtonsRef,
+    [circleInput.freeDrawMode],
+    { verticalPadding: 100, horizontalPadding: 8, enabled: circleInput.visible && !circleInput.fixedRadius && !!circleInput.center }
+  );
+  const circleFixedPopupScale = useFitPanelScale(
+    circleFixedPopupRef,
+    [circleInput.radius, circleInput.center],
+    { verticalPadding: 72, horizontalPadding: 32, enabled: circleInput.visible && circleInput.fixedRadius }
+  );
+  const segmentPopupScale = useFitPanelScale(
+    segmentPopupRef,
+    [segmentInput.length],
+    { verticalPadding: 72, horizontalPadding: 32, enabled: segmentInput.visible }
+  );
+  const anglePopupScale = useFitPanelScale(
+    anglePopupRef,
+    [angleInput.value],
+    { verticalPadding: 72, horizontalPadding: 32, enabled: angleInput.visible }
+  );
+  const topStandaloneToolbarScale = useFitPanelScale(
+    topStandaloneToolbarRef,
+    [
+      historyIndex,
+      history.length,
+      showConstructionPanel,
+      recordingState.isRecording,
+      constructionSteps.length,
+      showMeasurements,
+      showGrid,
+      isTabletMode,
+      scale,
+      canvasExportRef,
+    ],
+    {
+      verticalPadding: 16,
+      horizontalPadding: 100,
+      enabled: !embedInAssignment && !recordingState.showPlayer && !readOnlyCanvas,
+    }
+  );
+  const topAssignmentToolbarScale = useFitPanelScale(
+    topAssignmentToolbarRef,
+    [historyIndex, history.length, assignmentToolbarRightOffsetPx],
+    {
+      verticalPadding: 16,
+      horizontalPadding: (assignmentToolbarRightOffsetPx ?? 16) + 16,
+      enabled: embedInAssignment && !recordingState.showPlayer && !readOnlyCanvas,
+    }
+  );
+  const topAssignmentZoomScale = useFitPanelScale(
+    topAssignmentZoomRef,
+    [showMeasurements, showGrid, isTabletMode, scale, assignmentToolbarRightOffsetPx],
+    {
+      verticalPadding: 16,
+      horizontalPadding: (assignmentToolbarRightOffsetPx ?? 16) + 100,
+      enabled: embedInAssignment && !recordingState.showPlayer,
+    }
+  );
+
   const [renameDraft, setRenameDraft] = useState<{
     pointIds: string[];
     shapeIds: string[];
@@ -9023,10 +9103,20 @@ export function FreeGeometryEditor({
       {!recordingState.showPlayer && !readOnlyCanvas && (
       embedInAssignment ? (
         <div
-          className="absolute top-4 z-30 flex items-center gap-2"
+          className="absolute top-4 z-30"
           style={{ right: `${assignmentToolbarRightOffsetPx ?? 16}px` }}
-          onTouchStart={(e) => e.stopPropagation()}
         >
+          <div
+            style={{
+              transform: `scale(${topAssignmentToolbarScale})`,
+              transformOrigin: 'top right',
+            }}
+          >
+            <div
+              ref={topAssignmentToolbarRef}
+              className="flex items-center gap-2"
+              onTouchStart={(e) => e.stopPropagation()}
+            >
           <div className="flex items-center gap-0 rounded-full border border-gray-200/90 bg-[#F2F2F2] p-1.5 shadow-sm">
             <button
               type="button"
@@ -9057,12 +9147,25 @@ export function FreeGeometryEditor({
             </button>
           </div>
           {assignmentToolbarSlot}
+            </div>
+          </div>
         </div>
       ) : (
       <div
-        className="absolute top-4 left-3 right-3 z-30 flex min-h-0 items-center gap-2 pointer-events-none sm:gap-3"
+        className="absolute top-4 left-3 right-3 z-30 pointer-events-none"
         style={{ paddingLeft: 'max(12px, env(safe-area-inset-left))', paddingRight: 'max(12px, env(safe-area-inset-right))' }}
       >
+        <div
+          className="w-full"
+          style={{
+            transform: `scale(${topStandaloneToolbarScale})`,
+            transformOrigin: 'top center',
+          }}
+        >
+        <div
+          ref={topStandaloneToolbarRef}
+          className="flex min-h-0 w-full items-center gap-2 sm:gap-3"
+        >
         {/* Zoom + režim: vycentrované v levé části řádku, pravý cluster má fixní šířku — bez překryvu na tabletu */}
         <div className="pointer-events-none min-w-0 flex-1 flex justify-center">
           <div
@@ -9181,6 +9284,8 @@ export function FreeGeometryEditor({
           </>
         ) : null}
       </div>
+        </div>
+        </div>
       </div>
       )
       )}
@@ -9188,15 +9293,19 @@ export function FreeGeometryEditor({
       {/* TOOLBAR - LEFT SIDE (NEW DESIGN) */}
       {!recordingState.showPlayer && !readOnlyCanvas && !(circleInput.visible && circleInput.fixedRadius) && !angleInput.visible && !segmentInput.visible && (
       <div
-        className="absolute left-4 top-0 bottom-0 z-30 flex flex-col justify-center pointer-events-none"
+        className="absolute left-4 top-0 bottom-0 z-30 flex flex-col justify-center pointer-events-none py-2"
         style={{ touchAction: 'auto' }}
       >
         <div
           className="pointer-events-auto"
-          style={{ touchAction: 'auto' }}
+          style={{
+            touchAction: 'auto',
+            transform: `scale(${toolbarPanelScale})`,
+            transformOrigin: 'center center',
+          }}
           onTouchStart={(e) => e.stopPropagation()}
         >
-         <div className="bg-[#F2F2F2] rounded-full p-2 flex flex-col items-center shadow-sm w-[72px] py-8">
+         <div ref={toolbarPanelRef} className="bg-[#F2F2F2] rounded-full p-2 flex flex-col items-center shadow-sm w-[72px] py-8">
             {!embedInAssignment ? (
               <>
                 {/* Tlačítko Zpět */}
@@ -9965,10 +10074,18 @@ export function FreeGeometryEditor({
             style={{ left: 0, right: `${assignmentToolbarRightOffsetPx ?? 16}px` }}
           >
             <div
+              style={{
+                transform: `scale(${topAssignmentZoomScale})`,
+                transformOrigin: 'top center',
+              }}
+            >
+            <div
+              ref={topAssignmentZoomRef}
               className="pointer-events-auto flex items-center gap-1 rounded-full bg-[#F2F2F2] p-2 shadow-sm"
               onTouchStart={(e) => e.stopPropagation()}
             >
               {topZoomCluster}
+            </div>
             </div>
           </div>
         )}
@@ -9976,7 +10093,16 @@ export function FreeGeometryEditor({
       {/* CIRCLE INPUT PANEL — pevný poloměr (submenu „Rozměr“) */}
       {circleInput.visible && circleInput.fixedRadius && (
         <>
-          <div className={`absolute left-4 top-1/2 -translate-y-1/2 z-50 p-4 rounded-2xl shadow-2xl animate-in slide-in-from-left-4 fade-in duration-300 w-52 border backdrop-blur-md ${
+          <div
+            className="absolute left-4 top-1/2 z-50 animate-in slide-in-from-left-4 fade-in duration-300"
+            style={{
+              transform: `translateY(-50%) scale(${circleFixedPopupScale})`,
+              transformOrigin: 'center center',
+            }}
+          >
+          <div
+            ref={circleFixedPopupRef}
+            className={`relative p-4 rounded-2xl shadow-2xl w-52 border backdrop-blur-md ${
             darkMode ? 'bg-[#24283b]/95 border-[#565f89]' : 'bg-white/95 border-gray-200'
           }`}>
               {/* Velký křížek pro zavření */}
@@ -10136,6 +10262,7 @@ export function FreeGeometryEditor({
                 </div>
             </div>
           </div>
+          </div>
 
           {/* Pevný poloměr: Narýsovat */}
           {circleInput.center && (() => {
@@ -10215,8 +10342,17 @@ export function FreeGeometryEditor({
       {/* Volná kružnice — kružítko na plátně, poloměr tažením handle */}
       {circleInput.visible && !circleInput.fixedRadius && circleInput.center && !animState.isActive && (
         <div
-          className="absolute left-1/2 -translate-x-1/2 z-50 flex flex-nowrap items-center justify-center gap-[0.45rem] px-2"
-          style={{ bottom: 'calc(80px + env(safe-area-inset-bottom, 0px))', maxWidth: 'min(98vw, 960px)' }}
+          className="absolute left-1/2 z-50"
+          style={{
+            bottom: 'calc(80px + env(safe-area-inset-bottom, 0px))',
+            transform: `translateX(-50%) scale(${freeCircleDrawButtonsScale})`,
+            transformOrigin: 'center bottom',
+          }}
+        >
+        <div
+          ref={freeCircleDrawButtonsRef}
+          className="flex flex-nowrap items-center justify-center gap-[0.45rem] px-2"
+          style={{ maxWidth: 'min(98vw, 960px)' }}
         >
           {(
             [
@@ -10298,6 +10434,7 @@ export function FreeGeometryEditor({
             );
           })}
         </div>
+        </div>
       )}
 
       {/* Pravítko — tři režimy rýsování */}
@@ -10306,8 +10443,17 @@ export function FreeGeometryEditor({
         rulerToolState.active &&
         !animState.isActive && (
         <div
-          className="absolute left-1/2 -translate-x-1/2 z-50 flex flex-nowrap items-center justify-center gap-[0.45rem] px-2"
-          style={{ bottom: 'calc(80px + env(safe-area-inset-bottom, 0px))', maxWidth: 'min(98vw, 960px)' }}
+          className="absolute left-1/2 z-50"
+          style={{
+            bottom: 'calc(80px + env(safe-area-inset-bottom, 0px))',
+            transform: `translateX(-50%) scale(${rulerDrawButtonsScale})`,
+            transformOrigin: 'center bottom',
+          }}
+        >
+        <div
+          ref={rulerDrawButtonsRef}
+          className="flex flex-nowrap items-center justify-center gap-[0.45rem] px-2"
+          style={{ maxWidth: 'min(98vw, 960px)' }}
         >
           {(
             [
@@ -10356,12 +10502,22 @@ export function FreeGeometryEditor({
             );
           })}
         </div>
+        </div>
       )}
 
       {/* SEGMENT LENGTH INPUT PANEL */}
       {segmentInput.visible && (
         <>
-          <div className={`absolute left-4 top-1/2 -translate-y-1/2 z-50 p-4 rounded-2xl shadow-2xl animate-in slide-in-from-left-4 fade-in duration-300 w-52 border backdrop-blur-md ${
+          <div
+            className="absolute left-4 top-1/2 z-50 animate-in slide-in-from-left-4 fade-in duration-300"
+            style={{
+              transform: `translateY(-50%) scale(${segmentPopupScale})`,
+              transformOrigin: 'center center',
+            }}
+          >
+          <div
+            ref={segmentPopupRef}
+            className={`relative p-4 rounded-2xl shadow-2xl w-52 border backdrop-blur-md ${
             darkMode ? 'bg-[#24283b]/95 border-[#565f89]' : 'bg-white/95 border-gray-200'
           }`}>
               {/* Velký křížek pro zavření - nad popupem */}
@@ -10483,13 +10639,23 @@ export function FreeGeometryEditor({
                 <span>Použít</span>
             </button>
           </div>
+          </div>
         </>
       )}
 
       {/* ANGLE INPUT PANEL */}
       {angleInput.visible && (
         <>
-          <div className={`absolute left-4 top-1/2 -translate-y-1/2 z-50 p-4 rounded-2xl shadow-2xl animate-in slide-in-from-left-4 fade-in duration-300 w-52 border backdrop-blur-md ${
+          <div
+            className="absolute left-4 top-1/2 z-50 animate-in slide-in-from-left-4 fade-in duration-300"
+            style={{
+              transform: `translateY(-50%) scale(${anglePopupScale})`,
+              transformOrigin: 'center center',
+            }}
+          >
+          <div
+            ref={anglePopupRef}
+            className={`relative p-4 rounded-2xl shadow-2xl w-52 border backdrop-blur-md ${
             darkMode ? 'bg-[#24283b]/95 border-[#565f89]' : 'bg-white/95 border-gray-200'
           }`}>
               {/* Velký křížek pro zavření - nad popupem */}
@@ -10617,6 +10783,7 @@ export function FreeGeometryEditor({
                 <Check className="size-5" />
                 <span>Vytvořit</span>
             </button>
+          </div>
           </div>
         </>
       )}
