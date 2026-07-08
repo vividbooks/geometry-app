@@ -1294,6 +1294,7 @@ export function FreeGeometryEditor({
         vertexId: null,
         directionId: null,
       }));
+      setHoveredShape(null);
     } else {
       resetPlacedProtractor();
     }
@@ -1318,9 +1319,16 @@ export function FreeGeometryEditor({
     resetPlacedRuler();
     resetPlacedProtractor();
     resetPlacedCompass();
+    setPerpTabletState({ step: 'idle', selectedLineId: null, currentPos: null });
+    anglePerpLineHoverFromMoveRef.current = false;
+    setHoveredShape(null);
     // Pokud uživatel klikne do bočního panelu, umístěné pomůcky nesmí „znovu naskočit“
-    // (u úhloměru to jinak udělá auto-center useEffect, pokud activeTool zůstane 'angle').
-    setActiveTool(prev => (prev === 'circle' || prev === 'triangleRuler' || prev === 'angle' ? 'move' : prev));
+    // (u úhloměru/kolmice to jinak udělá auto-efekt, pokud activeTool zůstane aktivní).
+    setActiveTool(prev =>
+      prev === 'circle' || prev === 'triangleRuler' || prev === 'angle' || prev === 'perpendicular'
+        ? 'move'
+        : prev
+    );
     setSelectedPointId(null);
   };
 
@@ -3548,12 +3556,20 @@ export function FreeGeometryEditor({
     let minD = isInPositioningMode ? Infinity : baseThreshold / scale;
 
     const hoverShapePriority = (t: GeoShape['type']) =>
-      ({ segment: 4, lineDashed: 3, lineDashDot: 3, line: 2 } as const)[t] ?? 0;
+      activeTool === 'perpendicular'
+        ? ({ segment: 5, ray: 4, lineDashed: 3, lineDashDot: 3, line: 2 } as const)[t] ?? 0
+        : ({ segment: 4, lineDashed: 3, lineDashDot: 3, line: 2 } as const)[t] ?? 0;
 
     shapes.forEach(shape => {
-      // Úhloměr/kolmice: bereme jen přímku nebo úsečku (a případně čárkované varianty přímky).
-      // Polopřímka se tady záměrně ignoruje.
-      if (shape.type === 'segment' || shape.type === 'line' || shape.type === 'lineDashed' || shape.type === 'lineDashDot') {
+      const isPerpRay = activeTool === 'perpendicular' && shape.type === 'ray';
+      // Úhloměr: přímka/úsečka. Kolmice: navíc i polopřímka (narýsované rameno úhlu).
+      if (
+        shape.type === 'segment' ||
+        shape.type === 'line' ||
+        shape.type === 'lineDashed' ||
+        shape.type === 'lineDashDot' ||
+        isPerpRay
+      ) {
         if (activeTool === 'perpendicular' && isTabletMode && perpTabletState.step === 'positioning') {
           if (shape.id !== perpTabletState.selectedLineId) return;
         }
@@ -3574,6 +3590,15 @@ export function FreeGeometryEditor({
               if (shape.type === 'line' || shape.type === 'lineDashed' || shape.type === 'lineDashDot') {
                 start = { x: p1.x - (dx / len) * EXT, y: p1.y - (dy / len) * EXT } as any;
               }
+              end = { x: p1.x + (dx / len) * EXT, y: p1.y + (dy / len) * EXT } as any;
+            }
+          } else if (shape.type === 'ray') {
+            const dx = p2.x - p1.x;
+            const dy = p2.y - p1.y;
+            const len = Math.sqrt(dx * dx + dy * dy);
+            if (len > 0.001) {
+              const EXT = 100000;
+              start = p1;
               end = { x: p1.x + (dx / len) * EXT, y: p1.y + (dy / len) * EXT } as any;
             }
           }
@@ -5112,8 +5137,12 @@ export function FreeGeometryEditor({
 
     // Angle / perpendicular: hover nad čárou (sdílená geometrie s getLineHoverAtWorld)
     if (activeTool === 'angle' || activeTool === 'perpendicular') {
+      if (activeTool === 'angle' && protractorCenterRef.current) {
+        if (hoveredShape) setHoveredShape(null);
+      } else {
         anglePerpLineHoverFromMoveRef.current = true;
         setHoveredShape(getLineHoverAtWorld(wx, wy));
+      }
     } else {
         if (hoveredShape) setHoveredShape(null);
     }
@@ -8285,6 +8314,7 @@ export function FreeGeometryEditor({
     if (
       hoveredShape &&
       (activeTool === 'angle' || activeTool === 'perpendicular') &&
+      !(activeTool === 'angle' && protractorCenterRef.current) &&
       !suppressStaleAnglePerpLineHoverVisual
     ) {
        const shape = shapes.find(s => s.id === hoveredShape.id);
