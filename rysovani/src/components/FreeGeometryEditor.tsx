@@ -5794,7 +5794,7 @@ export function FreeGeometryEditor({
                     id: realP1Id,
                     x: animState.p1.x,
                     y: animState.p1.y,
-                    label: getFreeLabel(),
+                    label: '',
                     hidden: true
                 };
                 newPointsToAdd.push(newP1);
@@ -5811,7 +5811,7 @@ export function FreeGeometryEditor({
                 id: p2Id,
                 x: animP2.x,
                 y: animP2.y,
-                label: getFreeLabel(),
+                label: '',
                 hidden: true
               };
               newPointsToAdd.push(newP2);
