@@ -806,6 +806,107 @@ const hitTestPlacedRuler = (
   return { type: 'miss' };
 };
 
+const PROTRACTOR_PLACED_RADIUS = 200;
+
+const protractorArmEndWorld = (
+  center: { x: number; y: number },
+  baseAngle: number,
+  highlightAngle: number,
+  rotationOffset: number,
+  isMirrored: boolean,
+  radius = PROTRACTOR_PLACED_RADIUS
+) => {
+  const clampedAngle = Math.max(0, Math.min(180, highlightAngle));
+  const hRad = -(clampedAngle * Math.PI) / 180;
+  let lx = Math.cos(hRad) * radius;
+  let ly = Math.sin(hRad) * radius;
+  if (isMirrored) ly = -ly;
+  const total = baseAngle + (rotationOffset * Math.PI) / 180;
+  return {
+    x: center.x + Math.cos(total) * lx - Math.sin(total) * ly,
+    y: center.y + Math.sin(total) * lx + Math.cos(total) * ly,
+  };
+};
+
+const protractorValueFromWorld = (
+  wx: number,
+  wy: number,
+  center: { x: number; y: number },
+  baseAngle: number,
+  rotationOffset: number,
+  isMirrored: boolean
+): number => {
+  const dx = wx - center.x;
+  const dy = wy - center.y;
+  if (Math.hypot(dx, dy) < 1e-6) return 0;
+  const total = baseAngle + (rotationOffset * Math.PI) / 180;
+  const cos = Math.cos(-total);
+  const sin = Math.sin(-total);
+  let lx = cos * dx - sin * dy;
+  let ly = sin * dx + cos * dy;
+  if (isMirrored) ly = -ly;
+  const hRad = Math.atan2(ly, lx);
+  if (hRad > 0) {
+    return lx >= 0 ? 0 : 180;
+  }
+  const deg = (-hRad * 180) / Math.PI;
+  return Math.round(Math.max(0, Math.min(180, deg)));
+};
+
+const hitTestPlacedProtractor = (
+  wx: number,
+  wy: number,
+  center: { x: number; y: number },
+  baseAngle: number,
+  scale: number,
+  highlightAngle = 45,
+  rotationOffset = 0,
+  isMirrored = false
+): { type: 'rotate' } | { type: 'arm' } | { type: 'move' } | { type: 'miss' } => {
+  const r = PROTRACTOR_PLACED_RADIUS;
+  const dx = wx - center.x;
+  const dy = wy - center.y;
+  const dist = Math.hypot(dx, dy);
+
+  // Rotate handle: u pravého konce základny (v lokálu +r,0), se screen prahem.
+  const handle = {
+    x: center.x + Math.cos(baseAngle) * r,
+    y: center.y + Math.sin(baseAngle) * r,
+  };
+  const handleHit = 26 / scale;
+  if (Math.hypot(wx - handle.x, wy - handle.y) <= handleHit) return { type: 'rotate' };
+
+  // Rameno úhlu — kolečko na konci i samotná čára od středu.
+  const armEnd = protractorArmEndWorld(center, baseAngle, highlightAngle, rotationOffset, isMirrored, r);
+  const armHit = 22 / scale;
+  if (Math.hypot(wx - armEnd.x, wy - armEnd.y) <= armHit) return { type: 'arm' };
+  const armSeg = distToSegment({ x: wx, y: wy }, center, armEnd);
+  if (armSeg.dist <= armHit && armSeg.t > 0.04) return { type: 'arm' };
+
+  // Move: klik do oblasti úhloměru.
+  if (dist <= r) return { type: 'move' };
+  return { type: 'miss' };
+};
+
+type RulerRotationAnchor = { local: { x: number; y: number }; world: { x: number; y: number } } | null;
+
+const pivotWorldFromAnchor = (
+  anchorWorld: { x: number; y: number },
+  anchorLocal: { x: number; y: number },
+  angle: number
+) => {
+  // world = pivot + R(angle) * ((local - pivotLocal) * s)
+  const s = RULER_PLACED_SCALE;
+  const dx = (anchorLocal.x - RULER_ROTATION_PIVOT_LOCAL.x) * s;
+  const dy = (anchorLocal.y - RULER_ROTATION_PIVOT_LOCAL.y) * s;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  return {
+    x: anchorWorld.x - (dx * cos - dy * sin),
+    y: anchorWorld.y - (dx * sin + dy * cos),
+  };
+};
+
 const SHAPE_THIN_STROKE_WORLD = 0.28;
 /** Modré halo výběru (světové jednotky). */
 const SELECTION_GLOW_STROKE_WORLD = 8.5;
@@ -1045,6 +1146,7 @@ export function FreeGeometryEditor({
   const lastTouchTimeRef = useRef<number>(0); // Timestamp posledniho touch eventu pro prevenci double-tap
   /** Tablet úhel/kolmice ve fázi „vyber linku“: zvýraznění čáry jen po touchmove, ne ze zastaralého hoveredShape */
   const anglePerpLineHoverFromMoveRef = useRef(false);
+  const suppressAngleHoverPreviewRef = useRef(false);
   const rulerDraggingRef = useRef(false);
   const rulerDragModeRef = useRef<'move' | 'rotate' | null>(null);
   const rulerPivotRef = useRef<{ x: number; y: number } | null>(null);
@@ -1059,6 +1161,26 @@ export function FreeGeometryEditor({
     mouseAngle: number;
     startAngle: number;
   } | null>(null);
+  const rulerRotationAnchorRef = useRef<RulerRotationAnchor>(null);
+  const protractorDraggingRef = useRef(false);
+  const protractorDragModeRef = useRef<'move' | 'rotate' | 'arm' | null>(null);
+  const protractorCenterRef = useRef<{ x: number; y: number } | null>(null);
+  const protractorAngleRef = useRef(0);
+  const protractorDragStartRef = useRef<{
+    mouseX: number;
+    mouseY: number;
+    centerX: number;
+    centerY: number;
+  } | null>(null);
+  const protractorRotateStartRef = useRef<{
+    mouseAngle: number;
+    startAngle: number;
+  } | null>(null);
+  const protractorMoveHoverRef = useRef(false);
+  const [protractorMoveHover, setProtractorMoveHover] = useState(false);
+  const protractorArmHoverRef = useRef(false);
+  const [protractorArmHover, setProtractorArmHover] = useState(false);
+  const angleArmHelperPointIdRef = useRef<string | null>(null);
   const keepRulerToolAfterAnimRef = useRef(false);
   const keepCompassToolAfterAnimRef = useRef(false);
   const rulerPendingDrawKindRef = useRef<'line' | 'segment' | 'stroke' | null>(null);
@@ -1079,6 +1201,7 @@ export function FreeGeometryEditor({
     rulerPivotRef.current = null;
     rulerDragStartRef.current = null;
     rulerRotateStartRef.current = null;
+    rulerRotationAnchorRef.current = null;
     rulerLineDrawRef.current = null;
     rulerPendingDrawKindRef.current = null;
     rulerRotateHoverRef.current = false;
@@ -1096,6 +1219,32 @@ export function FreeGeometryEditor({
       crosshair: null,
       lineDraw: null,
     });
+  };
+
+  const resetPlacedProtractor = () => {
+    protractorDraggingRef.current = false;
+    protractorDragModeRef.current = null;
+    protractorCenterRef.current = null;
+    protractorAngleRef.current = 0;
+    protractorDragStartRef.current = null;
+    protractorRotateStartRef.current = null;
+    protractorMoveHoverRef.current = false;
+    setProtractorMoveHover(false);
+    protractorArmHoverRef.current = false;
+    setProtractorArmHover(false);
+    removeAngleArmHelperPoint();
+    setAngleInput(prev =>
+      prev.visible || prev.customVertex
+        ? {
+            ...prev,
+            visible: false,
+            customVertex: undefined,
+            baseAngle: undefined,
+            vertexId: null,
+            directionId: null,
+          }
+        : prev
+    );
   };
 
   const resetPlacedCompass = () => {
@@ -1126,6 +1275,28 @@ export function FreeGeometryEditor({
 
   const selectSidebarTool = (toolId: string) => {
     resetPlacedRuler();
+    if (toolId === 'angle') {
+      // Při každém kliknutí na úhloměr v bočním panelu znovu umístit doprostřed plátna
+      // (musí fungovat i když už je activeTool === 'angle', takže nespoléhat jen na useEffect).
+      if (canvasSize.width >= 8 && canvasSize.height >= 8) {
+        const cx = (canvasSize.width / 2 - offset.x) / scale;
+        const cy = (canvasSize.height / 2 - offset.y) / scale;
+        protractorCenterRef.current = { x: cx, y: cy };
+      } else {
+        protractorCenterRef.current = null;
+      }
+      protractorAngleRef.current = 0;
+      setAngleInput(prev => ({
+        ...prev,
+        visible: true,
+        customVertex: protractorCenterRef.current ?? prev.customVertex,
+        baseAngle: 0,
+        vertexId: null,
+        directionId: null,
+      }));
+    } else {
+      resetPlacedProtractor();
+    }
     if (toolId !== 'circle' && toolId !== '__popup__circle_fixed') {
       resetPlacedCompass();
     }
@@ -1145,15 +1316,20 @@ export function FreeGeometryEditor({
   /** Skrýt volné pravítko a kružítko (např. při otevření jiné skupiny nástrojů). */
   const dismissPlacedDrawingTools = () => {
     resetPlacedRuler();
+    resetPlacedProtractor();
     resetPlacedCompass();
-    setActiveTool(prev => (prev === 'circle' || prev === 'triangleRuler' ? 'move' : prev));
+    // Pokud uživatel klikne do bočního panelu, umístěné pomůcky nesmí „znovu naskočit“
+    // (u úhloměru to jinak udělá auto-center useEffect, pokud activeTool zůstane 'angle').
+    setActiveTool(prev => (prev === 'circle' || prev === 'triangleRuler' || prev === 'angle' ? 'move' : prev));
     setSelectedPointId(null);
   };
 
   const openToolSubmenu = (groupId: string, isMenuOpen: boolean) => {
     const opening = !isMenuOpen;
     setActiveGroup(opening ? groupId : null);
-    if (opening) dismissPlacedDrawingTools();
+    // Jakýkoliv klik do bočního panelu nástrojů má „uklidit“ umístěné pomůcky,
+    // aby úhloměr/pravítko nezůstávaly vidět při přepnutí či zavření menu.
+    dismissPlacedDrawingTools();
   };
 
   const rulerRotateHoverRef = useRef(false);
@@ -1208,6 +1384,45 @@ export function FreeGeometryEditor({
       };
     });
   }, [activeTool, canvasSize.width, canvasSize.height, offset.x, offset.y, scale]);
+
+  // Nástroj Úhloměr: po výběru zobraz úhloměr uprostřed plátna (jako umístěný nástroj).
+  useEffect(() => {
+    if (activeTool !== 'angle') {
+      resetPlacedProtractor();
+      return;
+    }
+    if (canvasSize.width < 8 || canvasSize.height < 8) return;
+
+    const cx = (canvasSize.width / 2 - offset.x) / scale;
+    const cy = (canvasSize.height / 2 - offset.y) / scale;
+    if (!protractorCenterRef.current) {
+      protractorCenterRef.current = { x: cx, y: cy };
+    }
+    const center = protractorCenterRef.current;
+    // Otevři panel úhloměru a naváž ho na umístěný úhloměr.
+    setAngleInput(prev => ({
+      ...prev,
+      visible: true,
+      customVertex: center,
+      baseAngle: protractorAngleRef.current,
+      vertexId: null,
+      directionId: null,
+    }));
+  }, [activeTool, canvasSize.width, canvasSize.height, offset.x, offset.y, scale]);
+
+  // Pomocný bod na konci ramene úhloměru — sleduje velikost úhlu, po narýsování zmizí.
+  useEffect(() => {
+    syncAngleArmHelperPoint();
+  }, [
+    activeTool,
+    angleInput.value,
+    angleInput.rotationOffset,
+    angleInput.isMirrored,
+    angleInput.customVertex,
+    angleInput.baseAngle,
+    animState.isActive,
+    animState.type,
+  ]);
 
   // Kružítko: skrýt při přepnutí na jiný nástroj (záloha pro setActiveTool mimo boční panel).
   useEffect(() => {
@@ -3333,10 +3548,12 @@ export function FreeGeometryEditor({
     let minD = isInPositioningMode ? Infinity : baseThreshold / scale;
 
     const hoverShapePriority = (t: GeoShape['type']) =>
-      ({ segment: 4, ray: 3, lineDashed: 2, lineDashDot: 2, line: 1 } as const)[t] ?? 0;
+      ({ segment: 4, lineDashed: 3, lineDashDot: 3, line: 2 } as const)[t] ?? 0;
 
     shapes.forEach(shape => {
-      if (shape.type === 'segment' || shape.type === 'line' || shape.type === 'lineDashed' || shape.type === 'ray') {
+      // Úhloměr/kolmice: bereme jen přímku nebo úsečku (a případně čárkované varianty přímky).
+      // Polopřímka se tady záměrně ignoruje.
+      if (shape.type === 'segment' || shape.type === 'line' || shape.type === 'lineDashed' || shape.type === 'lineDashDot') {
         if (activeTool === 'perpendicular' && isTabletMode && perpTabletState.step === 'positioning') {
           if (shape.id !== perpTabletState.selectedLineId) return;
         }
@@ -3348,13 +3565,13 @@ export function FreeGeometryEditor({
         if (p1 && p2) {
           let start = p1;
           let end = p2;
-          if (shape.type === 'line' || shape.type === 'lineDashed' || shape.type === 'ray') {
+          if (shape.type === 'line' || shape.type === 'lineDashed' || shape.type === 'lineDashDot') {
             const dx = p2.x - p1.x;
             const dy = p2.y - p1.y;
             const len = Math.sqrt(dx * dx + dy * dy);
             if (len > 0.001) {
               const EXT = 100000;
-              if (shape.type === 'line' || shape.type === 'lineDashed') {
+              if (shape.type === 'line' || shape.type === 'lineDashed' || shape.type === 'lineDashDot') {
                 start = { x: p1.x - (dx / len) * EXT, y: p1.y - (dy / len) * EXT } as any;
               }
               end = { x: p1.x + (dx / len) * EXT, y: p1.y + (dy / len) * EXT } as any;
@@ -3376,6 +3593,165 @@ export function FreeGeometryEditor({
       }
     });
     return closest;
+  };
+
+  /** Hover nad přímkou/úsečkou/polopřímkou pro snap úhloměru (NE pro výběr linky v angle/perpendicular workflow). */
+  const getLineHoverForProtractorSnap = (
+    wx: number,
+    wy: number
+  ): { id: string; proj: { x: number; y: number }; angle: number } | null => {
+    let closest: { id: string; proj: { x: number; y: number }; angle: number } | null = null;
+    const isTouchActive = Date.now() - lastTouchTimeRef.current < 1000;
+    const baseThreshold = isTouchActive ? 80 : 50;
+    let minD = baseThreshold / scale;
+
+    const hoverShapePriority = (t: GeoShape['type']) =>
+      ({ segment: 5, ray: 4, lineDashed: 3, lineDashDot: 3, line: 2 } as const)[t] ?? 0;
+
+    for (const shape of shapes) {
+      if (
+        shape.type !== 'segment' &&
+        shape.type !== 'line' &&
+        shape.type !== 'lineDashed' &&
+        shape.type !== 'lineDashDot' &&
+        shape.type !== 'ray'
+      ) {
+        continue;
+      }
+
+      const p1 = points.find(p => p.id === shape.definition.p1Id);
+      const p2 = shape.definition.p2Id ? points.find(p => p.id === shape.definition.p2Id) : null;
+      if (!p1 || !p2) continue;
+
+      let start = p1;
+      let end = p2;
+
+      if (shape.type === 'line' || shape.type === 'lineDashed' || shape.type === 'lineDashDot') {
+        const dx = p2.x - p1.x;
+        const dy = p2.y - p1.y;
+        const len = Math.sqrt(dx * dx + dy * dy);
+        if (len > 0.001) {
+          const EXT = 100000;
+          start = { x: p1.x - (dx / len) * EXT, y: p1.y - (dy / len) * EXT } as any;
+          end = { x: p1.x + (dx / len) * EXT, y: p1.y + (dy / len) * EXT } as any;
+        }
+      } else if (shape.type === 'ray') {
+        const dx = p2.x - p1.x;
+        const dy = p2.y - p1.y;
+        const len = Math.sqrt(dx * dx + dy * dy);
+        if (len > 0.001) {
+          const EXT = 100000;
+          start = p1;
+          end = { x: p1.x + (dx / len) * EXT, y: p1.y + (dy / len) * EXT } as any;
+        }
+      }
+
+      const res = distToSegment({ x: wx, y: wy }, start, end);
+      const currentShape = closest ? shapes.find(s => s.id === closest!.id) : undefined;
+      const preferCandidate =
+        res.dist < minD - 1e-6 ||
+        (Math.abs(res.dist - minD) < 1e-6 &&
+          (!currentShape || hoverShapePriority(shape.type) > hoverShapePriority(currentShape.type)));
+
+      if (preferCandidate) {
+        minD = res.dist;
+        const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+        closest = { id: shape.id, proj: res.proj, angle };
+      }
+    }
+
+    return closest;
+  };
+
+  /** Přichytí střed umístěného úhloměru k bodům, úsečkám a přímkám. */
+  const snapPlacedProtractor = (
+    wx: number,
+    wy: number,
+    currentAngle: number,
+    thresholdPx = 30
+  ): { center: { x: number; y: number }; baseAngle: number } => {
+    const posSnap = getSnapPositionPreferPoint(wx, wy, thresholdPx);
+    if (posSnap) {
+      const lineAlign = getLineHoverForProtractorSnap(posSnap.x, posSnap.y);
+      return {
+        center: posSnap,
+        baseAngle: lineAlign?.angle ?? currentAngle,
+      };
+    }
+
+    const lineHover = getLineHoverForProtractorSnap(wx, wy);
+    if (lineHover) {
+      return {
+        center: lineHover.proj,
+        baseAngle: lineHover.angle,
+      };
+    }
+
+    const shapeSnap = snapToNearestShape(wx, wy, thresholdPx);
+    if (shapeSnap) {
+      const lineAlign = getLineHoverForProtractorSnap(shapeSnap.x, shapeSnap.y);
+      return {
+        center: shapeSnap,
+        baseAngle: lineAlign?.angle ?? currentAngle,
+      };
+    }
+
+    return { center: { x: wx, y: wy }, baseAngle: currentAngle };
+  };
+
+  const removeAngleArmHelperPoint = () => {
+    const id = angleArmHelperPointIdRef.current;
+    if (!id) return;
+    angleArmHelperPointIdRef.current = null;
+    setPoints(prev => prev.filter(p => p.id !== id));
+  };
+
+  const syncAngleArmHelperPoint = () => {
+    if (activeTool !== 'angle') {
+      removeAngleArmHelperPoint();
+      return;
+    }
+    if (animState.isActive && animState.type === 'angle') return;
+
+    const center = protractorCenterRef.current ?? angleInput.customVertex ?? null;
+    if (!center) {
+      removeAngleArmHelperPoint();
+      return;
+    }
+    const baseAngle = protractorCenterRef.current
+      ? protractorAngleRef.current
+      : (angleInput.baseAngle ?? 0);
+    const armEnd = protractorArmEndWorld(
+      center,
+      baseAngle,
+      angleInput.value,
+      angleInput.rotationOffset,
+      angleInput.isMirrored
+    );
+
+    const existingId = angleArmHelperPointIdRef.current;
+    if (existingId) {
+      setPoints(prev =>
+        prev.map(p =>
+          p.id === existingId ? { ...p, x: armEnd.x, y: armEnd.y, hidden: false, locked: true } : p
+        )
+      );
+      return;
+    }
+
+    const newId = crypto.randomUUID();
+    angleArmHelperPointIdRef.current = newId;
+    setPoints(prev => [
+      ...prev,
+      {
+        id: newId,
+        x: armEnd.x,
+        y: armEnd.y,
+        label: '',
+        hidden: false,
+        locked: true,
+      },
+    ]);
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -3467,7 +3843,8 @@ export function FreeGeometryEditor({
       }
 
       if (rulerToolState.drawMode === 'pickEdge') {
-        const snap = snapToRulerEdge(wx, wy, pivot, angle);
+        const snappedInput = getRulerDrawSnapInput(wx, wy, pivot);
+        const snap = snapToRulerEdge(snappedInput.x, snappedInput.y, pivot, angle, scale);
         rulerLineDrawRef.current = {
           edge: snap.edge,
           start: { x: snap.point.x, y: snap.point.y },
@@ -3494,8 +3871,13 @@ export function FreeGeometryEditor({
         rulerDragModeRef.current = 'rotate';
         rulerRotateCornerRef.current = hit.cornerId;
         rulerDragStartRef.current = null;
+        const anchor =
+          rulerRotationAnchorRef.current ?? {
+            local: { x: RULER_ROTATION_PIVOT_LOCAL.x, y: RULER_ROTATION_PIVOT_LOCAL.y },
+            world: pivot,
+          };
         rulerRotateStartRef.current = {
-          mouseAngle: Math.atan2(wy - pivot.y, wx - pivot.x),
+          mouseAngle: Math.atan2(wy - anchor.world.y, wx - anchor.world.x),
           startAngle: angle,
         };
         setRulerToolState(prev => ({
@@ -3525,7 +3907,62 @@ export function FreeGeometryEditor({
       return;
     }
 
-    if (angleInput.visible) {
+    // Nástroj Úhloměr — umístěný úhloměr (posun/otočení) místo původního "klik na čáru" workflow
+    if (activeTool === 'angle') {
+      const center = protractorCenterRef.current ?? {
+        x: (canvasSize.width / 2 - offset.x) / scale,
+        y: (canvasSize.height / 2 - offset.y) / scale,
+      };
+      protractorCenterRef.current = center;
+      const baseAngle = protractorAngleRef.current;
+      const hit = hitTestPlacedProtractor(
+        wx,
+        wy,
+        center,
+        baseAngle,
+        scale,
+        angleInput.value,
+        angleInput.rotationOffset,
+        angleInput.isMirrored
+      );
+      if (hit.type === 'miss') return;
+
+      protractorDraggingRef.current = true;
+      if (hit.type === 'rotate') {
+        protractorDragModeRef.current = 'rotate';
+        protractorDragStartRef.current = null;
+        protractorRotateStartRef.current = {
+          mouseAngle: Math.atan2(wy - center.y, wx - center.x),
+          startAngle: baseAngle,
+        };
+      } else if (hit.type === 'arm') {
+        protractorDragModeRef.current = 'arm';
+        protractorDragStartRef.current = null;
+        protractorRotateStartRef.current = null;
+      } else {
+        protractorDragModeRef.current = 'move';
+        protractorRotateStartRef.current = null;
+        protractorDragStartRef.current = {
+          mouseX: wx,
+          mouseY: wy,
+          centerX: center.x,
+          centerY: center.y,
+        };
+      }
+
+      // Sync panel state immediately
+      setAngleInput(prev => ({
+        ...prev,
+        visible: true,
+        customVertex: center,
+        baseAngle,
+        vertexId: null,
+        directionId: null,
+      }));
+      return;
+    }
+
+    if (angleInput.visible && activeTool !== 'angle') {
       showCanvasWarning('Nejdříve nastavte úhel');
       return; // Nedělat nic - uživatel musí kliknout na "Narýsovat" nebo zavřít popup
     }
@@ -3543,7 +3980,7 @@ export function FreeGeometryEditor({
           if (angleTabletState.step === 'selectLine') {
             // Krok 1: Výběr linky (s přichytáváním na body)
             const baseShape = shapes.find(s => s.id === hs.id);
-            if (baseShape && ['line', 'lineDashed', 'segment', 'ray'].includes(baseShape.type)) {
+            if (baseShape && ['line', 'lineDashed', 'lineDashDot', 'segment'].includes(baseShape.type)) {
               let initPos = hs.proj;
               const snap = getSnapPosition(hs.proj.x, hs.proj.y, 25);
               if (snap) initPos = snap;
@@ -4285,9 +4722,18 @@ export function FreeGeometryEditor({
   };
 
   const confirmAngle = () => {
+    // Potlač hover/floating preview po kliknutí na Vytvořit,
+    // jinak může úhloměr krátce "uskočit" na hover/mouse ghost ještě před animací / skrytím.
+    suppressAngleHoverPreviewRef.current = true;
+    setTimeout(() => {
+      suppressAngleHoverPreviewRef.current = false;
+    }, 150);
+
+    // Okamžitě skryj popup, aby se nestihl vykreslit "input protractor" v jiném stavu.
+    setAngleInput(prev => ({ ...prev, visible: false }));
+
     // Podpora pro customVertex (přichycení k čáře)
     if (angleInput.customVertex && angleInput.baseAngle !== undefined) {
-         setAngleInput(prev => ({ ...prev, visible: false }));
          // Reset angle tablet state po narýsování
          if (isTabletMode) {
            setAngleTabletState({ step: 'idle', selectedLineId: null, currentPos: null, baseAngle: 0 });
@@ -4308,10 +4754,20 @@ export function FreeGeometryEditor({
          
          const finalRad = totalBaseAngle + angleDiff;
 
+         const helperId = angleArmHelperPointIdRef.current;
+         const helperPt = helperId ? points.find(p => p.id === helperId) : null;
+         const armEnd = helperPt ?? protractorArmEndWorld(
+           startP,
+           angleInput.baseAngle,
+           angleInput.value,
+           angleInput.rotationOffset,
+           angleInput.isMirrored
+         );
+
          const dummyP2 = {
-             x: startP.x + Math.cos(finalRad) * 200,
-             y: startP.y + Math.sin(finalRad) * 200,
-             id: 'temp-end'
+             x: armEnd.x,
+             y: armEnd.y,
+             id: helperPt?.id ?? 'temp-end',
          };
 
          // Uložit vizualizaci úhloměru
@@ -4330,6 +4786,8 @@ export function FreeGeometryEditor({
              p2: dummyP2,
              angle: angleInput.value, 
              baseAngle: angleInput.baseAngle,
+             rotationOffset: angleInput.rotationOffset,
+             isMirrored: angleInput.isMirrored,
              progress: 0
          });
          return;
@@ -4354,7 +4812,9 @@ export function FreeGeometryEditor({
       const targetAngle = totalBaseAngle + angleDiff;
       
       const dist = 300;
-      const p2 = {
+      const helperId = angleArmHelperPointIdRef.current;
+      const helperPt = helperId ? points.find(p => p.id === helperId) : null;
+      const p2 = helperPt ?? {
         id: 'temp-angle-point',
         x: p1.x + Math.cos(targetAngle) * dist,
         y: p1.y + Math.sin(targetAngle) * dist
@@ -4375,11 +4835,12 @@ export function FreeGeometryEditor({
         p1: p1,
         p2: p2,
         angle: angleInput.value,
+        rotationOffset: angleInput.rotationOffset,
+        isMirrored: angleInput.isMirrored,
         progress: 0
       });
     }
     
-    setAngleInput(prev => ({ ...prev, visible: false }));
     // Reset angle tablet state po narýsování
     if (isTabletMode) {
       setAngleTabletState({ step: 'idle', selectedLineId: null, currentPos: null, baseAngle: 0 });
@@ -4518,10 +4979,23 @@ export function FreeGeometryEditor({
       const pivot = rulerPivotRef.current ?? rulerToolState.pivot;
       if (pivot) {
         const angle = rulerAngleRef.current;
+        const snappedInput = getRulerDrawSnapInput(wx, wy, pivot);
         if (rulerLineDrawRef.current) {
           const { edge, start } = rulerLineDrawRef.current;
           const { a, b } = getRulerEdgeWorld(edge, pivot, angle);
-          const end = projectOntoSegment(wx, wy, a.x, a.y, b.x, b.y);
+          // Při tažení držíme stejnou hranu, ale dovolíme snap na její konce (včetně stupnice na krátké straně).
+          const endpointThresholdWorld = (RULER_EDGE_HIT_PX + 22) / scale;
+          const [ea, eb] = getRulerSnapEndpointsForEdgeLocal(edge, scale);
+          const eaw = localToRulerWorld(ea.x, ea.y, pivot, angle);
+          const ebw = localToRulerWorld(eb.x, eb.y, pivot, angle);
+          const da = Math.hypot(snappedInput.x - eaw.x, snappedInput.y - eaw.y);
+          const db = Math.hypot(snappedInput.x - ebw.x, snappedInput.y - ebw.y);
+          const end =
+            da <= endpointThresholdWorld
+              ? eaw
+              : db <= endpointThresholdWorld
+                ? ebw
+                : projectOntoSegment(snappedInput.x, snappedInput.y, a.x, a.y, b.x, b.y);
           rulerLineDrawRef.current.end = end;
           setRulerToolState(prev => ({
             ...prev,
@@ -4529,7 +5003,7 @@ export function FreeGeometryEditor({
             lineDraw: { edge, start, end },
           }));
         } else {
-          const snap = snapToRulerEdge(wx, wy, pivot, angle);
+          const snap = snapToRulerEdge(snappedInput.x, snappedInput.y, pivot, angle, scale);
           setRulerToolState(prev => ({ ...prev, crosshair: snap.point }));
         }
       }
@@ -4544,20 +5018,95 @@ export function FreeGeometryEditor({
 
       if (rulerDragModeRef.current === 'rotate' && rulerRotateStartRef.current) {
         const start = rulerRotateStartRef.current;
-        const currentMouseAngle = Math.atan2(wy - pivot.y, wx - pivot.x);
+        const anchor =
+          rulerRotationAnchorRef.current ?? {
+            local: { x: RULER_ROTATION_PIVOT_LOCAL.x, y: RULER_ROTATION_PIVOT_LOCAL.y },
+            world: pivot,
+          };
+        const currentMouseAngle = Math.atan2(wy - anchor.world.y, wx - anchor.world.x);
         const newAngle = start.startAngle + (currentMouseAngle - start.mouseAngle);
+        const newPivot = pivotWorldFromAnchor(anchor.world, anchor.local, newAngle);
         rulerAngleRef.current = newAngle;
-        setRulerToolState(prev => ({ ...prev, angle: newAngle }));
+        rulerPivotRef.current = newPivot;
+        setRulerToolState(prev => ({ ...prev, angle: newAngle, pivot: newPivot }));
       } else if (rulerDragStartRef.current) {
         const start = rulerDragStartRef.current;
-        const target = snapToPointsAndShapes(
-          start.pivotX + (wx - start.mouseX),
-          start.pivotY + (wy - start.mouseY),
-          25
-        );
-        rulerPivotRef.current = target;
-        setRulerToolState(prev => ({ ...prev, pivot: target }));
+        const rawPivot = {
+          x: start.pivotX + (wx - start.mouseX),
+          y: start.pivotY + (wy - start.mouseY),
+        };
+        const snapped = snapRulerPivotByHandles(rawPivot, rulerAngleRef.current, 25);
+        rulerRotationAnchorRef.current = snapped.anchor;
+        rulerPivotRef.current = snapped.pivot;
+        setRulerToolState(prev => ({ ...prev, pivot: snapped.pivot }));
       }
+      return;
+    }
+
+    // Nástroj Úhloměr — posun nebo otočení umístěného úhloměru
+    if (activeTool === 'angle' && protractorDraggingRef.current) {
+      const center = protractorCenterRef.current;
+      if (!center) return;
+
+      if (protractorDragModeRef.current === 'rotate' && protractorRotateStartRef.current) {
+        const start = protractorRotateStartRef.current;
+        const currentMouseAngle = Math.atan2(wy - center.y, wx - center.x);
+        const newAngle = start.startAngle + (currentMouseAngle - start.mouseAngle);
+        protractorAngleRef.current = newAngle;
+        setAngleInput(prev => ({
+          ...prev,
+          visible: true,
+          customVertex: center,
+          baseAngle: newAngle,
+          vertexId: null,
+          directionId: null,
+        }));
+      } else if (protractorDragModeRef.current === 'arm') {
+        const newValue = protractorValueFromWorld(
+          wx,
+          wy,
+          center,
+          protractorAngleRef.current,
+          angleInput.rotationOffset,
+          angleInput.isMirrored
+        );
+        setAngleInput(prev => ({
+          ...prev,
+          visible: true,
+          value: newValue,
+          customVertex: center,
+          baseAngle: protractorAngleRef.current,
+          vertexId: null,
+          directionId: null,
+        }));
+      } else if (protractorDragStartRef.current) {
+        const start = protractorDragStartRef.current;
+        const rawCenter = {
+          x: start.centerX + (wx - start.mouseX),
+          y: start.centerY + (wy - start.mouseY),
+        };
+
+        const snapped = snapPlacedProtractor(
+          rawCenter.x,
+          rawCenter.y,
+          protractorAngleRef.current,
+          30
+        );
+        const nextCenter = snapped.center;
+        const nextAngle = snapped.baseAngle;
+
+        protractorCenterRef.current = nextCenter;
+        protractorAngleRef.current = nextAngle;
+        setAngleInput(prev => ({
+          ...prev,
+          visible: true,
+          customVertex: nextCenter,
+          baseAngle: nextAngle,
+          vertexId: null,
+          directionId: null,
+        }));
+      }
+      syncAngleArmHelperPoint();
       return;
     }
 
@@ -4821,6 +5370,13 @@ export function FreeGeometryEditor({
       rulerDragStartRef.current = null;
       rulerRotateStartRef.current = null;
       setRulerToolState(prev => ({ ...prev, isDragging: false }));
+    }
+
+    if (protractorDraggingRef.current) {
+      protractorDraggingRef.current = false;
+      protractorDragModeRef.current = null;
+      protractorDragStartRef.current = null;
+      protractorRotateStartRef.current = null;
     }
 
     if (rulerLineDrawRef.current) {
@@ -5197,6 +5753,9 @@ export function FreeGeometryEditor({
 
             let p1Id = (animState.p1 as any).id;
             const newPointsToAdd: GeoPoint[] = [];
+            const animP2 = animState.p2 as GeoPoint;
+            const helperId = angleArmHelperPointIdRef.current;
+            const useHelperAsP2 = !!helperId && animP2.id === helperId;
 
             // Pokud p1 je dočasný (z customVertex) nebo neexistuje, vytvoříme ho
             const p1Exists = points.some(p => p.id === p1Id);
@@ -5213,28 +5772,43 @@ export function FreeGeometryEditor({
                 p1Id = realP1Id;
             }
 
-            // Vytvoříme koncový bod p2 (skrytý, pouze pro určení směru)
-            const newP2Id = crypto.randomUUID();
-            const newP2: GeoPoint = {
-                id: newP2Id,
-                x: animState.p2.x,
-                y: animState.p2.y,
+            let p2Id: string;
+            if (useHelperAsP2) {
+              angleArmHelperPointIdRef.current = null;
+              p2Id = helperId!;
+            } else {
+              p2Id = crypto.randomUUID();
+              const newP2: GeoPoint = {
+                id: p2Id,
+                x: animP2.x,
+                y: animP2.y,
                 label: getFreeLabel(),
                 hidden: true
-            };
-            newPointsToAdd.push(newP2);
+              };
+              newPointsToAdd.push(newP2);
+            }
 
-            setPoints(prev => [...prev, ...newPointsToAdd]);
+            setPoints(prev => {
+              let next = [...prev, ...newPointsToAdd];
+              if (useHelperAsP2) {
+                next = next.map(p =>
+                  p.id === helperId
+                    ? { ...p, x: animP2.x, y: animP2.y, hidden: true, locked: false, label: '' }
+                    : p
+                );
+              }
+              return next;
+            });
 
             // Vytvoříme polopřímku (ray) - dlouhá čára bez koncového bodu
             newShape = {
               id: crypto.randomUUID(),
               type: 'ray',
               label: getNextShapeLabel('ray'),
-              points: [p1Id, newP2Id],
+              points: [p1Id, p2Id],
               definition: {
                 p1Id: p1Id,
-                p2Id: newP2Id
+                p2Id: p2Id
               }
             };
 
@@ -5477,6 +6051,43 @@ export function FreeGeometryEditor({
           if (rulerMoveHoverRef.current) {
             rulerMoveHoverRef.current = false;
             setRulerMoveHover(false);
+          }
+        }
+
+        if (activeTool === 'angle' && protractorCenterRef.current) {
+          let moveHover = protractorDragModeRef.current === 'move';
+          let armHover = protractorDragModeRef.current === 'arm';
+          if (!protractorDraggingRef.current && mousePosRef.current) {
+            const center = protractorCenterRef.current;
+            const hit = hitTestPlacedProtractor(
+              mousePosRef.current.x,
+              mousePosRef.current.y,
+              center,
+              protractorAngleRef.current,
+              scale,
+              angleInput.value,
+              angleInput.rotationOffset,
+              angleInput.isMirrored
+            );
+            moveHover = hit.type === 'move';
+            armHover = hit.type === 'arm';
+          }
+          if (moveHover !== protractorMoveHoverRef.current) {
+            protractorMoveHoverRef.current = moveHover;
+            setProtractorMoveHover(moveHover);
+          }
+          if (armHover !== protractorArmHoverRef.current) {
+            protractorArmHoverRef.current = armHover;
+            setProtractorArmHover(armHover);
+          }
+        } else {
+          if (protractorMoveHoverRef.current) {
+            protractorMoveHoverRef.current = false;
+            setProtractorMoveHover(false);
+          }
+          if (protractorArmHoverRef.current) {
+            protractorArmHoverRef.current = false;
+            setProtractorArmHover(false);
           }
         }
 
@@ -6954,7 +7565,16 @@ export function FreeGeometryEditor({
         if (progress < 0.5) {
           // Fáze 1: Vyplňování úhlu (0-50%)
           const fillProgress = progress / 0.5;
-          drawProtractor(ctx, p1, baseAngle, 200, '#f97316');
+          drawProtractor(
+            ctx,
+            p1,
+            baseAngle,
+            200,
+            '#f97316',
+            undefined,
+            (animState as any).rotationOffset ?? 0,
+            (animState as any).isMirrored ?? false
+          );
           
           const targetAngleDeg = angle || 45;
           const currentAngleRad = (targetAngleDeg * fillProgress) * Math.PI / 180;
@@ -7038,6 +7658,10 @@ export function FreeGeometryEditor({
     // 3. Vykreslení bodů (vždy nahoře)
     points.forEach(pRaw => {
       const p = getLivePoint(pRaw);
+      if (p.id === angleArmHelperPointIdRef.current) {
+        drawPenTip(ctx, p.x, p.y, '#f97316');
+        return;
+      }
       if (p.hidden) return; // Skip hidden points
 
       // Pomocný bod poloměru během animace — nekrýtovat jako viditelný bod
@@ -7792,8 +8416,15 @@ export function FreeGeometryEditor({
         }
     }
 
-    // Náhled úhloměru před kliknutím (Angle Tool Hover)
-    if (activeTool === 'angle' && !animState.isActive && !selectedPointId && !angleInput.visible) {
+    // Náhled úhloměru před kliknutím (Angle Tool Hover) — jen bez umístěného úhloměru
+    if (
+        activeTool === 'angle' &&
+        !protractorCenterRef.current &&
+        !animState.isActive &&
+        !selectedPointId &&
+        !angleInput.visible &&
+        !suppressAngleHoverPreviewRef.current
+    ) {
         const inAnglePositioning = isTabletMode && angleTabletState.step === 'positioning' && angleTabletState.currentPos;
         
         if (inAnglePositioning) {
@@ -7838,21 +8469,63 @@ export function FreeGeometryEditor({
         }
     }
 
-    // 4a. Aktivní úhloměr při zadávání (Angle Input)
-    if (angleInput.visible && angleInput.customVertex) {
-         drawProtractor(
-            ctx, 
-            angleInput.customVertex, 
-            angleInput.baseAngle || 0, 
-            200, 
-            '#f97316', 
-            angleInput.value, 
-            angleInput.rotationOffset,
-            angleInput.isMirrored
-         );
-         
-         // Střed
-         drawPenTip(ctx, angleInput.customVertex.x, angleInput.customVertex.y, '#f97316');
+    // 4a2. Umístěný úhloměr (nástroj Úhloměr — jako pravítko)
+    if (
+      activeTool === 'angle' &&
+      protractorCenterRef.current &&
+      !animState.isActive &&
+      !suppressAngleHoverPreviewRef.current
+    ) {
+      const center = protractorCenterRef.current;
+      const baseAngle = protractorAngleRef.current;
+      drawProtractor(
+        ctx,
+        center,
+        baseAngle,
+        200,
+        '#f97316',
+        angleInput.value,
+        angleInput.rotationOffset,
+        angleInput.isMirrored,
+      );
+      drawPenTip(ctx, center.x, center.y, '#f97316');
+    }
+
+    // 4a. Aktivní úhloměr při zadávání (Angle Input) — režim „2 body“
+    // Pozn.: suppressAngleHoverPreviewRef používáme i jako "hard kill switch" pro vykreslení úhloměru
+    // v okamžiku potvrzení, aby neproběhl žádný mezisnímek s uskočeným náhledem.
+    if (
+      angleInput.visible &&
+      !suppressAngleHoverPreviewRef.current &&
+      !(activeTool === 'angle' && protractorCenterRef.current)
+    ) {
+      let center: { x: number; y: number } | null = null;
+      let baseAngle = 0;
+
+      if (angleInput.vertexId && angleInput.directionId) {
+        const p1 = points.find(p => p.id === angleInput.vertexId);
+        const pDir = points.find(p => p.id === angleInput.directionId);
+        if (p1 && pDir) {
+          center = { x: p1.x, y: p1.y };
+          baseAngle = Math.atan2(pDir.y - p1.y, pDir.x - p1.x);
+        }
+      }
+
+      if (center) {
+        drawProtractor(
+          ctx,
+          center,
+          baseAngle,
+          200,
+          '#f97316',
+          angleInput.value,
+          angleInput.rotationOffset,
+          angleInput.isMirrored,
+        );
+
+        // Střed
+        drawPenTip(ctx, center.x, center.y, '#f97316');
+      }
     }
 
     // Režim kružítko–rozměr: před výběrem středu — náhled místa kliknutí (žádná kružnice)
@@ -8415,13 +9088,107 @@ export function FreeGeometryEditor({
     };
   };
 
+  // Krajní body stupnice na kratší straně (bereme konce přímého úseku hrany).
+  // Pozn.: SVG má zaoblené rohy; používáme stejné koncové body jako pro rýsovatelnou hranu,
+  // aby snap fungoval i u „krajů stupnice“.
+  const RULER_SCALE_ENDPOINTS_RAW_LOCAL = [RULER_EDGES_LOCAL.right.a, RULER_EDGES_LOCAL.right.b] as const;
+
+  const getRulerScaleEndpointsLocal = () => {
+    // Posun v souřadnicích pravítka (nezávislé na zoomu), aby body byly vůči pravítku pořád stejně.
+    // Chceme posun v pixelech na obrázku pravítka (před škálováním pravítka).
+    const moveLocalUpper = 10 / RULER_PLACED_SCALE;
+    const moveLocalLower = 26 / RULER_PLACED_SCALE;
+    const a = RULER_SCALE_ENDPOINTS_RAW_LOCAL[0];
+    const b = RULER_SCALE_ENDPOINTS_RAW_LOCAL[1];
+    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    const adjust = (p: { x: number; y: number }, moveLocal: number) => {
+      const vx = mid.x - p.x;
+      const vy = mid.y - p.y;
+      const len = Math.hypot(vx, vy) || 1;
+      return { x: p.x + (vx / len) * moveLocal, y: p.y + (vy / len) * moveLocal };
+    };
+    const upperFirst = a.y < b.y;
+    const upper = upperFirst ? a : b;
+    const lower = upperFirst ? b : a;
+    const adjUpper = adjust(upper, moveLocalUpper);
+    const adjLower = adjust(lower, moveLocalLower);
+    return (upperFirst ? [adjUpper, adjLower] : [adjLower, adjUpper]) as const;
+  };
+
+  const getRulerSnapEndpointsForEdgeLocal = (
+    edge: 'base' | 'left' | 'right',
+    screenScale: number
+  ) => {
+    // Pouze „pravá“ krátká strana má speciální snap body (stupnice).
+    // Ostatní hrany vrací své geometrické konce.
+    if (edge === 'right') return getRulerScaleEndpointsLocal();
+    const { a, b } = RULER_EDGES_LOCAL[edge];
+    return [a, b] as const;
+  };
+
+  const snapRulerPivotByHandles = (
+    rawPivot: { x: number; y: number },
+    angle: number,
+    thresholdPx = 25
+  ) => {
+    // Stejné snapování jako pro pivot: bod → průsečík/bod → čára.
+    // Jen to zkusíme pro více "handle" bodů pravítka a vybereme nejlepší.
+    const handlesLocal: { x: number; y: number }[] = [
+      RULER_ROTATION_PIVOT_LOCAL,
+      ...getRulerScaleEndpointsLocal(),
+    ];
+
+    let bestPivot = rawPivot;
+    let bestShift = 0;
+    let bestAnchor: RulerRotationAnchor = null;
+
+    for (const h of handlesLocal) {
+      const hw = localToRulerWorld(h.x, h.y, rawPivot, angle);
+      const snapped = snapToPointsAndShapes(hw.x, hw.y, thresholdPx);
+      const dx = snapped.x - hw.x;
+      const dy = snapped.y - hw.y;
+      const shift = Math.hypot(dx, dy);
+      if (shift < 1e-6) continue; // no snap
+      if (bestShift === 0 || shift < bestShift) {
+        bestShift = shift;
+        bestPivot = { x: rawPivot.x + dx, y: rawPivot.y + dy };
+        bestAnchor = { local: { x: h.x, y: h.y }, world: { x: snapped.x, y: snapped.y } };
+      }
+    }
+
+    return { pivot: bestPivot, anchor: bestAnchor };
+  };
+
   const snapToRulerEdge = (
     wx: number,
     wy: number,
     pivot: { x: number; y: number },
-    angle: number
+    angle: number,
+    screenScale: number
   ): { edge: 'base' | 'left' | 'right'; point: { x: number; y: number } } => {
     const localMouse = worldToRulerLocal(wx, wy, pivot, angle);
+
+    // Snap na bod ve středu nejdelší strany (pivot) — když jsme poblíž, preferuj ho.
+    const pivotThresholdWorld = (RULER_EDGE_HIT_PX + 22) / screenScale;
+    if (Math.hypot(wx - pivot.x, wy - pivot.y) <= pivotThresholdWorld) {
+      return { edge: 'base', point: { x: pivot.x, y: pivot.y } };
+    }
+
+    // Preferuj snap na krajní body stupnice (na krátké straně), pokud jsme dost blízko.
+    // Threshold držíme v px na obrazovce (robustní vůči zoomu); měříme ve world prostoru.
+    const endpointThresholdWorld = (RULER_EDGE_HIT_PX + 22) / screenScale;
+    let bestEndpointWorld: { point: { x: number; y: number }; distWorld: number } | null = null;
+    for (const p of getRulerScaleEndpointsLocal()) {
+      const pw = localToRulerWorld(p.x, p.y, pivot, angle);
+      const d = Math.hypot(wx - pw.x, wy - pw.y);
+      if (!bestEndpointWorld || d < bestEndpointWorld.distWorld) {
+        bestEndpointWorld = { point: pw, distWorld: d };
+      }
+    }
+    if (bestEndpointWorld && bestEndpointWorld.distWorld <= endpointThresholdWorld) {
+      return { edge: 'right', point: bestEndpointWorld.point };
+    }
+
     const edges = ['base', 'left', 'right'] as const;
     let best: { edge: (typeof edges)[number]; point: { x: number; y: number }; dist: number } | null = null;
     for (const edge of edges) {
@@ -8439,13 +9206,28 @@ export function FreeGeometryEditor({
     return best!;
   };
 
+  const getRulerDrawSnapInput = (
+    wx: number,
+    wy: number,
+    pivot: { x: number; y: number },
+  ) => {
+    // Pivot je "snap bod" pravítka samotného, ne geometrie na plátně.
+    // Proto ho kontrolujeme proti syrové pozici myši (ne proti snapToPointsAndShapes),
+    // aby nás snap na geometrii "neodtlačil" pryč.
+    const pivotThresholdWorld = (RULER_EDGE_HIT_PX + 22) / scale;
+    if (Math.hypot(wx - pivot.x, wy - pivot.y) <= pivotThresholdWorld) {
+      return { x: pivot.x, y: pivot.y };
+    }
+    return snapToPointsAndShapes(wx, wy, 25);
+  };
+
   const getRulerDrawCrosshairPos = (
     pivot: { x: number; y: number },
     angle: number
   ): { x: number; y: number } | null => {
     const raw = rulerToolState.lineDraw?.end ?? mousePosRef.current ?? rulerToolState.crosshair;
     if (!raw) return null;
-    return snapToRulerEdge(raw.x, raw.y, pivot, angle).point;
+    return snapToRulerEdge(raw.x, raw.y, pivot, angle, scale).point;
   };
 
   const finishFreeCircleArcDraw = (
@@ -8716,6 +9498,15 @@ export function FreeGeometryEditor({
     rotationOffset: number = 0,
     isMirrored: boolean = false
   ) => {
+    // Udrž velikosti čar/textu čitelné při zoomu (konstantní px na obrazovce).
+    const lwMain = 3 / scale;
+    const lwMinor = 1 / scale;
+    const tickBaseW = 1 / scale;
+    const tickTenW = 2 / scale;
+    const tickMajorW = 3 / scale;
+    const fontMajor = 18 / scale;
+    const fontTen = 12 / scale;
+
     ctx.save();
     ctx.translate(center.x, center.y);
     // Aplikace základního úhlu a offsetu (flip)
@@ -8729,7 +9520,7 @@ export function FreeGeometryEditor({
 
     // 1. Hlavní obrys - půlkruh (horní polovina)
     ctx.strokeStyle = color;
-    ctx.lineWidth = 3;
+    ctx.lineWidth = lwMain;
     ctx.beginPath();
     // Kreslíme oblouk od 0 do PI proti směru hodinových ručiček (horní polovina)
     ctx.arc(0, 0, radius, 0, Math.PI, true);
@@ -8738,7 +9529,7 @@ export function FreeGeometryEditor({
     
     // 2. Vnitřní oblouk pro stupnici
     ctx.strokeStyle = color;
-    ctx.lineWidth = 1;
+    ctx.lineWidth = lwMinor;
     ctx.beginPath();
     ctx.arc(0, 0, radius - 35, 0, Math.PI, true);
     ctx.stroke();
@@ -8764,18 +9555,18 @@ export function FreeGeometryEditor({
 
        // Nastavení stylu rysky
        let len = 6;
-       let width = 1;
+       let width = tickBaseW;
 
        if (isMajor) {
            len = 35; 
-           width = 3;
+           width = tickMajorW;
        } else if (isTen) {
            len = 15;
-           width = 2;
+           width = tickTenW;
        } else {
            // isFive
            len = 8;
-           width = 1;
+           width = tickBaseW;
        }
        
        // Vykreslení rysky
@@ -8789,7 +9580,7 @@ export function FreeGeometryEditor({
 
        // Vykreslení čísla
        if (isMajor || isTen) {
-           const fontSize = isMajor ? 18 : 12;
+           const fontSize = isMajor ? fontMajor : fontTen;
            ctx.font = `bold ${fontSize}px sans-serif`;
            ctx.fillStyle = color; 
 
@@ -8854,6 +9645,21 @@ export function FreeGeometryEditor({
     setPerpBaseId(null);
     setSelectedPointId(null);
     setAngleInput(prev => ({ ...prev, visible: false }));
+    // Pokud uživatel přepne nástroj během animace úhlu, okamžitě zruš „tool viz“ úhloměru,
+    // aby na plátně nezůstal „duch“ půlkruhu.
+    if (activeTool !== 'angle' && animState.isActive && animState.type === 'angle') {
+      setAnimState({
+        isActive: false,
+        type: null,
+        startTime: 0,
+        p1: null,
+        p2: null,
+        progress: 0,
+        arcSpan: undefined,
+      });
+      pendingToolVisualizationRef.current = undefined;
+      suppressAngleHoverPreviewRef.current = false;
+    }
     // Straight highlighter should always start with an explicit click (never inherit the last point
     // from a previous free highlight stroke).
     if (activeTool === 'highlighterStraight' && prevActiveToolRef.current !== 'highlighterStraight') {
@@ -8899,6 +9705,22 @@ export function FreeGeometryEditor({
         return rulerDraggingRef.current ? 'grabbing' : 'grab';
       }
       return 'default';
+    }
+    if (activeTool === 'angle' && protractorCenterRef.current) {
+      if (protractorDragModeRef.current === 'rotate') return 'default';
+      if (
+        protractorArmHover ||
+        protractorDragModeRef.current === 'arm'
+      ) {
+        return protractorDraggingRef.current ? 'grabbing' : 'pointer';
+      }
+      if (
+        protractorMoveHover ||
+        (protractorDraggingRef.current && protractorDragModeRef.current === 'move')
+      ) {
+        return protractorDraggingRef.current ? 'grabbing' : 'grab';
+      }
+      return 'crosshair';
     }
     return 'crosshair';
   };
@@ -10470,7 +11292,7 @@ export function FreeGeometryEditor({
               let crosshair: { x: number; y: number } | null = null;
               if (!togglingOff && pivot) {
                 const raw = mousePosRef.current ?? pivot;
-                crosshair = snapToRulerEdge(raw.x, raw.y, pivot, angle).point;
+                crosshair = snapToRulerEdge(raw.x, raw.y, pivot, angle, scale).point;
               }
               rulerLineDrawRef.current = null;
               setRulerToolState(prev => ({
@@ -10687,20 +11509,20 @@ export function FreeGeometryEditor({
                 <label className={`text-xs font-medium mb-1.5 block ${darkMode ? 'text-[#7aa2f7]' : 'text-gray-500'}`}>
                     Velikost úhlu
                 </label>
-                <div className="relative">
+                <div className="flex items-center gap-2">
                     <input 
                         type="number"
                         min="0"
                         max="360"
                         value={angleInput.value}
                         onChange={(e) => setAngleInput(prev => ({ ...prev, value: Number(e.target.value) }))}
-                        className={`w-full p-3 text-center text-3xl font-bold rounded-xl border-2 transition-all outline-none ${
+                        className={`w-full p-3 text-center text-3xl font-bold rounded-xl border-2 transition-all outline-none tabular-nums ${
                         darkMode 
                             ? 'bg-[#414868] border-[#565f89] text-[#c0caf5] focus:border-[#7aa2f7]' 
                             : 'bg-white border-gray-200 text-gray-900 focus:border-blue-500'
                         }`}
                     />
-                    <span className={`absolute right-3 top-1/2 -translate-y-1/2 text-xl font-bold ${darkMode ? 'text-[#565f89]' : 'text-gray-400'}`}>°</span>
+                    <span className={`text-3xl font-bold ${darkMode ? 'text-[#c0caf5]' : 'text-gray-900'}`}>°</span>
                 </div>
             </div>
 
