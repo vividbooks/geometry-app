@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 32 32">
+  <!-- macOS open-hand cursor recreation (2x for sharpness) -->
+  <path
+    fill="#FFFFFF"
+    stroke="#000000"
+    stroke-width="1.35"
+    stroke-linejoin="round"
+    stroke-linecap="round"
+    d="M10.9 15.05V8.2c0-.75.6-1.35 1.35-1.35.75 0 1.35.6 1.35 1.35v6.4h.25V6.55c0-.75.6-1.35 1.35-1.35.75 0 1.35.6 1.35 1.35v7.9h.25V7.35c0-.75.6-1.35 1.35-1.35.75 0 1.35.6 1.35 1.35v7.7h.25V8.9c0-.75.6-1.35 1.35-1.35.75 0 1.35.6 1.35 1.35v9.55c0 3.35-2.35 5.85-5.7 5.85h-1.65c-2.2 0-4.15-1.25-5.15-3.25l-2.95-5.35c-.45-.8-.15-1.8.65-2.25.8-.45 1.8-.15 2.25.65l1.35 2.45v-1.85c0-.14.11-.25.25-.25h.2c.14 0 .25.11.25.25z"
+  />
+  <path
+    fill="none"
+    stroke="#000000"
+    stroke-width="1.2"
+    stroke-linecap="round"
+    d="M13.85 14.6V8.2M16.8 14.45V6.55M19.75 14.7V7.35"
+  />
+  <path
+    fill="#FFFFFF"
+    stroke="#000000"
+    stroke-width="1.35"
+    stroke-linejoin="round"
+    stroke-linecap="round"
+    d="M8.95 15.2c0-.75-.6-1.35-1.35-1.35S6.25 14.45 6.25 15.2v1.95c0 .75.6 1.35 1.35 1.35.32 0 .62-.12.85-.32"
+  />
+</svg>

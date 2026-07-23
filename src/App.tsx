@@ -35,7 +35,11 @@ export default function App() {
 
   return (
     <>
-      <Toaster position="bottom-center" />
+      <Toaster
+        position="bottom-center"
+        offset="var(--geometry-bottom-chrome, 24px)"
+        mobileOffset="var(--geometry-bottom-chrome, 24px)"
+      />
       <BrowserRouter basename={routerBase}>
         <Routes>
           <Route path="/" element={<Crossroads />} />

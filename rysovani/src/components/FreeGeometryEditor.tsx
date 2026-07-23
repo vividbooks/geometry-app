@@ -6,6 +6,7 @@ import {
   useMemo,
   type MutableRefObject,
   type ReactNode,
+  type SVGProps,
 } from 'react';
 import { toast } from 'sonner@2.0.3';
 import katex from 'katex';
@@ -14,6 +15,7 @@ import {
   MousePointer2, 
   Circle, 
   Minus, 
+  Move,
   MoveDiagonal, 
   Dot,
   Trash2,
@@ -55,6 +57,7 @@ import { ConstructionProtocol, ConstructionStep, Latex } from './ConstructionPro
 import { projectId, publicAnonKey } from '../utils/supabase/info';
 import { rafThrottle, detectDevicePerformance } from '../utils/performance';
 import { useFitPanelScale } from '../hooks/useFitPanelScale';
+import macosOpenHandCursor from '../assets/macos-open-hand.svg?url';
 
 import Pero from '../imports/Group23910-135-1585';
 import Pravitko from '../imports/Pravitko';
@@ -645,13 +648,23 @@ const RULER_BASE_RIGHT_LOCAL = rulerSvgToLocal(465.7, 232.79);
 /** Průsečík středové rysky a nejdelší strany. */
 const RULER_ROTATION_PIVOT_LOCAL = rulerSvgToLocal(233.79, RULER_BASE_SVG_Y);
 
+/** Jedno rotační kolečko uprostřed pravítka (na středové rysce). */
+const RULER_ROTATE_WHEEL_LOCAL = {
+  x: (RULER_APEX_LOCAL.x + RULER_ROTATION_PIVOT_LOCAL.x) / 2,
+  y: RULER_ROTATION_PIVOT_LOCAL.y + (RULER_APEX_LOCAL.y - RULER_ROTATION_PIVOT_LOCAL.y) * 0.4,
+};
+
 const RULER_CORNERS_LOCAL = [
   { id: 'pivot' as const, x: RULER_ROTATION_PIVOT_LOCAL.x, y: RULER_ROTATION_PIVOT_LOCAL.y },
   { id: 'apex' as const, x: RULER_APEX_LOCAL.x, y: RULER_APEX_LOCAL.y },
   { id: 'baseLeft' as const, x: RULER_BASE_LEFT_LOCAL.x, y: RULER_BASE_LEFT_LOCAL.y },
   { id: 'baseRight' as const, x: RULER_BASE_RIGHT_LOCAL.x, y: RULER_BASE_RIGHT_LOCAL.y },
 ];
-/** Poloměr chycení rohů pro otáčení (px na obrazovce). */
+/** Poloměr chycení rotačního kolečka (px na obrazovce). */
+const RULER_ROTATE_WHEEL_HIT_PX = 34;
+/** Vizuální poloměr rotačního kolečka (px na obrazovce). */
+const RULER_ROTATE_WHEEL_VISUAL_PX = 28;
+/** Poloměr chycení rohů pro otáčení (px na obrazovce) — legacy, nepoužívá se. */
 const RULER_ROTATE_HIT_PX = 52;
 /** Poloměr chycení středu pro posun (px na obrazovce). */
 const RULER_PIVOT_HIT_PX = 26;
@@ -665,6 +678,67 @@ const RULER_ROTATE_CURSOR_OFFSET_PX = 16;
 /** Dodatečné natočení ikony kurzoru (45° po směru hodinových ručiček). */
 const RULER_ROTATE_CURSOR_OFFSET_RAD = Math.PI / 4;
 const RULER_ROTATE_CURSOR_SVG = `<svg width="63" height="63" viewBox="0 0 63 63" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M50.4393 62.1066C51.0251 62.6923 51.9749 62.6923 52.5607 62.1066L62.1066 52.5606C62.6924 51.9748 62.6924 51.0251 62.1066 50.4393C61.5208 49.8535 60.5711 49.8535 59.9853 50.4393L51.5 58.9246L43.0147 50.4393C42.4289 49.8535 41.4792 49.8535 40.8934 50.4393C40.3076 51.0251 40.3076 51.9748 40.8934 52.5606L50.4393 62.1066ZM36.8553 25.6906L37.916 24.6299V24.6299L36.8553 25.6906ZM20.6342 14.8519L21.2082 13.4661V13.4661L20.6342 14.8519ZM0.43934 9.98524C-0.146447 10.571 -0.146447 11.5208 0.43934 12.1066L9.98528 21.6525C10.5711 22.2383 11.5208 22.2383 12.1066 21.6525C12.6924 21.0667 12.6924 20.117 12.1066 19.5312L3.62132 11.0459L12.1066 2.56062C12.6924 1.97483 12.6924 1.02508 12.1066 0.439297C11.5208 -0.14649 10.5711 -0.14649 9.98528 0.439297L0.43934 9.98524ZM51.5 61.0459H53C53 54.2828 51.6679 47.586 49.0798 41.3377L47.694 41.9117L46.3082 42.4858C48.7455 48.37 50 54.6768 50 61.0459H51.5ZM47.694 41.9117L49.0798 41.3377C46.4917 35.0894 42.6982 29.4121 37.916 24.6299L36.8553 25.6906L35.7947 26.7512C40.2983 31.2549 43.8708 36.6015 46.3082 42.4858L47.694 41.9117ZM36.8553 25.6906L37.916 24.6299C33.1338 19.8477 27.4565 16.0542 21.2082 13.4661L20.6342 14.8519L20.0602 16.2377C25.9444 18.6751 31.291 22.2476 35.7947 26.7512L36.8553 25.6906ZM20.6342 14.8519L21.2082 13.4661C14.9599 10.878 8.26308 9.5459 1.5 9.5459V11.0459V12.5459C7.86911 12.5459 14.1759 13.8004 20.0602 16.2377L20.6342 14.8519Z" fill="black"/></svg>`;
+
+/** macOS-style open-hand kurzor pro intro animaci pravítka (px na obrazovce). */
+const RULER_HAND_CURSOR_PX = 36;
+
+/** Symbol otočení u tužky kružítka — kreslí se mimo React (bez TDZ v render smyčce). */
+function drawCompassRotateBadge(
+  ctx: CanvasRenderingContext2D,
+  hx: number,
+  hy: number,
+  handleAngle: number,
+  scale: number,
+  rotateImg: HTMLImageElement | null
+) {
+  const s = Math.max(scale, 0.25);
+  const out = 28 / s;
+  const bx = hx + Math.cos(handleAngle) * out;
+  const by = hy + Math.sin(handleAngle) * out;
+
+  // Bílá „pilulka“ pod ikonou — vždy viditelná
+  const badgeR = 16 / s;
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(bx, by, badgeR, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.95)';
+  ctx.strokeStyle = '#111827';
+  ctx.lineWidth = 1.5 / s;
+  ctx.fill();
+  ctx.stroke();
+
+  if (rotateImg) {
+    const size = (RULER_ROTATE_CURSOR_PX * 0.85) / s;
+    ctx.translate(bx, by);
+    ctx.rotate(handleAngle + Math.PI / 2 + RULER_ROTATE_CURSOR_OFFSET_RAD);
+    ctx.drawImage(rotateImg, -size / 2, -size / 2, size, size);
+  } else {
+    // Fallback: zakřivené šipky přímo na canvas
+    ctx.translate(bx, by);
+    ctx.rotate(handleAngle);
+    ctx.strokeStyle = '#111827';
+    ctx.lineWidth = 2 / s;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    const arcR = 7 / s;
+    ctx.beginPath();
+    ctx.arc(0, 0, arcR, -Math.PI * 0.7, Math.PI * 0.2);
+    ctx.stroke();
+    const tipA = Math.PI * 0.2;
+    const tx = Math.cos(tipA) * arcR;
+    const ty = Math.sin(tipA) * arcR;
+    const ah = 3.5 / s;
+    ctx.beginPath();
+    ctx.moveTo(tx - ah, ty - ah * 0.3);
+    ctx.lineTo(tx, ty);
+    ctx.lineTo(tx - ah * 0.2, ty + ah);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0, 0, arcR, Math.PI * 0.3, Math.PI * 1.2);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
 
 const distancePointToSegment = (
   px: number,
@@ -774,24 +848,21 @@ const hitTestPlacedRuler = (
   scale: number,
   isTabletMode: boolean
 ):
-  | { type: 'corner'; cornerId: RulerCornerId; local: { x: number; y: number } }
+  | { type: 'rotate' }
   | { type: 'body' }
   | { type: 'miss' } => {
-  const rotateHitPx = isTabletMode ? RULER_ROTATE_HIT_PX + 12 : RULER_ROTATE_HIT_PX;
-  const rotateThreshold = rotateHitPx / scale;
-  for (const corner of RULER_CORNERS_LOCAL) {
-    if (corner.id === 'pivot') continue;
-    const world = localToRulerWorld(corner.x, corner.y, pivot, angle);
-    if (Math.hypot(wx - world.x, wy - world.y) < rotateThreshold) {
-      return { type: 'corner', cornerId: corner.id, local: { x: corner.x, y: corner.y } };
-    }
+  // 1) Jedno rotační kolečko uprostřed
+  const wheelWorld = localToRulerWorld(
+    RULER_ROTATE_WHEEL_LOCAL.x,
+    RULER_ROTATE_WHEEL_LOCAL.y,
+    pivot,
+    angle
+  );
+  const wheelHitPx = isTabletMode ? RULER_ROTATE_WHEEL_HIT_PX + 10 : RULER_ROTATE_WHEEL_HIT_PX;
+  if (Math.hypot(wx - wheelWorld.x, wy - wheelWorld.y) < wheelHitPx / scale) {
+    return { type: 'rotate' };
   }
-  const pivotCorner = RULER_CORNERS_LOCAL.find(c => c.id === 'pivot')!;
-  const pivotThreshold = (isTabletMode ? RULER_PIVOT_HIT_PX + 8 : RULER_PIVOT_HIT_PX) / scale;
-  const pivotWorld = localToRulerWorld(pivotCorner.x, pivotCorner.y, pivot, angle);
-  if (Math.hypot(wx - pivotWorld.x, wy - pivotWorld.y) < pivotThreshold) {
-    return { type: 'corner', cornerId: 'pivot', local: { x: pivotCorner.x, y: pivotCorner.y } };
-  }
+  // 2) Tělo pravítka = posun
   const local = worldToRulerLocal(wx, wy, pivot, angle);
   if (
     isPointInRulerTriangle(
@@ -1030,6 +1101,7 @@ export function FreeGeometryEditor({
   // Assets
   const rulerImageRef = useRef<HTMLImageElement | null>(null);
   const rulerRotateCursorImageRef = useRef<HTMLImageElement | null>(null);
+  const rulerHandCursorImageRef = useRef<HTMLImageElement | null>(null);
   const compassImageRef = useRef<HTMLImageElement | null>(null);
   const protractorImageRef = useRef<HTMLImageElement | null>(null);
   const [assetsLoaded, setAssetsLoaded] = useState(false);
@@ -1068,6 +1140,12 @@ export function FreeGeometryEditor({
     arcDraw: null as { startAngle: number; endAngle: number } | null,
     arcCrosshair: null as { x: number; y: number } | null,
   });
+  /** Live pozice při tažení — bez setState každý frame (jinak se seká rAF smyčka). */
+  const circleLiveRef = useRef<{
+    center: { x: number; y: number };
+    radius: number;
+    handleAngle: number;
+  } | null>(null);
 
   const [rulerToolState, setRulerToolState] = useState({
     active: false,
@@ -1184,6 +1262,20 @@ export function FreeGeometryEditor({
   const keepRulerToolAfterAnimRef = useRef(false);
   const keepCompassToolAfterAnimRef = useRef(false);
   const rulerPendingDrawKindRef = useRef<'line' | 'segment' | 'stroke' | null>(null);
+  /** Jednorázová intro animace: ručička pohne pravítkem, aby bylo jasné, že jde posouvat. */
+  const rulerIntroRef = useRef<{
+    active: boolean;
+    startTime: number;
+    basePivot: { x: number; y: number } | null;
+    baseAngle: number;
+    handPos: { x: number; y: number } | null;
+  }>({
+    active: false,
+    startTime: 0,
+    basePivot: null,
+    baseAngle: 0,
+    handPos: null,
+  });
   const rulerLineDrawRef = useRef<{
     edge: 'base' | 'left' | 'right';
     start: { x: number; y: number };
@@ -1195,7 +1287,36 @@ export function FreeGeometryEditor({
     lastAngle: number;
   } | null>(null);
 
+  const stopRulerIntroAnimation = (commitCurrent = false) => {
+    const intro = rulerIntroRef.current;
+    if (!intro.active) return;
+    const pivot = commitCurrent
+      ? (rulerPivotRef.current ?? intro.basePivot)
+      : intro.basePivot;
+    const angle = commitCurrent ? rulerAngleRef.current : intro.baseAngle;
+    intro.active = false;
+    intro.startTime = 0;
+    intro.basePivot = null;
+    intro.handPos = null;
+    if (pivot) {
+      rulerPivotRef.current = pivot;
+      rulerAngleRef.current = angle;
+      setRulerToolState(prev => ({
+        ...prev,
+        pivot,
+        angle,
+      }));
+    }
+  };
+
   const resetPlacedRuler = () => {
+    rulerIntroRef.current = {
+      active: false,
+      startTime: 0,
+      basePivot: null,
+      baseAngle: 0,
+      handPos: null,
+    };
     rulerDraggingRef.current = false;
     rulerDragModeRef.current = null;
     rulerPivotRef.current = null;
@@ -1270,6 +1391,8 @@ export function FreeGeometryEditor({
     });
     circleCenterHoverRef.current = false;
     setCircleCenterHover(false);
+    circleHandleHoverRef.current = false;
+    circleLiveRef.current = null;
     keepCompassToolAfterAnimRef.current = false;
   };
 
@@ -1347,6 +1470,7 @@ export function FreeGeometryEditor({
   const [rulerMoveHover, setRulerMoveHover] = useState(false);
   const circleCenterHoverRef = useRef(false);
   const [circleCenterHover, setCircleCenterHover] = useState(false);
+  const circleHandleHoverRef = useRef(false);
 
   // Circle tool / popup „Rozměr“: kružítko uprostřed plátna při aktivaci.
   useEffect(() => {
@@ -1380,6 +1504,13 @@ export function FreeGeometryEditor({
       const pivot = { x: cx, y: cy };
       rulerPivotRef.current = pivot;
       rulerAngleRef.current = 0;
+      rulerIntroRef.current = {
+        active: true,
+        startTime: performance.now(),
+        basePivot: { ...pivot },
+        baseAngle: 0,
+        handPos: { ...pivot },
+      };
       return {
         active: true,
         pivot,
@@ -1602,6 +1733,31 @@ export function FreeGeometryEditor({
       enabled: embedInAssignment && !recordingState.showPlayer,
     }
   );
+
+  /** Dolní panely (výběr / rýsování) — info tipy a toasty musí jít nad ně. */
+  const showBottomSelectionBar =
+    !recordingState.showPlayer &&
+    ((((selection || selectedShapeIds.length > 0) && !selectedFreehandIds.length) ||
+      activeTool === 'highlighter' ||
+      activeTool === 'highlighterStraight'));
+  const showBottomDrawButtons =
+    !recordingState.showPlayer &&
+    !animState.isActive &&
+    ((circleInput.visible && !circleInput.fixedRadius && !!circleInput.center) ||
+      (activeTool === 'triangleRuler' && rulerToolState.active));
+  const bottomChromeOffsetPx = showBottomDrawButtons
+    ? 150
+    : showBottomSelectionBar
+      ? 100
+      : 24;
+
+  useEffect(() => {
+    const value = `calc(${bottomChromeOffsetPx}px + env(safe-area-inset-bottom, 0px))`;
+    document.documentElement.style.setProperty('--geometry-bottom-chrome', value);
+    return () => {
+      document.documentElement.style.removeProperty('--geometry-bottom-chrome');
+    };
+  }, [bottomChromeOffsetPx]);
 
   const [renameDraft, setRenameDraft] = useState<{
     pointIds: string[];
@@ -2210,16 +2366,51 @@ export function FreeGeometryEditor({
         <path d="M21 11c0-4.97-4.03-9-9-9" />
       </svg>
     ),
-    DashedLine: () => (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round">
+    DashedLine: (props: SVGProps<SVGSVGElement>) => (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" {...props}>
         <line x1="3" y1="12" x2="21" y2="12" strokeDasharray="5 4" />
       </svg>
     ),
-    DashDotLine: () => (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round">
+    DashDotLine: (props: SVGProps<SVGSVGElement>) => (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" {...props}>
         <line x1="3" y1="12" x2="21" y2="12" strokeDasharray="6 3 1.2 3" />
       </svg>
-    )
+    ),
+    /** Úsečka — |AB| */
+    NotationSegment: (props: SVGProps<SVGSVGElement>) => (
+      <svg viewBox="0 0 24 24" fill="none" {...props}>
+        <text x="12" y="16" textAnchor="middle" fill="currentColor" fontSize="13" fontStyle="italic" fontFamily="Georgia, 'Times New Roman', serif" fontWeight="500">|AB|</text>
+      </svg>
+    ),
+    /** Přímka — šipky oběma směry */
+    NotationLine: (props: SVGProps<SVGSVGElement>) => (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...props}>
+        <path d="M3 12h18" />
+        <path d="M6.2 9.2L3 12l3.2 2.8" />
+        <path d="M17.8 9.2L21 12l-3.2 2.8" />
+        <circle cx="9" cy="12" r="1.15" fill="currentColor" stroke="none" />
+        <circle cx="15" cy="12" r="1.15" fill="currentColor" stroke="none" />
+      </svg>
+    ),
+    /** Polopřímka — ↦ */
+    NotationRay: (props: SVGProps<SVGSVGElement>) => (
+      <svg viewBox="0 0 24 24" fill="none" {...props}>
+        <text x="12" y="17.5" textAnchor="middle" fill="currentColor" fontSize="21" fontFamily="Georgia, 'Times New Roman', serif" fontWeight="500">↦</text>
+      </svg>
+    ),
+    /** Kolmice — ⊥ */
+    NotationPerpendicular: (props: SVGProps<SVGSVGElement>) => (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+        <path d="M5 19h14" />
+        <path d="M12 5v14" />
+      </svg>
+    ),
+    /** Úsečka o rozměru — |AB|= */
+    NotationSegmentLength: (props: SVGProps<SVGSVGElement>) => (
+      <svg viewBox="0 0 24 24" fill="none" {...props}>
+        <text x="12" y="16" textAnchor="middle" fill="currentColor" fontSize="11.5" fontStyle="italic" fontFamily="Georgia, 'Times New Roman', serif" fontWeight="500">|AB|=</text>
+      </svg>
+    ),
   };
 
   const toolGroups = [
@@ -2253,12 +2444,12 @@ export function FreeGeometryEditor({
       icon: Pravitko,
       label: 'Konstrukce',
       tools: [
-        { id: 'triangleRuler', label: 'Pravítko', icon: Pravitko },
-        { id: 'segment', label: 'Úsečka', icon: Minus },
-        { id: 'line', label: 'Přímka', icon: Minus },
-        { id: 'ray', label: 'Polopřímka', icon: Minus },
-        { id: 'perpendicular', label: 'Kolmice', icon: Minus },
-        { id: '__popup__segment_fixed', label: 'Úsečka o rozměru', icon: Ruler },
+        { id: 'triangleRuler', label: 'Pravítko', icon: Move },
+        { id: 'segment', label: 'Úsečka', icon: Icons.NotationSegment },
+        { id: 'line', label: 'Přímka', icon: Icons.NotationLine },
+        { id: 'ray', label: 'Polopřímka', icon: Icons.NotationRay },
+        { id: 'perpendicular', label: 'Kolmice', icon: Icons.NotationPerpendicular },
+        { id: '__popup__segment_fixed', label: 'Úsečka o rozměru', icon: Icons.NotationSegmentLength },
         { id: 'lineDashed', label: 'Čárkovaná čára', icon: Icons.DashedLine },
         { id: 'lineDashDot', label: 'Čerchovaná čára', icon: Icons.DashDotLine }
       ]
@@ -2714,6 +2905,14 @@ export function FreeGeometryEditor({
       rulerRotateCursorImageRef.current = img;
     };
     img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(RULER_ROTATE_CURSOR_SVG)}`;
+  }, []);
+
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => {
+      rulerHandCursorImageRef.current = img;
+    };
+    img.src = macosOpenHandCursor;
   }, []);
 
   // --- GENERÁTORY NÁZVŮ ---
@@ -3839,17 +4038,39 @@ export function FreeGeometryEditor({
 
     if (circleInput.visible && circleInput.center) {
       const r = circleInput.radius * PIXELS_PER_CM;
-      const handleX = circleInput.center.x + Math.cos(circleInput.handleAngle) * r;
-      const handleY = circleInput.center.y + Math.sin(circleInput.handleAngle) * r;
+      const ha = circleInput.handleAngle;
+      const handleX = circleInput.center.x + Math.cos(ha) * r;
+      const handleY = circleInput.center.y + Math.sin(ha) * r;
+      // Badge otočení je kousek za tužkou
+      const badgeX = handleX + Math.cos(ha) * (28 / scale);
+      const badgeY = handleY + Math.sin(ha) * (28 / scale);
       
-      const distToHandle = Math.sqrt(Math.pow(wx - handleX, 2) + Math.pow(wy - handleY, 2));
-      const distToCenter = Math.sqrt(Math.pow(wx - circleInput.center.x, 2) + Math.pow(wy - circleInput.center.y, 2));
+      const distToHandle = Math.hypot(wx - handleX, wy - handleY);
+      const distToBadge = Math.hypot(wx - badgeX, wy - badgeY);
+      const distToCenter = Math.hypot(wx - circleInput.center.x, wy - circleInput.center.y);
       
-      const threshold = 40 / scale;
+      const handleThreshold = 48 / scale;
+      const badgeThreshold = 28 / scale;
+      const centerThreshold = 52 / scale;
+      // Tělo kružítka (mezi středem a tužkou) — posun
+      const onBody =
+        distToCenter < r * 0.75 &&
+        distToCenter > centerThreshold * 0.5 &&
+        distToHandle > handleThreshold;
       
-      if (distToHandle < threshold) {
+      if (distToHandle < handleThreshold || distToBadge < badgeThreshold) {
+        circleLiveRef.current = {
+          center: { ...circleInput.center },
+          radius: circleInput.radius,
+          handleAngle: circleInput.handleAngle,
+        };
         setCircleInput(prev => ({ ...prev, isDraggingHandle: true }));
-      } else if (distToCenter < threshold) {
+      } else if (distToCenter < centerThreshold || onBody) {
+        circleLiveRef.current = {
+          center: { ...circleInput.center },
+          radius: circleInput.radius,
+          handleAngle: circleInput.handleAngle,
+        };
         setCircleInput(prev => ({ ...prev, isDraggingCenter: true }));
       }
       return;
@@ -3858,6 +4079,10 @@ export function FreeGeometryEditor({
 
     // Nástroj Pravítko — rýsování přímky podél strany nebo posun/otočení
     if (activeTool === 'triangleRuler') {
+      // Interakce uživatele ukončí intro animaci (ponechá aktuální pozici).
+      if (rulerIntroRef.current.active) {
+        stopRulerIntroAnimation(true);
+      }
       const angle = rulerAngleRef.current;
       let pivot = rulerPivotRef.current ?? rulerToolState.pivot;
       if (!pivot) {
@@ -3892,9 +4117,9 @@ export function FreeGeometryEditor({
 
       rulerDraggingRef.current = true;
 
-      if (hit.type === 'corner' && hit.cornerId !== 'pivot') {
+      if (hit.type === 'rotate') {
         rulerDragModeRef.current = 'rotate';
-        rulerRotateCornerRef.current = hit.cornerId;
+        rulerRotateCornerRef.current = null;
         rulerDragStartRef.current = null;
         const anchor =
           rulerRotationAnchorRef.current ?? {
@@ -3911,7 +4136,8 @@ export function FreeGeometryEditor({
           pivot,
           isDragging: true,
         }));
-      } else if (hit.type === 'body' || (hit.type === 'corner' && hit.cornerId === 'pivot')) {
+      } else {
+        // body — posun
         rulerDragModeRef.current = 'move';
         rulerRotateStartRef.current = null;
         rulerDragStartRef.current = {
@@ -3926,8 +4152,6 @@ export function FreeGeometryEditor({
           pivot,
           isDragging: true,
         }));
-      } else {
-        return;
       }
       return;
     }
@@ -4980,7 +5204,7 @@ export function FreeGeometryEditor({
       return;
     }
 
-    // Kružítko — kurzor ruky nad středem
+    // Kružítko — hover nad středem (posun) / tužkou (otočení) — jen refy, bez setState u handle
     if (
       circleInput.visible &&
       circleInput.center &&
@@ -4988,15 +5212,29 @@ export function FreeGeometryEditor({
       !circleInput.isDraggingHandle &&
       !circleInput.isDraggingCenter
     ) {
-      const centerThreshold = 40 / scale;
-      const hover = Math.hypot(wx - circleInput.center.x, wy - circleInput.center.y) < centerThreshold;
-      if (hover !== circleCenterHoverRef.current) {
-        circleCenterHoverRef.current = hover;
-        setCircleCenterHover(hover);
+      const r = circleInput.radius * PIXELS_PER_CM;
+      const ha = circleInput.handleAngle;
+      const hx = circleInput.center.x + Math.cos(ha) * r;
+      const hy = circleInput.center.y + Math.sin(ha) * r;
+      const badgeX = hx + Math.cos(ha) * (28 / scale);
+      const badgeY = hy + Math.sin(ha) * (28 / scale);
+      const handleHover =
+        Math.hypot(wx - hx, wy - hy) < 48 / scale ||
+        Math.hypot(wx - badgeX, wy - badgeY) < 28 / scale;
+      const centerHover =
+        !handleHover &&
+        Math.hypot(wx - circleInput.center.x, wy - circleInput.center.y) < 52 / scale;
+      circleHandleHoverRef.current = handleHover;
+      if (centerHover !== circleCenterHoverRef.current) {
+        circleCenterHoverRef.current = centerHover;
+        setCircleCenterHover(centerHover);
       }
-    } else if (circleCenterHoverRef.current) {
-      circleCenterHoverRef.current = false;
-      setCircleCenterHover(false);
+    } else if (!circleInput.isDraggingHandle && !circleInput.isDraggingCenter) {
+      circleHandleHoverRef.current = false;
+      if (circleCenterHoverRef.current) {
+        circleCenterHoverRef.current = false;
+        setCircleCenterHover(false);
+      }
     }
 
     // Nástroj Pravítko — křížek pro rýsování podél strany
@@ -5312,34 +5550,40 @@ export function FreeGeometryEditor({
       }
     }
     
-    // Compass mode - dragging handle or center
+    // Compass mode - dragging handle or center (live ref → plynulé otáčení/posun)
     if (circleInput.visible && circleInput.center) {
       if (circleInput.isDraggingHandle) {
+        const base = circleLiveRef.current ?? {
+          center: circleInput.center,
+          radius: circleInput.radius,
+          handleAngle: circleInput.handleAngle,
+        };
         const snapPoint = getSnapPositionPreferPoint(wx, wy, 25);
         const snapShape = snapPoint ? null : snapToNearestShape(wx, wy, 25);
         const target = snapPoint ?? snapShape ?? { x: wx, y: wy };
 
-        const dx = target.x - circleInput.center.x;
-        const dy = target.y - circleInput.center.y;
+        const dx = target.x - base.center.x;
+        const dy = target.y - base.center.y;
+        const handleAngle = Math.atan2(dy, dx);
         if (circleInput.fixedRadius) {
-          setCircleInput(prev => ({ ...prev, handleAngle: Math.atan2(dy, dx) }));
+          circleLiveRef.current = { ...base, handleAngle };
         } else {
-          const newRadiusPx = Math.sqrt(dx * dx + dy * dy);
-          const newRadiusCm = Math.max(0.1, newRadiusPx / PIXELS_PER_CM);
+          const newRadiusCm = Math.max(0.1, Math.hypot(dx, dy) / PIXELS_PER_CM);
           const rounded = Math.round(newRadiusCm * 10) / 10;
-          setCircleInput(prev => ({
-            ...prev,
-            radius: rounded,
-            handleAngle: Math.atan2(dy, dx)
-          }));
+          circleLiveRef.current = { ...base, radius: rounded, handleAngle };
         }
         return;
       }
       if (circleInput.isDraggingCenter) {
+        const base = circleLiveRef.current ?? {
+          center: circleInput.center,
+          radius: circleInput.radius,
+          handleAngle: circleInput.handleAngle,
+        };
         const snapPoint = getSnapPositionPreferPoint(wx, wy, 25);
         const snapShape = snapPoint ? null : snapToNearestShape(wx, wy, 25);
         const target = snapPoint ?? snapShape ?? { x: wx, y: wy };
-        setCircleInput(prev => ({ ...prev, center: { x: target.x, y: target.y } }));
+        circleLiveRef.current = { ...base, center: { x: target.x, y: target.y } };
         return;
       }
     }
@@ -5371,8 +5615,21 @@ export function FreeGeometryEditor({
       groupDragRef.current = null;
     }
     
-    // Compass mode - end dragging
+    // Compass mode - end dragging (commit live pozice)
     if (circleInput.isDraggingHandle || circleInput.isDraggingCenter) {
+      const live = circleLiveRef.current;
+      if (live) {
+        setCircleInput(prev => ({
+          ...prev,
+          center: live.center,
+          radius: live.radius,
+          handleAngle: live.handleAngle,
+          isDraggingHandle: false,
+          isDraggingCenter: false,
+        }));
+        circleLiveRef.current = null;
+        return;
+      }
       setCircleInput(prev => ({ ...prev, isDraggingHandle: false, isDraggingCenter: false }));
     }
 
@@ -6034,14 +6291,43 @@ export function FreeGeometryEditor({
       }
       
       try {
+        // Intro animace pravítka — ručička ho krátce pohne dokola
+        if (
+          activeTool === 'triangleRuler' &&
+          rulerIntroRef.current.active &&
+          rulerIntroRef.current.basePivot &&
+          !rulerDraggingRef.current
+        ) {
+          const intro = rulerIntroRef.current;
+          const base = intro.basePivot!;
+          const duration = 2200;
+          const elapsed = time - intro.startTime;
+          const t = Math.min(elapsed / duration, 1);
+          // Amplitude: náběh → plný pohyb → doznění
+          const envelope =
+            t < 0.12 ? t / 0.12 : t > 0.75 ? Math.max(0, (1 - t) / 0.25) : 1;
+          const amp = (36 / Math.max(scale, 0.35)) * envelope;
+          // Lissajous-like dráha „dokola“ — jen posun, bez rotace
+          const ox = Math.sin(t * Math.PI * 2) * amp;
+          const oy = Math.sin(t * Math.PI * 2 + Math.PI / 2) * amp * 0.72;
+          const pivot = { x: base.x + ox, y: base.y + oy };
+          rulerPivotRef.current = pivot;
+          rulerAngleRef.current = intro.baseAngle;
+          intro.handPos = {
+            x: pivot.x + Math.cos(intro.baseAngle) * (18 / scale),
+            y: pivot.y + Math.sin(intro.baseAngle) * (18 / scale),
+          };
+          if (t >= 1) {
+            stopRulerIntroAnimation(false);
+          }
+        }
+
         if (
           activeTool === 'triangleRuler' &&
           rulerToolState.active &&
           rulerToolState.drawMode !== 'pickEdge'
         ) {
           let rotateHover = rulerDragModeRef.current === 'rotate';
-          let rotateCorner: RulerRotateCornerId | null =
-            rotateHover ? rulerRotateCornerRef.current : null;
           let moveHover = rulerDragModeRef.current === 'move';
           if (!rulerDraggingRef.current && mousePosRef.current) {
             const pivot = rulerPivotRef.current ?? rulerToolState.pivot;
@@ -6054,15 +6340,10 @@ export function FreeGeometryEditor({
                 scale,
                 isTabletMode
               );
-              if (!rotateHover && hit.type === 'corner' && hit.cornerId !== 'pivot') {
-                rotateHover = true;
-                rotateCorner = hit.cornerId;
-              }
-              moveHover =
-                hit.type === 'body' || (hit.type === 'corner' && hit.cornerId === 'pivot');
+              rotateHover = hit.type === 'rotate';
+              moveHover = hit.type === 'body';
             }
           }
-          rulerRotateCornerRef.current = rotateCorner;
           if (rotateHover !== rulerRotateHoverRef.current) {
             rulerRotateHoverRef.current = rotateHover;
             setRulerRotateHover(rotateHover);
@@ -8580,9 +8861,11 @@ export function FreeGeometryEditor({
       circleInput.center &&
       !animState.isActive
     ) {
-         const cc = circleInput.center;
-         const r = circleInput.radius * PIXELS_PER_CM;
-         const ha = circleInput.handleAngle;
+         const live = circleLiveRef.current;
+         const cc = live?.center ?? circleInput.center;
+         const radiusCm = live?.radius ?? circleInput.radius;
+         const r = radiusCm * PIXELS_PER_CM;
+         const ha = live?.handleAngle ?? circleInput.handleAngle;
          const hx = cc.x + Math.cos(ha) * r;
          const hy = cc.y + Math.sin(ha) * r;
          const mode = circleInput.mode;
@@ -8697,7 +8980,7 @@ export function FreeGeometryEditor({
            ctx.fill();
          }
          
-         // Handle na obvodu - pulzující
+         // Handle na obvodu — jasný symbol otočení (rotace kolem středu)
          const pulse = (Math.sin(Date.now() * 0.004) + 1) / 2;
          const isDragging = circleInput.isDraggingHandle;
          const dragPulse = isDragging ? 1 : pulse;
@@ -8712,7 +8995,7 @@ export function FreeGeometryEditor({
          ctx.fill();
          
          // Hlavní kulička
-         const handleR = sx(isDragging ? 13 : 11);
+         const handleR = sx(isDragging ? 14 : 12);
          ctx.beginPath();
          ctx.arc(hx, hy, handleR, 0, Math.PI * 2);
          ctx.fillStyle = darkMode ? '#7aa2f7' : '#3b82f6';
@@ -8721,35 +9004,55 @@ export function FreeGeometryEditor({
          ctx.lineWidth = sx(2.5);
          ctx.stroke();
          
-         // Oboustranná šipka v handle
+         // Zakřivené šipky otočení uvnitř handle (↻)
          ctx.save();
          ctx.translate(hx, hy);
          ctx.rotate(ha);
-         ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
+         ctx.strokeStyle = 'rgba(255, 255, 255, 0.98)';
+         ctx.fillStyle = 'rgba(255, 255, 255, 0.98)';
          ctx.lineWidth = sx(2);
          ctx.lineCap = 'round';
          ctx.lineJoin = 'round';
-         const aLen = sx(6);
-         const hLen = sx(3);
-         const hAng = Math.PI / 5;
+         const arcR = sx(5.5);
+         // Horní oblouk se šipkou (po směru)
          ctx.beginPath();
-         ctx.moveTo(-aLen, 0);
-         ctx.lineTo(aLen, 0);
+         ctx.arc(0, 0, arcR, -Math.PI * 0.75, Math.PI * 0.15);
          ctx.stroke();
+         {
+           const tipA = Math.PI * 0.15;
+           const tx = Math.cos(tipA) * arcR;
+           const ty = Math.sin(tipA) * arcR;
+           const tang = tipA + Math.PI / 2;
+           const ah = sx(3.2);
+           ctx.beginPath();
+           ctx.moveTo(tx + Math.cos(tang + 2.5) * ah, ty + Math.sin(tang + 2.5) * ah);
+           ctx.lineTo(tx, ty);
+           ctx.lineTo(tx + Math.cos(tang - 0.9) * ah, ty + Math.sin(tang - 0.9) * ah);
+           ctx.stroke();
+         }
+         // Dolní oblouk se šipkou (proti směru) — obousměrná rotace
          ctx.beginPath();
-         ctx.moveTo(aLen - hLen * Math.cos(hAng), -hLen * Math.sin(hAng));
-         ctx.lineTo(aLen, 0);
-         ctx.lineTo(aLen - hLen * Math.cos(hAng), hLen * Math.sin(hAng));
+         ctx.arc(0, 0, arcR, Math.PI * 0.25, Math.PI * 1.15);
          ctx.stroke();
-         ctx.beginPath();
-         ctx.moveTo(-aLen + hLen * Math.cos(hAng), -hLen * Math.sin(hAng));
-         ctx.lineTo(-aLen, 0);
-         ctx.lineTo(-aLen + hLen * Math.cos(hAng), hLen * Math.sin(hAng));
-         ctx.stroke();
+         {
+           const tipA = Math.PI * 1.15;
+           const tx = Math.cos(tipA) * arcR;
+           const ty = Math.sin(tipA) * arcR;
+           const tang = tipA + Math.PI / 2;
+           const ah = sx(3.2);
+           ctx.beginPath();
+           ctx.moveTo(tx + Math.cos(tang + 2.5) * ah, ty + Math.sin(tang + 2.5) * ah);
+           ctx.lineTo(tx, ty);
+           ctx.lineTo(tx + Math.cos(tang - 0.9) * ah, ty + Math.sin(tang - 0.9) * ah);
+           ctx.stroke();
+         }
          ctx.restore();
+
+         // Velký symbol otočení u tužky kružítka
+         drawCompassRotateBadge(ctx, hx, hy, ha, scale, rulerRotateCursorImageRef.current);
          
          // Měření podél poloměru (stejný úhel jako handle)
-         const cm = circleInput.radius.toFixed(1).replace('.', ',');
+         const cm = radiusCm.toFixed(1).replace('.', ',');
          const midX = cc.x + Math.cos(ha) * r / 2;
          const midY = cc.y + Math.sin(ha) * r / 2;
          const perpOff = 18 / scale;
@@ -8795,28 +9098,23 @@ export function FreeGeometryEditor({
           drawRulerCrosshair(ctx, crossPos.x, crossPos.y);
         }
       }
-      const showRotateCursor =
-        rulerToolState.drawMode !== 'pickEdge' &&
-        (rulerRotateHoverRef.current || rulerDragModeRef.current === 'rotate');
-      const rotateCornerId = rulerRotateCornerRef.current;
-      if (showRotateCursor && rotateCornerId) {
-        const corner = RULER_CORNERS_LOCAL.find(c => c.id === rotateCornerId);
-        if (corner) {
-          const world = localToRulerWorld(
-            corner.x,
-            corner.y,
-            rulerPivot,
-            rulerAngleRef.current
-          );
-          drawRulerRotateCursor(
-            ctx,
-            world.x,
-            world.y,
-            rulerAngleRef.current,
-            rotateCornerId,
-            rulerPivot
-          );
-        }
+      // Jedno rotační kolečko uprostřed pravítka
+      if (rulerToolState.drawMode !== 'pickEdge') {
+        const emphasized =
+          rulerDragModeRef.current === 'rotate' || rulerRotateHoverRef.current;
+        drawRulerRotateWheel(
+          ctx,
+          rulerPivot,
+          rulerAngleRef.current,
+          emphasized ? 1 : 0.92
+        );
+      }
+      if (rulerIntroRef.current.active && rulerIntroRef.current.handPos) {
+        drawHandCursor(
+          ctx,
+          rulerIntroRef.current.handPos.x,
+          rulerIntroRef.current.handPos.y
+        );
       }
       ctx.restore();
     }
@@ -9382,35 +9680,60 @@ export function FreeGeometryEditor({
     ctx.restore();
   };
 
-  const drawRulerRotateCursor = (
+  /** Otočení uprostřed pravítka — klasická reload ikona (Lucide RotateCw, jako redo v toolbaru). */
+  const drawRulerRotateWheel = (
     ctx: CanvasRenderingContext2D,
-    x: number,
-    y: number,
+    pivot: { x: number; y: number },
     angle: number,
-    cornerId: RulerRotateCornerId,
-    pivot: { x: number; y: number }
+    opacity: number = 1
   ) => {
-    const img = rulerRotateCursorImageRef.current;
-    if (!img) return;
-    const size = RULER_ROTATE_CURSOR_PX / scale;
-    const pivotWorld = localToRulerWorld(
-      RULER_ROTATION_PIVOT_LOCAL.x,
-      RULER_ROTATION_PIVOT_LOCAL.y,
+    const world = localToRulerWorld(
+      RULER_ROTATE_WHEEL_LOCAL.x,
+      RULER_ROTATE_WHEEL_LOCAL.y,
       pivot,
       angle
     );
-    const dx = x - pivotWorld.x;
-    const dy = y - pivotWorld.y;
-    const len = Math.hypot(dx, dy) || 1;
-    const offset = RULER_ROTATE_CURSOR_OFFSET_PX / scale;
-    const drawX = x + (dx / len) * offset;
-    const drawY = y + (dy / len) * offset;
-    const cornerOffset =
-      cornerId === 'baseLeft' ? Math.PI : cornerId === 'apex' ? -Math.PI / 2 : 0;
+    const s = Math.max(scale, 0.25);
+    const r = RULER_ROTATE_WHEEL_VISUAL_PX / s;
+    const active =
+      rulerDragModeRef.current === 'rotate' || rulerRotateHoverRef.current;
+    const accent = active ? '#2563eb' : '#4b5563';
+
     ctx.save();
-    ctx.translate(drawX, drawY);
-    ctx.rotate(angle + RULER_ROTATE_CURSOR_OFFSET_RAD + cornerOffset);
-    ctx.drawImage(img, -size / 2, -size / 2, size, size);
+    ctx.globalAlpha = opacity;
+    ctx.translate(world.x, world.y);
+    // Ikona zůstává vzpřímená na obrazovce — neotáčí se s pravítkem
+    ctx.rotate(-angle);
+
+    // Světlý podklad
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.98, 0, Math.PI * 2);
+    ctx.fillStyle = active ? 'rgba(239,246,255,0.96)' : 'rgba(255,255,255,0.94)';
+    ctx.fill();
+    ctx.strokeStyle = active ? 'rgba(37,99,235,0.4)' : 'rgba(75,85,99,0.2)';
+    ctx.lineWidth = 1.2 / s;
+    ctx.stroke();
+
+    // Přesná Lucide RotateCw cesta (viewBox 0..24)
+    // M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8
+    // M21 3v5h-5
+    const iconPx = (RULER_ROTATE_WHEEL_VISUAL_PX * 1.15) / s;
+    const u = iconPx / 24;
+    ctx.save();
+    ctx.scale(u, u);
+    ctx.translate(-12, -12);
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    const arc = new Path2D(
+      'M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8'
+    );
+    const head = new Path2D('M21 3v5h-5');
+    ctx.stroke(arc);
+    ctx.stroke(head);
+    ctx.restore();
+
     ctx.restore();
   };
 
@@ -9436,6 +9759,19 @@ export function FreeGeometryEditor({
       RULER_IMG_HEIGHT * s
     );
     ctx.restore();
+  };
+
+  /** macOS open-hand kurzor pro intro animaci pravítka — screen-space velikost. */
+  const drawHandCursor = (
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number
+  ) => {
+    const img = rulerHandCursorImageRef.current;
+    if (!img) return;
+    const size = RULER_HAND_CURSOR_PX / Math.max(scale, 0.25);
+    // Hotspot systémového open-hand je u středu dlaně / kořene prstů
+    ctx.drawImage(img, x - size * 0.42, y - size * 0.28, size, size);
   };
 
   const drawRuler = (ctx: CanvasRenderingContext2D, p1: {x:number, y:number}, p2: {x:number, y:number}, progress: number) => {
@@ -9725,12 +10061,15 @@ export function FreeGeometryEditor({
     if (activeTool === 'eraser') return hoveredShapeForMove ? 'cell' : 'default';
     if (activeTool === 'circle' && circleInput.visible && circleInput.freeDrawMode === 'pickArc') return 'none';
     if (circleInput.visible && circleInput.center && circleInput.freeDrawMode !== 'pickArc') {
+      if (circleInput.isDraggingHandle || circleHandleHoverRef.current) return 'grabbing';
       if (circleInput.isDraggingCenter) return 'grabbing';
       if (circleCenterHover) return 'grab';
     }
     if (activeTool === 'triangleRuler' && rulerToolState.active) {
       if (rulerToolState.drawMode === 'pickEdge') return 'none';
-      if (rulerDragModeRef.current === 'rotate' || rulerRotateHover) return 'none';
+      if (rulerDragModeRef.current === 'rotate' || rulerRotateHover) {
+        return rulerDragModeRef.current === 'rotate' ? 'grabbing' : 'grab';
+      }
       if (rulerMoveHover || rulerDraggingRef.current) {
         return rulerDraggingRef.current ? 'grabbing' : 'grab';
       }
@@ -10185,11 +10524,9 @@ export function FreeGeometryEditor({
                 // Zobrazit ikonu aktuálně aktivního nástroje ve skupině
                 const activeToolInGroup = group.tools.find(t => t.id === activeTool);
                 const DisplayIcon = activeToolInGroup ? activeToolInGroup.icon : group.icon;
-                const canRename = (selection || selectedShapeIds.length > 0) && !selectedFreehandIds.length;
                 
                 return (
                     <div key={group.id} className="relative group/tool">
-                        <div className="relative">
                         <button
                             onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                             onClick={(e) => {
@@ -10225,140 +10562,6 @@ export function FreeGeometryEditor({
                                 }`} />
                             )}
                         </button>
-
-                        {/* Context actions next to the selection tool */}
-                        {group.id === 'group_move' && (canRename || activeTool === 'highlighter' || activeTool === 'highlighterStraight') && (
-                          <div className="absolute left-full top-[calc(50%+22px)] -translate-y-1/2 ml-[18px] flex items-start gap-2">
-                            {(activeTool === 'highlighter' || activeTool === 'highlighterStraight') && (
-                              <div className="relative">
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); setShowHighlightPalette(v => !v); }}
-                                  onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setShowHighlightPalette(v => !v); }}
-                                  className="w-12 flex flex-col items-center justify-center rounded-xl bg-white text-gray-700 hover:bg-gray-50 transition-colors py-2 shadow-sm border border-gray-200"
-                                  title="Barva zvýraznění"
-                                >
-                                  <Palette className="w-5 h-5" />
-                                  <span className="text-[9px] font-bold mt-0.5 leading-tight">barva</span>
-                                </button>
-
-                                {showHighlightPalette && (
-                                  <div
-                                    className="absolute left-0 top-full mt-2 z-50 rounded-2xl bg-white shadow-[0_10px_30px_rgba(0,0,0,0.15)] border border-gray-100 p-2"
-                                    onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                                    onTouchStart={(e) => { e.stopPropagation(); }}
-                                  >
-                                    <div className="flex items-center gap-2 px-1 py-1">
-                                      {HIGHLIGHT_COLORS.map(c => (
-                                        <button
-                                          key={c.id}
-                                          onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            highlightColorRgbaRef.current = c.rgba;
-                                            setHighlightColorId(c.id);
-                                            setShowHighlightPalette(false);
-                                          }}
-                                          onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setHighlightColorId(c.id); setShowHighlightPalette(false); }}
-                                          className={`h-8 w-8 rounded-full border transition-all ${
-                                            c.id === highlightColorId ? 'border-gray-900 ring-2 ring-gray-900/10' : 'border-gray-200 hover:border-gray-400'
-                                          }`}
-                                          style={{ background: c.swatch }}
-                                          title={c.label}
-                                        />
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-
-                            {canRename && (
-                              <div className="flex flex-col gap-2">
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => setShowRenameModal(true)}
-                                    onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setShowRenameModal(true); }}
-                                    className="w-12 flex flex-col items-center justify-center rounded-xl bg-blue-50 text-blue-500 hover:bg-blue-100 transition-colors py-2 shadow-sm"
-                                    title="Název"
-                                  >
-                                    <Pencil className="w-5 h-5" />
-                                    <span className="text-[9px] font-bold mt-0.5 leading-tight">název</span>
-                                  </button>
-
-                                  <button
-                                    type="button"
-                                    onClick={(e) => { e.stopPropagation(); toggleLockSelection(); }}
-                                    onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); toggleLockSelection(); }}
-                                    className="w-12 flex flex-col items-center justify-center rounded-xl bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors py-2 shadow-sm"
-                                    title={getSelectionLockState() === 'locked' ? 'Odemknout' : 'Zamknout'}
-                                  >
-                                    {getSelectionLockState() === 'locked' ? (
-                                      <Lock className="w-5 h-5" />
-                                    ) : (
-                                      <Unlock className="w-5 h-5" />
-                                    )}
-                                    <span className="text-[9px] font-bold mt-0.5 leading-tight">zámek</span>
-                                  </button>
-                                </div>
-
-                                {selectedShapeIds.length > 0 && (
-                                  <div className="flex items-center gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        toggleThinStrokeOnSelection();
-                                      }}
-                                      onTouchEnd={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        toggleThinStrokeOnSelection();
-                                      }}
-                                      className={`w-12 flex flex-col items-center justify-center rounded-xl transition-colors py-2 shadow-sm border ${
-                                        (() => {
-                                          const st = getSelectionThinStrokeState();
-                                          return st === 'allThin' || st === 'mixed'
-                                            ? 'bg-amber-50 text-amber-900 border-amber-200'
-                                            : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50';
-                                        })()
-                                      }`}
-                                      title="Tenká — přepíná mezi tenkou a normální tloušťkou"
-                                    >
-                                      <Minus className="w-5 h-5 stroke-[3]" />
-                                      <span className="text-[8px] font-bold mt-0.5 leading-tight text-center px-0.5">tenká</span>
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        toggleEmphasisStrokeOnSelection();
-                                      }}
-                                      onTouchEnd={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        toggleEmphasisStrokeOnSelection();
-                                      }}
-                                      className={`w-12 flex flex-col items-center justify-center rounded-xl transition-colors py-2 shadow-sm border ${
-                                        (() => {
-                                          const st = getSelectionEmphasisStrokeState();
-                                          return st === 'allEmphasis' || st === 'mixed'
-                                            ? 'bg-violet-50 text-violet-900 border-violet-200'
-                                            : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50';
-                                        })()
-                                      }`}
-                                      title="Zvýraznění — výraznější barva čáry"
-                                    >
-                                      <Sparkles className="w-5 h-5" />
-                                      <span className="text-[8px] font-bold mt-0.5 leading-tight text-center px-0.5">zvýraznění</span>
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                        </div>
                         {/* Submenu - čistě stavové, bez group-hover */}
                         {group.tools.length > 1 && activeGroup === group.id && (
                             <div 
@@ -10430,16 +10633,8 @@ export function FreeGeometryEditor({
                      return null;
                 }
 
-                const canRename = (selection || selectedShapeIds.length > 0) && !selectedFreehandIds.length;
-
-                // Show rename action next to the "Výběr" tool (group_move) always.
-                // If nothing is selected, the modal still allows renaming the construction title.
-                const showRenameNextToSelect = group.id === 'group_move';
-
                 return (
                     <div key={group.id} className="relative w-full flex justify-center transition-all duration-300">
-                        <div className={showRenameNextToSelect ? 'flex items-center gap-2' : ''}>
-                         {/* Main Button */}
                          <button
                             onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                             onClick={(e) => {
@@ -10474,76 +10669,6 @@ export function FreeGeometryEditor({
                             </div>
                          </button>
 
-                         {/* Rename button next to selection tool */}
-                         {showRenameNextToSelect && (
-                           <div className="flex flex-col gap-2 items-center mt-5">
-                             <button
-                               type="button"
-                               onClick={() => setShowRenameModal(true)}
-                               onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setShowRenameModal(true); }}
-                               className={`w-12 flex flex-col items-center justify-center rounded-xl transition-colors py-2 ${
-                                 canRename ? 'bg-blue-50 text-blue-500 hover:bg-blue-100' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                               }`}
-                             >
-                               <Pencil className="w-5 h-5" />
-                               <span className="text-[9px] font-bold mt-0.5 leading-tight">název</span>
-                             </button>
-                             {selectedShapeIds.length > 0 && (
-                               <div className="flex flex-col gap-2">
-                                 <button
-                                   type="button"
-                                   onClick={(e) => {
-                                     e.stopPropagation();
-                                     toggleThinStrokeOnSelection();
-                                   }}
-                                   onTouchEnd={(e) => {
-                                     e.preventDefault();
-                                     e.stopPropagation();
-                                     toggleThinStrokeOnSelection();
-                                   }}
-                                   className={`w-12 flex flex-col items-center justify-center rounded-xl transition-colors py-2 border ${
-                                     (() => {
-                                       const st = getSelectionThinStrokeState();
-                                       return st === 'allThin' || st === 'mixed'
-                                         ? 'bg-amber-50 text-amber-900 border-amber-200'
-                                         : 'bg-white text-gray-700 border-gray-200';
-                                     })()
-                                   }`}
-                                   title="Tenká"
-                                 >
-                                   <Minus className="w-5 h-5 stroke-[3]" />
-                                   <span className="text-[8px] font-bold mt-0.5 leading-tight text-center px-0.5">tenká</span>
-                                 </button>
-                                 <button
-                                   type="button"
-                                   onClick={(e) => {
-                                     e.stopPropagation();
-                                     toggleEmphasisStrokeOnSelection();
-                                   }}
-                                   onTouchEnd={(e) => {
-                                     e.preventDefault();
-                                     e.stopPropagation();
-                                     toggleEmphasisStrokeOnSelection();
-                                   }}
-                                   className={`w-12 flex flex-col items-center justify-center rounded-xl transition-colors py-2 border ${
-                                     (() => {
-                                       const st = getSelectionEmphasisStrokeState();
-                                       return st === 'allEmphasis' || st === 'mixed'
-                                         ? 'bg-violet-50 text-violet-900 border-violet-200'
-                                         : 'bg-white text-gray-700 border-gray-200';
-                                     })()
-                                   }`}
-                                   title="Zvýraznění"
-                                 >
-                                   <Sparkles className="w-5 h-5" />
-                                   <span className="text-[8px] font-bold mt-0.5 leading-tight text-center px-0.5">zvýraznění</span>
-                                 </button>
-                               </div>
-                             )}
-                           </div>
-                         )}
-                        </div>
-
                          {/* Submenu - čistě stavové, bez group-hover */}
                          {group.tools.length > 1 && isMenuOpen && (
                          <div 
@@ -10560,11 +10685,16 @@ export function FreeGeometryEditor({
                              <div className="text-[10px] font-bold px-3 py-1 text-gray-400 uppercase tracking-wider">{group.label}</div>
                              {group.tools.map(tool => {
                                  const ToolIcon = getIcon(tool.icon);
-                                 const constructTextOnly = group.id === 'group_construct';
+                                 const constructMenu = group.id === 'group_construct';
                                  const pointDrawingMenu = group.id === 'group_point';
+                                 const isMovableRulerTool = tool.id === 'triangleRuler';
+                                 const largerNotationIcon =
+                                   tool.id === 'segment' ||
+                                   tool.id === 'ray' ||
+                                   tool.id === '__popup__segment_fixed';
                                  return (
+                                 <div key={tool.id}>
                                  <button
-                                    key={tool.id}
                                     onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                                     onClick={(e) => {
                                         e.stopPropagation();
@@ -10578,8 +10708,8 @@ export function FreeGeometryEditor({
                                         selectSidebarTool(tool.id);
                                     }}
                                     className={`flex rounded-xl text-sm font-medium transition-colors ${
-                                      constructTextOnly
-                                        ? 'w-full justify-start text-left px-3 py-2.5 items-center'
+                                      constructMenu
+                                        ? 'w-full justify-start text-left px-3 py-2.5 items-center gap-2.5'
                                         : pointDrawingMenu
                                           ? 'w-full justify-start text-left items-start gap-3 px-3 py-2'
                                           : 'items-center gap-3 px-3 py-2'
@@ -10587,13 +10717,15 @@ export function FreeGeometryEditor({
                                         activeTool === tool.id ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-50'
                                     }`}
                                  >
-                                    {!constructTextOnly && ToolIcon && (
-                                      <ToolIcon className={`w-4 h-4 shrink-0 ${pointDrawingMenu ? 'mt-0.5' : ''}`} />
+                                    {ToolIcon && (
+                                      <ToolIcon
+                                        className={`${largerNotationIcon ? 'w-[21px] h-[21px]' : 'w-4 h-4'} shrink-0 ${pointDrawingMenu ? 'mt-0.5' : ''} ${constructMenu ? 'opacity-80' : ''}`}
+                                      />
                                     )}
                                     <span
                                       className={
-                                        constructTextOnly
-                                          ? 'text-left leading-snug block w-full whitespace-nowrap'
+                                        constructMenu
+                                          ? 'text-left leading-snug block flex-1 min-w-0 whitespace-nowrap'
                                           : pointDrawingMenu
                                             ? 'text-left leading-snug flex-1 min-w-0'
                                             : ''
@@ -10602,6 +10734,10 @@ export function FreeGeometryEditor({
                                       {tool.label}
                                     </span>
                                  </button>
+                                 {isMovableRulerTool && (
+                                   <div className="mx-3 my-1.5 border-t border-gray-100" aria-hidden />
+                                 )}
+                                 </div>
                                  );
                              })}
                          </div>
@@ -10913,7 +11049,7 @@ export function FreeGeometryEditor({
         return (
       <div className={`absolute left-1/2 -translate-x-1/2 z-10 rounded-2xl font-medium transition-all duration-300 px-5 py-2.5 text-sm border ${
         darkMode ? 'bg-[#24283b]/95 text-[#c0caf5] border-[#565f89] shadow-lg' : 'bg-white/95 text-gray-600 shadow-lg border-gray-200 backdrop-blur-sm'
-      }`} style={{ bottom: 'calc(24px + env(safe-area-inset-bottom, 0px))' }}>
+      }`} style={{ bottom: `calc(${bottomChromeOffsetPx}px + env(safe-area-inset-bottom, 0px))` }}>
         {content}
       </div>
         );
@@ -11191,6 +11327,157 @@ export function FreeGeometryEditor({
         </>
       )}
 
+      {/* Kontext výběru — šedý blok dole na středu (název / zámek / tenká / zvýraznění) */}
+      {showBottomSelectionBar && (
+        <div
+          className="absolute left-1/2 z-50 pointer-events-none"
+          style={{
+            bottom: 'calc(20px + env(safe-area-inset-bottom, 0px))',
+            transform: 'translateX(-50%)',
+          }}
+        >
+          <div
+            className="pointer-events-auto flex items-center gap-1 rounded-full bg-[#F2F2F2] p-2 shadow-sm"
+            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+            onTouchStart={(e) => e.stopPropagation()}
+          >
+            {(activeTool === 'highlighter' || activeTool === 'highlighterStraight') && (
+              <>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setShowHighlightPalette(v => !v); }}
+                    onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setShowHighlightPalette(v => !v); }}
+                    className="flex min-w-[3.25rem] flex-col items-center justify-center rounded-xl px-2.5 py-1.5 text-gray-700 transition-colors hover:bg-white/80"
+                    title="Barva zvýraznění"
+                  >
+                    <Palette className="h-5 w-5" />
+                    <span className="mt-0.5 text-[11.7px] font-bold leading-tight">barva</span>
+                  </button>
+                  {showHighlightPalette && (
+                    <div
+                      className="absolute bottom-full left-1/2 mb-2 z-50 -translate-x-1/2 rounded-2xl border border-gray-100 bg-white p-2 shadow-[0_10px_30px_rgba(0,0,0,0.15)]"
+                      onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                      onTouchStart={(e) => e.stopPropagation()}
+                    >
+                      <div className="flex items-center gap-2 px-1 py-1">
+                        {HIGHLIGHT_COLORS.map(c => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              highlightColorRgbaRef.current = c.rgba;
+                              setHighlightColorId(c.id);
+                              setShowHighlightPalette(false);
+                            }}
+                            onTouchEnd={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setHighlightColorId(c.id);
+                              setShowHighlightPalette(false);
+                            }}
+                            className={`h-8 w-8 rounded-full border transition-all ${
+                              c.id === highlightColorId
+                                ? 'border-gray-900 ring-2 ring-gray-900/10'
+                                : 'border-gray-200 hover:border-gray-400'
+                            }`}
+                            style={{ background: c.swatch }}
+                            title={c.label}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {(selection || selectedShapeIds.length > 0) && !selectedFreehandIds.length && (
+                  <div className="mx-0.5 h-8 w-px shrink-0 bg-gray-300" aria-hidden />
+                )}
+              </>
+            )}
+
+            {(selection || selectedShapeIds.length > 0) && !selectedFreehandIds.length && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowRenameModal(true)}
+                  onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setShowRenameModal(true); }}
+                  className="flex min-w-[3.25rem] flex-col items-center justify-center rounded-xl px-2.5 py-1.5 text-gray-700 transition-colors hover:bg-white/80"
+                  title="Název"
+                >
+                  <Pencil className="h-5 w-5" />
+                  <span className="mt-0.5 text-[11.7px] font-bold leading-tight">název</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); toggleLockSelection(); }}
+                  onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); toggleLockSelection(); }}
+                  className="flex min-w-[3.25rem] flex-col items-center justify-center rounded-xl px-2.5 py-1.5 text-gray-700 transition-colors hover:bg-white/80"
+                  title={getSelectionLockState() === 'locked' ? 'Odemknout' : 'Zamknout'}
+                >
+                  {getSelectionLockState() === 'locked' ? (
+                    <Lock className="h-5 w-5" />
+                  ) : (
+                    <Unlock className="h-5 w-5" />
+                  )}
+                  <span className="mt-0.5 text-[11.7px] font-bold leading-tight">zámek</span>
+                </button>
+
+                {selectedShapeIds.length > 0 && (
+                  <>
+                    <div className="mx-0.5 h-8 w-px shrink-0 bg-gray-300" aria-hidden />
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); toggleThinStrokeOnSelection(); }}
+                      onTouchEnd={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        toggleThinStrokeOnSelection();
+                      }}
+                      className={`flex min-w-[3.25rem] flex-col items-center justify-center rounded-xl px-2.5 py-1.5 transition-colors ${
+                        (() => {
+                          const st = getSelectionThinStrokeState();
+                          return st === 'allThin' || st === 'mixed'
+                            ? 'bg-white text-amber-900'
+                            : 'text-gray-700 hover:bg-white/80';
+                        })()
+                      }`}
+                      title="Tenká — přepíná mezi tenkou a normální tloušťkou"
+                    >
+                      <Minus className="h-5 w-5 stroke-[3]" />
+                      <span className="mt-0.5 text-[11.7px] font-bold leading-tight">tenká</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); toggleEmphasisStrokeOnSelection(); }}
+                      onTouchEnd={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        toggleEmphasisStrokeOnSelection();
+                      }}
+                      className={`flex min-w-[3.25rem] flex-col items-center justify-center rounded-xl px-2.5 py-1.5 transition-colors ${
+                        (() => {
+                          const st = getSelectionEmphasisStrokeState();
+                          return st === 'allEmphasis' || st === 'mixed'
+                            ? 'bg-white text-violet-900'
+                            : 'text-gray-700 hover:bg-white/80';
+                        })()
+                      }`}
+                      title="Zvýraznění — výraznější barva čáry"
+                    >
+                      <Sparkles className="h-5 w-5" />
+                      <span className="mt-0.5 text-[11.7px] font-bold leading-tight">zvýraznění</span>
+                    </button>
+                  </>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Volná kružnice — kružítko na plátně, poloměr tažením handle */}
       {circleInput.visible && !circleInput.fixedRadius && circleInput.center && !animState.isActive && (
         <div
@@ -11353,6 +11640,20 @@ export function FreeGeometryEditor({
               </button>
             );
           })}
+          <button
+            type="button"
+            title="Zavřít pravítko"
+            aria-label="Zavřít pravítko"
+            onClick={() => selectSidebarTool('move')}
+            onTouchEnd={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              selectSidebarTool('move');
+            }}
+            className="ml-[0.15rem] w-[2.35rem] h-[2.35rem] shrink-0 rounded-full bg-white text-gray-700 border border-gray-200 shadow-lg flex items-center justify-center transition-all hover:scale-105 hover:bg-gray-50 active:scale-95"
+          >
+            <X className="size-[1.05rem]" strokeWidth={2.5} />
+          </button>
         </div>
         </div>
       )}
