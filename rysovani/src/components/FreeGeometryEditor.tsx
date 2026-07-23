@@ -671,72 +671,68 @@ const RULER_PIVOT_HIT_PX = 26;
 /** Poloměr chycení strany pravítka pro rýsování přímky (px na obrazovce). */
 const RULER_EDGE_HIT_PX = 22;
 
-/** Kurzor otáčení pravítka — SVG od uživatele, vykreslený na plátno. */
-const RULER_ROTATE_CURSOR_PX = 63 * 0.8 * 0.8;
-/** Posun ikony otáčení od rohu pravítka ven (px na obrazovce). */
-const RULER_ROTATE_CURSOR_OFFSET_PX = 16;
-/** Dodatečné natočení ikony kurzoru (45° po směru hodinových ručiček). */
-const RULER_ROTATE_CURSOR_OFFSET_RAD = Math.PI / 4;
-const RULER_ROTATE_CURSOR_SVG = `<svg width="63" height="63" viewBox="0 0 63 63" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M50.4393 62.1066C51.0251 62.6923 51.9749 62.6923 52.5607 62.1066L62.1066 52.5606C62.6924 51.9748 62.6924 51.0251 62.1066 50.4393C61.5208 49.8535 60.5711 49.8535 59.9853 50.4393L51.5 58.9246L43.0147 50.4393C42.4289 49.8535 41.4792 49.8535 40.8934 50.4393C40.3076 51.0251 40.3076 51.9748 40.8934 52.5606L50.4393 62.1066ZM36.8553 25.6906L37.916 24.6299V24.6299L36.8553 25.6906ZM20.6342 14.8519L21.2082 13.4661V13.4661L20.6342 14.8519ZM0.43934 9.98524C-0.146447 10.571 -0.146447 11.5208 0.43934 12.1066L9.98528 21.6525C10.5711 22.2383 11.5208 22.2383 12.1066 21.6525C12.6924 21.0667 12.6924 20.117 12.1066 19.5312L3.62132 11.0459L12.1066 2.56062C12.6924 1.97483 12.6924 1.02508 12.1066 0.439297C11.5208 -0.14649 10.5711 -0.14649 9.98528 0.439297L0.43934 9.98524ZM51.5 61.0459H53C53 54.2828 51.6679 47.586 49.0798 41.3377L47.694 41.9117L46.3082 42.4858C48.7455 48.37 50 54.6768 50 61.0459H51.5ZM47.694 41.9117L49.0798 41.3377C46.4917 35.0894 42.6982 29.4121 37.916 24.6299L36.8553 25.6906L35.7947 26.7512C40.2983 31.2549 43.8708 36.6015 46.3082 42.4858L47.694 41.9117ZM36.8553 25.6906L37.916 24.6299C33.1338 19.8477 27.4565 16.0542 21.2082 13.4661L20.6342 14.8519L20.0602 16.2377C25.9444 18.6751 31.291 22.2476 35.7947 26.7512L36.8553 25.6906ZM20.6342 14.8519L21.2082 13.4661C14.9599 10.878 8.26308 9.5459 1.5 9.5459V11.0459V12.5459C7.86911 12.5459 14.1759 13.8004 20.0602 16.2377L20.6342 14.8519Z" fill="black"/></svg>`;
-
 /** macOS-style open-hand kurzor pro intro animaci pravítka (px na obrazovce). */
 const RULER_HAND_CURSOR_PX = 36;
 
-/** Symbol otočení u tužky kružítka — kreslí se mimo React (bez TDZ v render smyčce). */
-function drawCompassRotateBadge(
+/** Klasická reload ikona (Lucide RotateCw) — viewBox 24×24, střed v aktuálním originu. */
+function strokeLucideRotateCw(
   ctx: CanvasRenderingContext2D,
-  hx: number,
-  hy: number,
-  handleAngle: number,
+  size: number,
+  strokeStyle: string,
+  lineWidthInViewBox: number = 2
+) {
+  const u = size / 24;
+  ctx.save();
+  ctx.scale(u, u);
+  ctx.translate(-12, -12);
+  ctx.strokeStyle = strokeStyle;
+  ctx.lineWidth = lineWidthInViewBox;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  // M21 12 → oblouk po směru hodin na (12,3) → křivka → L21 8
+  ctx.beginPath();
+  ctx.moveTo(21, 12);
+  ctx.arc(12, 12, 9, 0, -Math.PI / 2, false);
+  ctx.bezierCurveTo(14.52, 3, 16.93, 4, 18.74, 5.74);
+  ctx.lineTo(21, 8);
+  ctx.stroke();
+  // M21 3 v5 h-5
+  ctx.beginPath();
+  ctx.moveTo(21, 3);
+  ctx.lineTo(21, 8);
+  ctx.lineTo(16, 8);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** Modrý handle bobánek (střed / obvod kružítka). */
+function drawHandleBobble(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  radius: number,
   scale: number,
-  rotateImg: HTMLImageElement | null
+  opts?: { glow?: number; darkMode?: boolean }
 ) {
   const s = Math.max(scale, 0.25);
-  const out = 28 / s;
-  const bx = hx + Math.cos(handleAngle) * out;
-  const by = hy + Math.sin(handleAngle) * out;
-
-  // Bílá „pilulka“ pod ikonou — vždy viditelná
-  const badgeR = 16 / s;
   ctx.save();
-  ctx.beginPath();
-  ctx.arc(bx, by, badgeR, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(255,255,255,0.95)';
-  ctx.strokeStyle = '#111827';
-  ctx.lineWidth = 1.5 / s;
-  ctx.fill();
-  ctx.stroke();
 
-  if (rotateImg) {
-    const size = (RULER_ROTATE_CURSOR_PX * 0.85) / s;
-    ctx.translate(bx, by);
-    ctx.rotate(handleAngle + Math.PI / 2 + RULER_ROTATE_CURSOR_OFFSET_RAD);
-    ctx.drawImage(rotateImg, -size / 2, -size / 2, size, size);
-  } else {
-    // Fallback: zakřivené šipky přímo na canvas
-    ctx.translate(bx, by);
-    ctx.rotate(handleAngle);
-    ctx.strokeStyle = '#111827';
-    ctx.lineWidth = 2 / s;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    const arcR = 7 / s;
+  if (opts?.glow && opts.glow > 0) {
     ctx.beginPath();
-    ctx.arc(0, 0, arcR, -Math.PI * 0.7, Math.PI * 0.2);
-    ctx.stroke();
-    const tipA = Math.PI * 0.2;
-    const tx = Math.cos(tipA) * arcR;
-    const ty = Math.sin(tipA) * arcR;
-    const ah = 3.5 / s;
-    ctx.beginPath();
-    ctx.moveTo(tx - ah, ty - ah * 0.3);
-    ctx.lineTo(tx, ty);
-    ctx.lineTo(tx - ah * 0.2, ty + ah);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(0, 0, arcR, Math.PI * 0.3, Math.PI * 1.2);
-    ctx.stroke();
+    ctx.arc(x, y, radius + opts.glow, 0, Math.PI * 2);
+    ctx.fillStyle = opts.darkMode
+      ? 'rgba(122, 162, 247, 0.22)'
+      : 'rgba(59, 130, 246, 0.18)';
+    ctx.fill();
   }
+
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.fillStyle = opts?.darkMode ? '#7aa2f7' : '#3b82f6';
+  ctx.fill();
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 2.5 / s;
+  ctx.stroke();
   ctx.restore();
 }
 
@@ -1100,7 +1096,6 @@ export function FreeGeometryEditor({
 
   // Assets
   const rulerImageRef = useRef<HTMLImageElement | null>(null);
-  const rulerRotateCursorImageRef = useRef<HTMLImageElement | null>(null);
   const rulerHandCursorImageRef = useRef<HTMLImageElement | null>(null);
   const compassImageRef = useRef<HTMLImageElement | null>(null);
   const protractorImageRef = useRef<HTMLImageElement | null>(null);
@@ -2897,14 +2892,6 @@ export function FreeGeometryEditor({
     // However, figma:asset imports returns a URL string.
     protractor.onload = () => { protractorImageRef.current = protractor; checkLoaded(); };
     protractor.src = protractorAsset;
-  }, []);
-
-  useEffect(() => {
-    const img = new Image();
-    img.onload = () => {
-      rulerRotateCursorImageRef.current = img;
-    };
-    img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(RULER_ROTATE_CURSOR_SVG)}`;
   }, []);
 
   useEffect(() => {
@@ -8271,19 +8258,20 @@ export function FreeGeometryEditor({
         drawCompass(ctx, p1, r, 0.5, actualP2);
         drawCircle(ctx, p1, r, 1, ghostColor, 2.5, true);
 
-        // Kontrastní střed kružnice
+        // Střed — modrý bobánek
         ctx.globalAlpha = 1;
+        drawHandleBobble(ctx, p1.x, p1.y, sx(10), scale, { darkMode });
+        ctx.save();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = sx(2);
+        ctx.lineCap = 'round';
         ctx.beginPath();
-        ctx.arc(p1.x, p1.y, sx(10), 0, Math.PI * 2);
-        ctx.fillStyle = darkMode ? '#ffffff' : '#1e1b4b';
-        ctx.fill();
-        ctx.lineWidth = sx(3);
-        ctx.strokeStyle = '#3b82f6';
+        ctx.moveTo(p1.x - sx(4), p1.y);
+        ctx.lineTo(p1.x + sx(4), p1.y);
+        ctx.moveTo(p1.x, p1.y - sx(4));
+        ctx.lineTo(p1.x, p1.y + sx(4));
         ctx.stroke();
-        ctx.beginPath();
-        ctx.arc(p1.x, p1.y, sx(4), 0, Math.PI * 2);
-        ctx.fillStyle = '#3b82f6';
-        ctx.fill();
+        ctx.restore();
 
         // Radius measurement
         if (showMeasurements && r > 10) {
@@ -8297,58 +8285,18 @@ export function FreeGeometryEditor({
           drawMeasurement(ctx, ghostMidX + ghostOx, ghostMidY + ghostOy, `r = ${ghostCm} cm`, ghostRadAngle);
         }
         
-        // Pulzující handle
+        // Handle na obvodu — modrý bobánek + RotateCw
         const isHandleDragged = circleTabletState.isDraggingHandle;
-        const radialAngle = Math.atan2(actualP2.y - p1.y, actualP2.x - p1.x);
         const pulse = (Math.sin(Date.now() * 0.004) + 1) / 2;
         const dragPulse = isHandleDragged ? 1 : pulse;
-        
-        const glowRadius = sx(24 + dragPulse * 12);
-        const glowAlpha = 0.12 + dragPulse * 0.18;
-        ctx.beginPath();
-        ctx.arc(actualP2.x, actualP2.y, glowRadius, 0, Math.PI * 2);
-        ctx.fillStyle = darkMode 
-          ? `rgba(122, 162, 247, ${glowAlpha})` 
-          : `rgba(59, 130, 246, ${glowAlpha})`;
-        ctx.fill();
-        
-        ctx.beginPath();
-        ctx.arc(actualP2.x, actualP2.y, sx(17), 0, Math.PI * 2);
-        ctx.fillStyle = darkMode 
-          ? `rgba(122, 162, 247, ${0.2 + dragPulse * 0.12})` 
-          : `rgba(59, 130, 246, ${0.2 + dragPulse * 0.12})`;
-        ctx.fill();
-        
         const mainRadius = sx(isHandleDragged ? 13 : 12);
-        ctx.beginPath();
-        ctx.arc(actualP2.x, actualP2.y, mainRadius, 0, Math.PI * 2);
-        ctx.fillStyle = darkMode ? '#7aa2f7' : '#3b82f6';
-        ctx.fill();
-        ctx.strokeStyle = darkMode ? '#c0caf5' : '#ffffff';
-        ctx.lineWidth = sx(2.5);
-        ctx.stroke();
-        
-        // Oboustranná šipka v handle
+        drawHandleBobble(ctx, actualP2.x, actualP2.y, mainRadius, scale, {
+          glow: sx(10 + dragPulse * 8),
+          darkMode,
+        });
         ctx.save();
         ctx.translate(actualP2.x, actualP2.y);
-        ctx.rotate(radialAngle);
-        const arrowLen = sx(7);
-        const headLen = sx(3.5);
-        const headAngle = Math.PI / 5;
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
-        ctx.lineWidth = sx(2);
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        ctx.beginPath();
-        ctx.moveTo(-arrowLen, 0);
-        ctx.lineTo(arrowLen, 0);
-        ctx.moveTo(-arrowLen + headLen * Math.cos(headAngle), -headLen * Math.sin(headAngle));
-        ctx.lineTo(-arrowLen, 0);
-        ctx.lineTo(-arrowLen + headLen * Math.cos(headAngle), headLen * Math.sin(headAngle));
-        ctx.moveTo(arrowLen - headLen * Math.cos(headAngle), -headLen * Math.sin(headAngle));
-        ctx.lineTo(arrowLen, 0);
-        ctx.lineTo(arrowLen - headLen * Math.cos(headAngle), headLen * Math.sin(headAngle));
-        ctx.stroke();
+        strokeLucideRotateCw(ctx, sx(14), 'rgba(255, 255, 255, 0.98)', 2.4);
         ctx.restore();
         
         ctx.restore();
@@ -8910,13 +8858,18 @@ export function FreeGeometryEditor({
                ctx.stroke();
              }
            }
+           drawHandleBobble(ctx, cc.x, cc.y, sx(10), scale, { darkMode });
+           ctx.save();
+           ctx.strokeStyle = '#ffffff';
+           ctx.lineWidth = sx(2);
+           ctx.lineCap = 'round';
            ctx.beginPath();
-           ctx.arc(cc.x, cc.y, sx(8), 0, Math.PI * 2);
-           ctx.fillStyle = darkMode ? '#ffffff' : '#1e1b4b';
-           ctx.fill();
-           ctx.lineWidth = sx(3);
-           ctx.strokeStyle = '#3b82f6';
+           ctx.moveTo(cc.x - sx(4), cc.y);
+           ctx.lineTo(cc.x + sx(4), cc.y);
+           ctx.moveTo(cc.x, cc.y - sx(4));
+           ctx.lineTo(cc.x, cc.y + sx(4));
            ctx.stroke();
+           ctx.restore();
            if (circleInput.arcCrosshair) {
              drawRulerCrosshair(ctx, circleInput.arcCrosshair.x, circleInput.arcCrosshair.y);
            }
@@ -8938,28 +8891,21 @@ export function FreeGeometryEditor({
            drawCompass(ctx, cc, r, 0.5, { x: hx, y: hy });
          }
 
-         // Středový bod - reticle
+         // Střed — modrý bobánek
+         drawHandleBobble(ctx, cc.x, cc.y, sx(10), scale, { darkMode });
+         ctx.save();
+         ctx.strokeStyle = '#ffffff';
+         ctx.lineWidth = sx(2);
+         ctx.lineCap = 'round';
          ctx.beginPath();
-         ctx.arc(cc.x, cc.y, sx(8), 0, Math.PI * 2);
-         ctx.fillStyle = darkMode ? '#ffffff' : '#1e1b4b';
-         ctx.fill();
-         ctx.lineWidth = sx(3);
-         ctx.strokeStyle = '#3b82f6';
+         ctx.moveTo(cc.x - sx(4), cc.y);
+         ctx.lineTo(cc.x + sx(4), cc.y);
+         ctx.moveTo(cc.x, cc.y - sx(4));
+         ctx.lineTo(cc.x, cc.y + sx(4));
          ctx.stroke();
-         ctx.beginPath();
-         ctx.arc(cc.x, cc.y, sx(3), 0, Math.PI * 2);
-         ctx.fillStyle = '#3b82f6';
-         ctx.fill();
-         ctx.strokeStyle = darkMode ? '#1e1b4b' : '#ffffff';
-         ctx.lineWidth = sx(1.5);
-         ctx.beginPath();
-         ctx.moveTo(cc.x - sx(5), cc.y);
-         ctx.lineTo(cc.x + sx(5), cc.y);
-         ctx.moveTo(cc.x, cc.y - sx(5));
-         ctx.lineTo(cc.x, cc.y + sx(5));
-         ctx.stroke();
+         ctx.restore();
 
-         // Radiální čára ke konci poloměru (handle = cíl narýsování u bodu/výseku)
+         // Radiální čára ke konci poloměru
          ctx.beginPath();
          ctx.setLineDash([sx(6), sx(4)]);
          ctx.moveTo(cc.x, cc.y);
@@ -8970,86 +8916,23 @@ export function FreeGeometryEditor({
          ctx.setLineDash([]);
 
          if (mode === 'point') {
-           ctx.beginPath();
-           ctx.arc(hx, hy, sx(8), 0, Math.PI * 2);
-           ctx.fillStyle = darkMode ? 'rgba(125, 207, 255, 0.35)' : 'rgba(59, 130, 246, 0.28)';
-           ctx.fill();
-           ctx.beginPath();
-           ctx.arc(hx, hy, sx(4), 0, Math.PI * 2);
-           ctx.fillStyle = darkMode ? '#7aa2f7' : '#3b82f6';
-           ctx.fill();
+           drawHandleBobble(ctx, hx, hy, sx(6), scale, { darkMode });
          }
          
-         // Handle na obvodu — jasný symbol otočení (rotace kolem středu)
+         // Handle na obvodu — modrý bobánek + RotateCw
          const pulse = (Math.sin(Date.now() * 0.004) + 1) / 2;
          const isDragging = circleInput.isDraggingHandle;
          const dragPulse = isDragging ? 1 : pulse;
-         
-         // Glow
-         const glowRadius = sx(22 + dragPulse * 10);
-         ctx.beginPath();
-         ctx.arc(hx, hy, glowRadius, 0, Math.PI * 2);
-         ctx.fillStyle = darkMode 
-           ? `rgba(122, 162, 247, ${0.1 + dragPulse * 0.15})` 
-           : `rgba(59, 130, 246, ${0.1 + dragPulse * 0.15})`;
-         ctx.fill();
-         
-         // Hlavní kulička
          const handleR = sx(isDragging ? 14 : 12);
-         ctx.beginPath();
-         ctx.arc(hx, hy, handleR, 0, Math.PI * 2);
-         ctx.fillStyle = darkMode ? '#7aa2f7' : '#3b82f6';
-         ctx.fill();
-         ctx.strokeStyle = '#ffffff';
-         ctx.lineWidth = sx(2.5);
-         ctx.stroke();
+         drawHandleBobble(ctx, hx, hy, handleR, scale, {
+           glow: sx(8 + dragPulse * 8),
+           darkMode,
+         });
          
-         // Zakřivené šipky otočení uvnitř handle (↻)
          ctx.save();
          ctx.translate(hx, hy);
-         ctx.rotate(ha);
-         ctx.strokeStyle = 'rgba(255, 255, 255, 0.98)';
-         ctx.fillStyle = 'rgba(255, 255, 255, 0.98)';
-         ctx.lineWidth = sx(2);
-         ctx.lineCap = 'round';
-         ctx.lineJoin = 'round';
-         const arcR = sx(5.5);
-         // Horní oblouk se šipkou (po směru)
-         ctx.beginPath();
-         ctx.arc(0, 0, arcR, -Math.PI * 0.75, Math.PI * 0.15);
-         ctx.stroke();
-         {
-           const tipA = Math.PI * 0.15;
-           const tx = Math.cos(tipA) * arcR;
-           const ty = Math.sin(tipA) * arcR;
-           const tang = tipA + Math.PI / 2;
-           const ah = sx(3.2);
-           ctx.beginPath();
-           ctx.moveTo(tx + Math.cos(tang + 2.5) * ah, ty + Math.sin(tang + 2.5) * ah);
-           ctx.lineTo(tx, ty);
-           ctx.lineTo(tx + Math.cos(tang - 0.9) * ah, ty + Math.sin(tang - 0.9) * ah);
-           ctx.stroke();
-         }
-         // Dolní oblouk se šipkou (proti směru) — obousměrná rotace
-         ctx.beginPath();
-         ctx.arc(0, 0, arcR, Math.PI * 0.25, Math.PI * 1.15);
-         ctx.stroke();
-         {
-           const tipA = Math.PI * 1.15;
-           const tx = Math.cos(tipA) * arcR;
-           const ty = Math.sin(tipA) * arcR;
-           const tang = tipA + Math.PI / 2;
-           const ah = sx(3.2);
-           ctx.beginPath();
-           ctx.moveTo(tx + Math.cos(tang + 2.5) * ah, ty + Math.sin(tang + 2.5) * ah);
-           ctx.lineTo(tx, ty);
-           ctx.lineTo(tx + Math.cos(tang - 0.9) * ah, ty + Math.sin(tang - 0.9) * ah);
-           ctx.stroke();
-         }
+         strokeLucideRotateCw(ctx, sx(14), 'rgba(255, 255, 255, 0.98)', 2.4);
          ctx.restore();
-
-         // Velký symbol otočení u tužky kružítka
-         drawCompassRotateBadge(ctx, hx, hy, ha, scale, rulerRotateCursorImageRef.current);
          
          // Měření podél poloměru (stejný úhel jako handle)
          const cm = radiusCm.toFixed(1).replace('.', ',');
@@ -9714,25 +9597,7 @@ export function FreeGeometryEditor({
     ctx.lineWidth = 1.2 / s;
     ctx.stroke();
 
-    // Přesná Lucide RotateCw cesta (viewBox 0..24)
-    // M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8
-    // M21 3v5h-5
-    const iconPx = (RULER_ROTATE_WHEEL_VISUAL_PX * 1.15) / s;
-    const u = iconPx / 24;
-    ctx.save();
-    ctx.scale(u, u);
-    ctx.translate(-12, -12);
-    ctx.strokeStyle = accent;
-    ctx.lineWidth = 2;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    const arc = new Path2D(
-      'M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8'
-    );
-    const head = new Path2D('M21 3v5h-5');
-    ctx.stroke(arc);
-    ctx.stroke(head);
-    ctx.restore();
+    strokeLucideRotateCw(ctx, (RULER_ROTATE_WHEEL_VISUAL_PX * 1.15) / s, accent, 2);
 
     ctx.restore();
   };
@@ -11572,6 +11437,44 @@ export function FreeGeometryEditor({
               </button>
             );
           })}
+          <button
+            type="button"
+            title="Zavřít kružítko"
+            aria-label="Zavřít kružítko"
+            onClick={() => {
+              setCircleInput(prev => ({
+                ...prev,
+                visible: false,
+                fixedRadius: false,
+                center: null,
+                isDraggingCenter: false,
+                isDraggingHandle: false,
+                freeDrawMode: 'idle',
+                arcDraw: null,
+                arcCrosshair: null,
+              }));
+              selectSidebarTool('move');
+            }}
+            onTouchEnd={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setCircleInput(prev => ({
+                ...prev,
+                visible: false,
+                fixedRadius: false,
+                center: null,
+                isDraggingCenter: false,
+                isDraggingHandle: false,
+                freeDrawMode: 'idle',
+                arcDraw: null,
+                arcCrosshair: null,
+              }));
+              selectSidebarTool('move');
+            }}
+            className="ml-[0.15rem] w-[2.35rem] h-[2.35rem] shrink-0 rounded-full bg-red-500 text-white shadow-lg shadow-red-500/30 flex items-center justify-center transition-all hover:scale-105 hover:bg-red-600 active:scale-95"
+          >
+            <X className="size-[1.05rem]" strokeWidth={2.5} />
+          </button>
         </div>
         </div>
       )}
@@ -11650,7 +11553,7 @@ export function FreeGeometryEditor({
               e.stopPropagation();
               selectSidebarTool('move');
             }}
-            className="ml-[0.15rem] w-[2.35rem] h-[2.35rem] shrink-0 rounded-full bg-white text-gray-700 border border-gray-200 shadow-lg flex items-center justify-center transition-all hover:scale-105 hover:bg-gray-50 active:scale-95"
+            className="ml-[0.15rem] w-[2.35rem] h-[2.35rem] shrink-0 rounded-full bg-red-500 text-white shadow-lg shadow-red-500/30 flex items-center justify-center transition-all hover:scale-105 hover:bg-red-600 active:scale-95"
           >
             <X className="size-[1.05rem]" strokeWidth={2.5} />
           </button>
