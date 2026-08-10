@@ -1659,6 +1659,7 @@ export function FreeGeometryEditor({
   const [hoveredShapeForMove, setHoveredShapeForMove] = useState<string | null>(null);
   const marqueeRef = useRef<{startX: number, startY: number, endX: number, endY: number} | null>(null);
   const groupDragRef = useRef<{ startWx: number; startWy: number; pointSnapshots: {id: string; x: number; y: number}[] } | null>(null);
+  const groupDragLiveRef = useRef<Map<string, { x: number; y: number }> | null>(null);
   const prevActiveToolRef = useRef<ToolType>('move');
 
   const PIXELS_PER_CM = 50; // Základní jednotka: 50px = 1cm (odpovídá mřížce)
@@ -2615,6 +2616,7 @@ export function FreeGeometryEditor({
         setAngleTabletState({ step: 'idle', selectedLineId: null, currentPos: null, baseAngle: 0 });
         marqueeRef.current = null;
         groupDragRef.current = null;
+        groupDragLiveRef.current = null;
       }
       // Undo/Redo shortcuts
       if (e.ctrlKey && e.key === 'z' && !e.shiftKey) {
@@ -3185,14 +3187,15 @@ export function FreeGeometryEditor({
     };
   }, []);
 
-  /** Zarovnání a zoom tak, aby byl obsah sdíleného plátna v úkolu vidět celý a uprostřed (včetně odsazení za panel zadání). */
+  /** Zarovnání a zoom pro read-only náhled odevzdání — v režimu řešení úkolu zůstává výchozí zoom jako u volného plátna. */
   useEffect(() => {
     if (sharedRecording && sharedRecording.steps.length > 0) return;
     if (!initialCanvasSnapshot) {
       assignmentSnapshotFitLayoutKeyRef.current = null;
       return;
     }
-    if (!embedInAssignment && !readOnlyCanvas) return;
+    if (embedInAssignment) return;
+    if (!readOnlyCanvas) return;
     if (canvasSize.width < 8 || canvasSize.height < 8) return;
 
     const bounds = computeGeometryWorldBounds(initialCanvasSnapshot);
@@ -3453,13 +3456,21 @@ export function FreeGeometryEditor({
   // Global snap radius in screen pixels (smaller = less "sticky" snapping).
   const SNAP_PX = isTabletMode ? 10 : 6;
 
-  const getSnappingPoint = (wx: number, wy: number, threshold = SNAP_PX, excludeId?: string, skipHiddenPoints = false) => {
+  const getSnappingPoint = (
+    wx: number,
+    wy: number,
+    threshold = SNAP_PX,
+    excludeId?: string | Set<string>,
+    skipHiddenPoints = false
+  ) => {
+    const excludeSet =
+      excludeId instanceof Set ? excludeId : excludeId ? new Set([excludeId]) : undefined;
     const threshWorld = threshold / scale;
     let closest: GeoPoint | null = null;
     let minDist = threshWorld;
 
     for (const p of points) {
-      if (excludeId && p.id === excludeId) continue;
+      if (excludeSet?.has(p.id)) continue;
       if (skipHiddenPoints && p.hidden) continue;
       const pGeom =
         draggedPointIdRef.current === p.id && draggedPointPosRef.current
@@ -3509,7 +3520,13 @@ export function FreeGeometryEditor({
   };
 
   // Unified snap: always pick whichever target (existing point OR intersection) is geometrically closer
-  const getSnapPosition = (wx: number, wy: number, threshold = SNAP_PX, excludeId?: string, skipHiddenPoints = false): { x: number; y: number } | null => {
+  const getSnapPosition = (
+    wx: number,
+    wy: number,
+    threshold = SNAP_PX,
+    excludeId?: string | Set<string>,
+    skipHiddenPoints = false
+  ): { x: number; y: number } | null => {
     const pointSnap = getSnappingPoint(wx, wy, threshold, excludeId, skipHiddenPoints);
     const intSnap = findNearestIntersection(wx, wy, threshold);
 
@@ -3527,7 +3544,13 @@ export function FreeGeometryEditor({
    * Stejné jako getSnapPosition, ale pokud je kurzor u existujícího bodu, vždy použije přesně jeho souřadnice.
    * (U kolmice jinak často vyhrál průsečík linek těsně u vrcholu a kolmice „uskočila“ místo projití bodem.)
    */
-  const getSnapPositionPreferPoint = (wx: number, wy: number, threshold = SNAP_PX, excludeId?: string, skipHiddenPoints = false): { x: number; y: number } | null => {
+  const getSnapPositionPreferPoint = (
+    wx: number,
+    wy: number,
+    threshold = SNAP_PX,
+    excludeId?: string | Set<string>,
+    skipHiddenPoints = false
+  ): { x: number; y: number } | null => {
     const pointSnap = getSnappingPoint(wx, wy, threshold, excludeId, skipHiddenPoints);
     if (pointSnap) {
       return { x: pointSnap.x, y: pointSnap.y };
@@ -3590,6 +3613,138 @@ export function FreeGeometryEditor({
       }
     }
     return bestPt;
+  };
+
+  /** Snap při tažení bodu / přímky — body a průsečíky mají prioritu, jinak místo na tvaru. */
+  const getDragSnapPosition = (
+    wx: number,
+    wy: number,
+    excludePointIds: Set<string>
+  ): { x: number; y: number } | null => {
+    const refineToPointCenter = (pos: { x: number; y: number }) => {
+      const mergeWorld = 8 / scale;
+      for (const p of pointsStateRef.current) {
+        if (excludePointIds.has(p.id)) continue;
+        if (!p.label) continue;
+        if (Math.hypot(p.x - pos.x, p.y - pos.y) <= mergeWorld) {
+          return { x: p.x, y: p.y };
+        }
+      }
+      return pos;
+    };
+
+    const snappedPoint = getSnappingPoint(wx, wy, SNAP_PX, excludePointIds);
+    if (snappedPoint) {
+      const exact = pointsStateRef.current.find(p => p.id === snappedPoint.id) ?? snappedPoint;
+      return { x: exact.x, y: exact.y };
+    }
+    const intSnap = findNearestIntersection(wx, wy, SNAP_PX);
+    if (intSnap) return refineToPointCenter(intSnap);
+    const shapeSnap = snapToNearestShape(wx, wy, SNAP_PX, excludePointIds);
+    return shapeSnap ? refineToPointCenter(shapeSnap) : null;
+  };
+
+  /** Posune group-drag deltu tak, aby vybraná přímka prošla středem blízkého bodu. */
+  const getLineThroughPointSnapOffset = (
+    dx: number,
+    dy: number,
+    snapshots: { id: string; x: number; y: number }[],
+    excludeIds: Set<string>,
+    selectedShapeIds: string[],
+    mouseWx: number,
+    mouseWy: number
+  ): { dx: number; dy: number; snapPoint: { x: number; y: number } | null; dist: number } => {
+    const snapMap = new Map(snapshots.map(s => [s.id, s]));
+    const lineTypes = new Set(['line', 'lineDashed', 'lineDashDot', 'segment']);
+    let bestDx = dx;
+    let bestDy = dy;
+    let bestDist = SNAP_PX / scale;
+    let bestSnapPoint: { x: number; y: number } | null = null;
+
+    for (const shapeId of selectedShapeIds) {
+      const shape = shapes.find(s => s.id === shapeId);
+      if (!shape || !lineTypes.has(shape.type)) continue;
+      const p1 = snapMap.get(shape.definition.p1Id);
+      const p2 = shape.definition.p2Id ? snapMap.get(shape.definition.p2Id) : null;
+      if (!p1 || !p2) continue;
+
+      for (const pt of pointsStateRef.current) {
+        if (excludeIds.has(pt.id)) continue;
+        if (!pt.label) continue;
+
+        const p1x = p1.x + dx;
+        const p1y = p1.y + dy;
+        const p2x = p2.x + dx;
+        const p2y = p2.y + dy;
+        const edx = p2x - p1x;
+        const edy = p2y - p1y;
+        const len = Math.hypot(edx, edy);
+        if (len < 1e-6) continue;
+
+        const signed = ((pt.y - p1y) * edx - (pt.x - p1x) * edy) / len;
+        const dist = Math.abs(signed);
+        const mouseNearPt = Math.hypot(mouseWx - pt.x, mouseWy - pt.y) * scale;
+        const threshWorld =
+          (mouseNearPt <= SNAP_PX * 2 ? SNAP_PX * 2.5 : SNAP_PX) / scale;
+        if (dist >= threshWorld) continue;
+
+        const nx = -edy / len;
+        const ny = edx / len;
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestDx = dx + signed * nx;
+          bestDy = dy + signed * ny;
+          bestSnapPoint = { x: pt.x, y: pt.y };
+        }
+      }
+    }
+
+    return { dx: bestDx, dy: bestDy, snapPoint: bestSnapPoint, dist: bestDist };
+  };
+
+  /** U group dragu posune delta tak, aby nejbližší bod výběru přesně seděl na snap cíli. */
+  const getGroupDragSnapOffset = (
+    dx: number,
+    dy: number,
+    snapshots: { id: string; x: number; y: number }[],
+    excludeIds: Set<string>,
+    selectedShapeIds: string[],
+    mouseWx: number,
+    mouseWy: number
+  ): { dx: number; dy: number; snapPoint: { x: number; y: number } | null } => {
+    const lineSnap = getLineThroughPointSnapOffset(
+      dx,
+      dy,
+      snapshots,
+      excludeIds,
+      selectedShapeIds,
+      mouseWx,
+      mouseWy
+    );
+    if (lineSnap.snapPoint) {
+      return { dx: lineSnap.dx, dy: lineSnap.dy, snapPoint: lineSnap.snapPoint };
+    }
+
+    let bestDx = dx;
+    let bestDy = dy;
+    let bestDist = SNAP_PX / scale;
+    let bestSnapPoint: { x: number; y: number } | null = null;
+
+    for (const snap of snapshots) {
+      const mx = snap.x + dx;
+      const my = snap.y + dy;
+      const pos = getDragSnapPosition(mx, my, excludeIds);
+      if (!pos) continue;
+      const dist = Math.hypot(mx - pos.x, my - pos.y);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestDx = dx + (pos.x - mx);
+        bestDy = dy + (pos.y - my);
+        bestSnapPoint = pos;
+      }
+    }
+
+    return { dx: bestDx, dy: bestDy, snapPoint: bestSnapPoint };
   };
 
   /** Přichytí světový bod k existujícímu bodu, průsečíku nebo čáře. */
@@ -5488,23 +5643,32 @@ export function FreeGeometryEditor({
       if (hoveredShapeForMove) setHoveredShapeForMove(null);
     }
 
-    // Group drag — přesouvání všech bodů vybraných tvarů
+    // Group drag — přesouvání všech bodů vybraných tvarů (s magnetickým snapem)
     if (activeTool === 'move' && groupDragRef.current) {
       const gd = groupDragRef.current;
-      const dx = wx - gd.startWx;
-      const dy = wy - gd.startWy;
+      let dx = wx - gd.startWx;
+      let dy = wy - gd.startWy;
       if (dx !== 0 || dy !== 0) didDragSinceSuppressRef.current = true;
+      const excludeIds = new Set(gd.pointSnapshots.map(s => s.id));
+      const snapped = getGroupDragSnapOffset(dx, dy, gd.pointSnapshots, excludeIds, selectedShapeIds, wx, wy);
+      dx = snapped.dx;
+      dy = snapped.dy;
+      dragSnapPreviewRef.current = snapped.snapPoint;
       const snapMap = new Map(gd.pointSnapshots.map(s => [s.id, s]));
+      const liveMap = new Map<string, { x: number; y: number }>();
       setPoints(prev => prev.map(p => {
         const snap = snapMap.get(p.id);
         if (!snap) return p;
         if (p.locked) return p;
-        return { ...p, x: snap.x + dx, y: snap.y + dy };
+        const next = { ...p, x: snap.x + dx, y: snap.y + dy };
+        liveMap.set(p.id, { x: next.x, y: next.y });
+        return next;
       }));
+      groupDragLiveRef.current = liveMap;
       return;
     }
 
-    // Drag logic (single point) — point follows cursor, snap preview shown as orange dot on shape
+    // Drag logic (single point) — magnetický snap na body, průsečíky i tvary
     // Use ref to avoid stale closure — draggedPointIdRef is always current
     const currentDragId = draggedPointIdRef.current;
     if (activeTool === 'move' && currentDragId) {
@@ -5516,11 +5680,10 @@ export function FreeGeometryEditor({
         toast.message('Objekt je zamčený.');
         return;
       }
-      // Only snap to shapes (lines/circles), never to labeled points or intersections
       const excludeIds = new Set([currentDragId]);
-      dragSnapPreviewRef.current = snapToNearestShape(wx, wy, SNAP_PX, excludeIds);
-      // Store position in ref for real-time rendering
-      draggedPointPosRef.current = { x: wx, y: wy };
+      const snapPos = getDragSnapPosition(wx, wy, excludeIds);
+      dragSnapPreviewRef.current = snapPos;
+      draggedPointPosRef.current = snapPos ?? { x: wx, y: wy };
       didDragSinceSuppressRef.current = true;
       // Throttle setPoints to one per animation frame to avoid dropped frames
       if (!dragUpdateRafRef.current) {
@@ -5647,6 +5810,8 @@ export function FreeGeometryEditor({
     // Group drag — ukončit (historie se uloží automaticky přes useEffect)
     if (groupDragRef.current) {
       groupDragRef.current = null;
+      groupDragLiveRef.current = null;
+      dragSnapPreviewRef.current = null;
     }
     
     // Compass mode - end dragging (commit live pozice)
@@ -5857,7 +6022,10 @@ export function FreeGeometryEditor({
       // Cancel any single-finger action in progress
       if (draggedPointId) { draggedPointIdRef.current = null; setDraggedPointId(null); }
       if (isPanning.current) isPanning.current = false;
-      if (groupDragRef.current) groupDragRef.current = null;
+      if (groupDragRef.current) {
+        groupDragRef.current = null;
+        groupDragLiveRef.current = null;
+      }
       if (marqueeRef.current) marqueeRef.current = null;
       lastTouchTimeRef.current = Date.now();
       return;
@@ -7142,6 +7310,10 @@ export function FreeGeometryEditor({
 
     // During drag, use ref position for the dragged point (avoids stale React state)
     const getLivePoint = (p: GeoPoint): GeoPoint => {
+      const groupLive = groupDragLiveRef.current?.get(p.id);
+      if (groupLive) {
+        return { ...p, x: groupLive.x, y: groupLive.y };
+      }
       if (draggedPointIdRef.current === p.id && draggedPointPosRef.current) {
         return { ...p, x: draggedPointPosRef.current.x, y: draggedPointPosRef.current.y };
       }
@@ -8247,21 +8419,6 @@ export function FreeGeometryEditor({
         ctx.arc(activeIntX, activeIntY, 2.5 / scale, 0, Math.PI * 2);
         ctx.fillStyle = '#f59e0b';
         ctx.fill();
-        ctx.restore();
-      }
-
-      // Draw drag snap preview indicator (orange dot on shape when dragging a point)
-      const dragSnap = dragSnapPreviewRef.current;
-      if (dragSnap) {
-        ctx.save();
-        ctx.setLineDash([]);
-        ctx.beginPath();
-        ctx.arc(dragSnap.x, dragSnap.y, 7 / scale, 0, Math.PI * 2);
-        ctx.fillStyle = '#f59e0b';
-        ctx.fill();
-        ctx.lineWidth = 1.5 / scale;
-        ctx.strokeStyle = '#fff';
-        ctx.stroke();
         ctx.restore();
       }
 
