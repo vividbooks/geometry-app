@@ -81,10 +81,10 @@ export function RysovaniPage() {
 
   const [view, setView] = useState<RysovaniView>(initialView);
 
-  // If no valid view and no recording, redirect to main landing page
+  // Bez platného view přesměruj do menu rýsování (ne na kořen — ten v dev mívá špatnou URL bez base).
   useEffect(() => {
     if (view === 'menu' && !recordingParam) {
-      navigate('/?tab=rysovani', { replace: true });
+      navigate('/menu-rysovani', { replace: true });
     }
   }, [view, recordingParam, navigate]);
   const [darkMode, setDarkMode] = useState(false);
@@ -129,19 +129,23 @@ export function RysovaniPage() {
   };
 
   const CONSTRUCTION_VIEWS: RysovaniView[] = ['bisector', 'triangle', 'custom-triangle', 'interactive-triangle', 'angle-triangle', 'axial-symmetry'];
+  const FREE_EDITOR_VIEWS: RysovaniView[] = ['free-editor-board', 'free-editor-computer'];
 
   const handleBack = () => {
-    // Go back to the appropriate tab on the landing page
-    if (CONSTRUCTION_VIEWS.includes(view)) {
-      navigate('/?tab=konstrukce');
-    } else {
-      navigate('/?tab=rysovani');
+    if (FREE_EDITOR_VIEWS.includes(view)) {
+      navigate('/menu-rysovani');
+      return;
     }
+    if (CONSTRUCTION_VIEWS.includes(view)) {
+      navigate('/menu-rysovani?tab=konstrukce');
+      return;
+    }
+    navigate('/menu-rysovani');
   };
 
   const handleBackFromShared = () => {
     setSharedRecording(null);
-    navigate('/?tab=rysovani');
+    navigate('/menu-rysovani');
   };
 
   // Loading screen
