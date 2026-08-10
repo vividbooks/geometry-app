@@ -1499,13 +1499,6 @@ export function FreeGeometryEditor({
       const pivot = { x: cx, y: cy };
       rulerPivotRef.current = pivot;
       rulerAngleRef.current = 0;
-      rulerIntroRef.current = {
-        active: true,
-        startTime: performance.now(),
-        basePivot: { ...pivot },
-        baseAngle: 0,
-        handPos: { ...pivot },
-      };
       return {
         active: true,
         pivot,
