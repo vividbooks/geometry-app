@@ -328,6 +328,42 @@ function computeGeometryWorldBounds(snap: GeometrySubmissionSnapshot): {
   };
 }
 
+/** Ořízne vykreslené plátno na oblast s geometrií (světové bounds → bitmapové pixely). */
+function cropCanvasToGeometryBounds(
+  source: HTMLCanvasElement,
+  snap: GeometrySubmissionSnapshot,
+  offset: { x: number; y: number },
+  scale: number,
+  dpr: number,
+): HTMLCanvasElement {
+  const bounds = computeGeometryWorldBounds(snap);
+  const cloneFull = () => {
+    const clone = document.createElement('canvas');
+    clone.width = source.width;
+    clone.height = source.height;
+    const ctx = clone.getContext('2d');
+    if (ctx) ctx.drawImage(source, 0, 0);
+    return clone;
+  };
+  if (!bounds) return cloneFull();
+
+  const x0 = Math.max(0, Math.floor((offset.x + bounds.minX * scale) * dpr));
+  const y0 = Math.max(0, Math.floor((offset.y + bounds.minY * scale) * dpr));
+  const x1 = Math.min(source.width, Math.ceil((offset.x + bounds.maxX * scale) * dpr));
+  const y1 = Math.min(source.height, Math.ceil((offset.y + bounds.maxY * scale) * dpr));
+  const w = Math.max(1, x1 - x0);
+  const h = Math.max(1, y1 - y0);
+
+  const cropped = document.createElement('canvas');
+  cropped.width = w;
+  cropped.height = h;
+  const ctx = cropped.getContext('2d');
+  if (ctx) {
+    ctx.drawImage(source, x0, y0, w, h, 0, 0, w, h);
+  }
+  return cropped;
+}
+
 function fitViewportToAssignmentBounds(
   bounds: { minX: number; minY: number; maxX: number; maxY: number },
   canvasW: number,
@@ -1220,6 +1256,8 @@ export function FreeGeometryEditor({
   /** Tablet úhel/kolmice ve fázi „vyber linku“: zvýraznění čáry jen po touchmove, ne ze zastaralého hoveredShape */
   const anglePerpLineHoverFromMoveRef = useRef(false);
   const suppressAngleHoverPreviewRef = useRef(false);
+  const suppressDrawingToolsForExportRef = useRef(false);
+  const renderCanvasRef = useRef<(() => void) | null>(null);
   const rulerDraggingRef = useRef(false);
   const rulerDragModeRef = useRef<'move' | 'rotate' | null>(null);
   const rulerPivotRef = useRef<{ x: number; y: number } | null>(null);
@@ -2020,11 +2058,27 @@ export function FreeGeometryEditor({
 
   useEffect(() => {
     if (!canvasExportRef) return;
-    canvasExportRef.current = () => canvasRef.current;
+    canvasExportRef.current = () => {
+      const canvas = canvasRef.current;
+      if (!canvas) return null;
+      const dpr = isLowPerformance ? 1 : (window.devicePixelRatio || 1);
+      suppressDrawingToolsForExportRef.current = true;
+      renderCanvasRef.current?.();
+      const exportCanvas = cropCanvasToGeometryBounds(
+        canvas,
+        { points, shapes, freehandPaths },
+        offset,
+        scale,
+        dpr,
+      );
+      suppressDrawingToolsForExportRef.current = false;
+      renderCanvasRef.current?.();
+      return exportCanvas;
+    };
     return () => {
       canvasExportRef.current = null;
     };
-  }, [canvasExportRef]);
+  }, [canvasExportRef, points, shapes, freehandPaths, offset, scale, isLowPerformance]);
 
   // Save recording to server
   const saveRecordingToServer = async (name: string, steps: RecordedStep[]) => {
@@ -7096,6 +7150,7 @@ export function FreeGeometryEditor({
 
     /** UI prvky (táhla, šipky) v px obrazovky → světové jednotky; po ctx.scale(zoom) stejná velikost jako u bodů */
     const sx = (screenPx: number) => screenPx / scale;
+    const hideToolOverlays = suppressDrawingToolsForExportRef.current;
 
     // Reset - optimalizace pro star  za zen  (sn en  DPR)
     const dpr = isLowPerformance ? 1 : (window.devicePixelRatio || 1);
@@ -7399,7 +7454,7 @@ export function FreeGeometryEditor({
         // Malý kontrolní bod (handle) na obvodu pro změnu velikosti:
         // zobrazit jen když je kružnice aktivní (vybraná).
         const isCircleActive = activeTool === 'move' && selectedShapeIds.includes(shape.id);
-        if (isCircleActive) {
+        if (isCircleActive && !hideToolOverlays) {
           const isHandleHovered = p2.id === hoveredPointId;
           const isHandleDragged = p2.id === draggedPointId;
           ctx.save();
@@ -7499,7 +7554,7 @@ export function FreeGeometryEditor({
     });
 
     // 1b. Zvýraznění vybraných tvarů (selectedShapeIds)
-    if (selectedShapeIds.length > 0) {
+    if (selectedShapeIds.length > 0 && !hideToolOverlays) {
       selectedShapeIds.forEach(shapeId => {
         const shape = shapes.find(s => s.id === shapeId);
         if (!shape) return;
@@ -7670,7 +7725,7 @@ export function FreeGeometryEditor({
     }
 
     // 1c. Zvýraznění hoveru tvaru pro move tool
-    if (hoveredShapeForMove && (activeTool === 'move' || activeTool === 'eraser') && !selectedShapeIds.includes(hoveredShapeForMove)) {
+    if (hoveredShapeForMove && !hideToolOverlays && (activeTool === 'move' || activeTool === 'eraser') && !selectedShapeIds.includes(hoveredShapeForMove)) {
       const shape = shapes.find(s => s.id === hoveredShapeForMove);
       if (shape) {
         const sp1 = points.find(p => p.id === shape.definition.p1Id);
@@ -7729,7 +7784,7 @@ export function FreeGeometryEditor({
       const drawProg = getDrawProgress(progress);
       const activeColor = '#f97316'; // Neon Orange
       const activeWidth = 4;
-      const skipAnimRuler = keepRulerToolAfterAnimRef.current;
+      const skipAnimRuler = keepRulerToolAfterAnimRef.current || hideToolOverlays;
 
       if (type === 'segment') {
         if (!skipAnimRuler) {
@@ -7902,7 +7957,9 @@ export function FreeGeometryEditor({
         
       } else if (type === 'circle') {
         const r = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
-        drawCompass(ctx, p1, r, progress);
+        if (!hideToolOverlays) {
+          drawCompass(ctx, p1, r, progress);
+        }
         drawCircle(ctx, p1, r, progress, activeColor, activeWidth);
 
         if (showMeasurements) {
@@ -7931,7 +7988,9 @@ export function FreeGeometryEditor({
           x: p1.x + r * Math.cos(curEnd),
           y: p1.y + r * Math.sin(curEnd),
         };
-        drawCompass(ctx, p1, r, progress, pencilPos);
+        if (!hideToolOverlays) {
+          drawCompass(ctx, p1, r, progress, pencilPos);
+        }
         ctx.beginPath();
         ctx.arc(p1.x, p1.y, r, start, curEnd);
         ctx.strokeStyle = activeColor;
@@ -7979,7 +8038,9 @@ export function FreeGeometryEditor({
         const isHelperRadiusHandle = !p.label && !usedByOtherShape;
         if (isHelperRadiusHandle) {
           const showCircleHandle =
-            activeTool === 'move' && selectedShapeIds.includes(circleShapeForHandle!.id);
+            !hideToolOverlays &&
+            activeTool === 'move' &&
+            selectedShapeIds.includes(circleShapeForHandle!.id);
           if (!showCircleHandle) return;
           // Vykreslit jako táhlo (handle) — NE jako bod
           const center = points.find(pt => pt.id === circleShapeForHandle!.definition.p1Id);
@@ -8156,6 +8217,7 @@ export function FreeGeometryEditor({
       }
     });
 
+    if (!hideToolOverlays) {
     // 3b. Intersection snap indicator (active only — when cursor is near)
     if (!animState.isActive) {
 
@@ -8995,9 +9057,11 @@ export function FreeGeometryEditor({
       ctx.restore();
     }
 
+    } // hideToolOverlays
+
     // 5a. Marquee rectangle selection
     const currentMarquee = marqueeRef.current;
-    if (currentMarquee) {
+    if (currentMarquee && !hideToolOverlays) {
       const mx = Math.min(currentMarquee.startX, currentMarquee.endX);
       const my = Math.min(currentMarquee.startY, currentMarquee.endY);
       const mw = Math.abs(currentMarquee.endX - currentMarquee.startX);
@@ -9044,6 +9108,7 @@ export function FreeGeometryEditor({
 
     ctx.restore();
   };
+  renderCanvasRef.current = renderCanvas;
   useEffect(() => {
     // When toggling / switching image / resizing, recompute base placement to "contain" at that moment.
     if (!effectiveProjectionEnabled || !effectiveProjectionSrc) {
