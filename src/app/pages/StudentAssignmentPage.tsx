@@ -143,6 +143,11 @@ export default function StudentAssignmentPage() {
   const [projectionSrc, setProjectionSrc] = useState<string | null>(null);
   const [autoDetectRequestId, setAutoDetectRequestId] = useState(0);
   const [autoDetectSrc, setAutoDetectSrc] = useState<string | null>(null);
+  const [canvasSessionKey, setCanvasSessionKey] = useState(0);
+  const [editorInitialSnapshot, setEditorInitialSnapshot] =
+    useState<GeometrySubmissionSnapshot | null>(null);
+  const [editorCanvasReady, setEditorCanvasReady] = useState(false);
+  const prevStepIndexRef = useRef(0);
 
   useEffect(() => {
     sessionStorage.setItem(ASIDE_W_KEY, String(asideWidth));
@@ -316,16 +321,26 @@ export default function StudentAssignmentPage() {
     return assignment ? assignmentInstructionDisplay(assignment) : null;
   }, [assignment]);
 
-  const usesGlobalSharedCanvas = useMemo(() => {
-    if (!assignment) return false;
-    const raw = assignment.initial_canvas_snapshot;
-    if (raw == null) return false;
-    const normalized =
+  const resolveGlobalCanvasSnapshot = useCallback((): GeometrySubmissionSnapshot | null => {
+    if (!assignment?.initial_canvas_snapshot) return null;
+    const raw =
       assignmentId != null
-        ? normalizeInitialCanvasSnapshot(assignmentId, raw)
-        : raw;
-    return parseCanvasSnapshot(normalized) != null;
+        ? normalizeInitialCanvasSnapshot(assignmentId, assignment.initial_canvas_snapshot)
+        : assignment.initial_canvas_snapshot;
+    return parseCanvasSnapshot(raw);
   }, [assignment, assignmentId]);
+
+  const usesGlobalSharedCanvas = resolveGlobalCanvasSnapshot() != null;
+
+  const baselineSnapshotForStep = useCallback(
+    (index: number): GeometrySubmissionSnapshot | null => {
+      const view = assignment ? assignmentInstructionDisplay(assignment) : null;
+      if (view?.kind !== 'steps') return resolveGlobalCanvasSnapshot();
+      if (usesGlobalSharedCanvas) return resolveGlobalCanvasSnapshot();
+      return view.steps[index]?.canvasSnapshot ?? null;
+    },
+    [assignment, usesGlobalSharedCanvas, resolveGlobalCanvasSnapshot],
+  );
 
   const stepsCount = instructionView?.kind === 'steps' ? instructionView.steps.length : 0;
   const activeStep =
@@ -333,23 +348,36 @@ export default function StudentAssignmentPage() {
       ? instructionView.steps[Math.min(Math.max(0, stepIndex), stepsCount - 1)]
       : null;
 
-  const initialCanvasSnapshot = useMemo<GeometrySubmissionSnapshot | null>(() => {
-    if (usesGlobalSharedCanvas && assignment) {
-      const raw =
-        assignmentId && assignment.initial_canvas_snapshot != null
-          ? normalizeInitialCanvasSnapshot(assignmentId, assignment.initial_canvas_snapshot)
-          : assignment.initial_canvas_snapshot;
-      return parseCanvasSnapshot(raw);
+  useEffect(() => {
+    if (loadState !== 'ready' || !assignment) {
+      setEditorCanvasReady(false);
+      return;
     }
-    if (activeStep?.canvasSnapshot) {
-      return activeStep.canvasSnapshot;
-    }
-    return null;
-  }, [usesGlobalSharedCanvas, assignment, assignmentId, activeStep]);
+    setEditorInitialSnapshot(baselineSnapshotForStep(0));
+    setCanvasSessionKey(0);
+    prevStepIndexRef.current = 0;
+    setEditorCanvasReady(true);
+  }, [loadState, assignment, assignmentId, baselineSnapshotForStep]);
 
-  const geometryEditorKey = usesGlobalSharedCanvas
-    ? `assignment-${assignmentId}-global`
-    : `assignment-${assignmentId}-step-${stepIndex}`;
+  useEffect(() => {
+    if (loadState !== 'ready' || !editorCanvasReady || instructionView?.kind !== 'steps') return;
+    const prev = prevStepIndexRef.current;
+    if (prev === stepIndex) return;
+    prevStepIndexRef.current = stepIndex;
+    const step = instructionView.steps[stepIndex];
+    if (step?.clearPreviousConstructions) {
+      setEditorInitialSnapshot(baselineSnapshotForStep(stepIndex));
+      setCanvasSessionKey(k => k + 1);
+    }
+  }, [
+    stepIndex,
+    loadState,
+    editorCanvasReady,
+    instructionView,
+    baselineSnapshotForStep,
+  ]);
+
+  const geometryEditorKey = `${assignmentId}-canvas-${canvasSessionKey}`;
 
   useEffect(() => {
     if (!projectionSrc) setProjectionEnabled(false);
@@ -411,7 +439,7 @@ export default function StudentAssignmentPage() {
               onDarkModeChange={setDarkMode}
               deviceType={preferredDeviceType}
               embedInAssignment
-              initialCanvasSnapshot={initialCanvasSnapshot}
+              initialCanvasSnapshot={editorCanvasReady ? editorInitialSnapshot : null}
               submissionSnapshotRef={submissionSnapshotRef}
               assignmentToolbarRightOffsetPx={asideCollapsed ? 16 : asideWidth}
             projectionImageSrc={projectionSrc}
@@ -525,11 +553,13 @@ export default function StudentAssignmentPage() {
 
                   {activeStep ? (
                     <article className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm">
-                      <div className="text-[15px] leading-relaxed text-slate-800 whitespace-pre-wrap [font-family:'Fenomen_Sans',system-ui,sans-serif]">
-                        {activeStep.text}
-                      </div>
+                      {activeStep.text.trim() ? (
+                        <div className="text-[15px] leading-relaxed text-slate-800 whitespace-pre-wrap [font-family:'Fenomen_Sans',system-ui,sans-serif]">
+                          {activeStep.text}
+                        </div>
+                      ) : null}
                       {activeStep.image ? (
-                        <div className="mt-4 space-y-2">
+                        <div className={activeStep.text.trim() ? 'mt-4 space-y-2' : 'space-y-2'}>
                           <img
                             src={activeStep.image}
                             alt=""

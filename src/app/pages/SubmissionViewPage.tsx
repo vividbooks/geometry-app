@@ -224,7 +224,9 @@ export default function SubmissionViewPage() {
                 <ol className="m-0 list-decimal space-y-3 pl-4 text-sm leading-relaxed text-zinc-800 marker:text-zinc-500">
                   {instructionView.steps.map((s, i) => (
                     <li key={i} className="space-y-2 pl-0.5">
-                      <div className="whitespace-pre-wrap">{s.text}</div>
+                      {s.text.trim() ? (
+                        <div className="whitespace-pre-wrap">{s.text}</div>
+                      ) : null}
                       {s.image ? (
                         <img
                           src={s.image}

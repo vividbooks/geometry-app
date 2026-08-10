@@ -57,10 +57,13 @@ import {
   firstStepImage,
   instructionStepsHaveCanvasSnapshot,
   instructionStepsToFallbackText,
+  instructionStepFallbackLabel,
   normalizeInstructionSteps,
   parseCanvasSnapshot,
   serializeInstructionStep,
+  stepHasContent,
 } from '@/app/utils/instructionSteps';
+import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import '../../../../rysovani/src/index.css';
 import type { GeometrySubmissionSnapshot } from '../../../../rysovani/src/components/FreeGeometryEditor';
@@ -74,9 +77,19 @@ const FreeGeometryEditor = lazy(() =>
   })),
 );
 
-type StepDraft = { text: string; image: string | null; canvasSnapshot: GeometrySubmissionSnapshot | null };
+type StepDraft = {
+  text: string;
+  image: string | null;
+  canvasSnapshot: GeometrySubmissionSnapshot | null;
+  clearPreviousConstructions: boolean;
+};
 
-const EMPTY_STEP: StepDraft = { text: '', image: null, canvasSnapshot: null };
+const EMPTY_STEP: StepDraft = {
+  text: '',
+  image: null,
+  canvasSnapshot: null,
+  clearPreviousConstructions: false,
+};
 
 function hasPerStepSharedCanvas(steps: StepDraft[]): boolean {
   return steps.some(s => s.canvasSnapshot != null);
@@ -408,7 +421,7 @@ export function TasksSheet({
     if (title.trim()) return true;
     if (sharedCanvasUrl.trim()) return true;
     if (initialCanvasSnapshot) return true;
-    return steps.some(s => Boolean(s.text.trim()) || Boolean(s.image) || Boolean(s.canvasSnapshot));
+    return steps.some(s => stepHasContent(s));
   };
 
   const openGeometryDrawForStep = (index: number) => {
@@ -608,12 +621,14 @@ export function TasksSheet({
               text: s.text,
               image: s.image,
               canvasSnapshot: s.canvasSnapshot,
+              clearPreviousConstructions: s.clearPreviousConstructions,
             }))
           : [
               {
                 text: String((data as any).instruction_text ?? '').trim(),
                 image: null,
                 canvasSnapshot: null,
+                clearPreviousConstructions: false,
               },
             ];
 
@@ -650,6 +665,12 @@ export function TasksSheet({
 
   const setStepTextAt = (index: number, value: string) => {
     setSteps(prev => prev.map((s, i) => (i === index ? { ...s, text: value } : s)));
+  };
+
+  const setStepClearPreviousAt = (index: number, value: boolean) => {
+    setSteps(prev =>
+      prev.map((s, i) => (i === index ? { ...s, clearPreviousConstructions: value } : s)),
+    );
   };
 
   const setStepImageAt = (index: number, dataUrl: string | null) => {
@@ -719,10 +740,15 @@ export function TasksSheet({
       return;
     }
     const cleaned = steps
-      .map(s => ({ text: s.text.trim(), image: s.image, canvasSnapshot: s.canvasSnapshot }))
-      .filter(s => s.text.length > 0);
+      .map((s, i) => ({
+        text: s.text.trim(),
+        image: s.image,
+        canvasSnapshot: s.canvasSnapshot,
+        clearPreviousConstructions: i === 0 ? false : s.clearPreviousConstructions,
+      }))
+      .filter(stepHasContent);
     if (cleaned.length === 0) {
-      toast.error('Vyplň aspoň jeden krok zadání.');
+      toast.error('Přidej aspoň jeden krok s textem, obrázkem nebo sdíleným plátnem.');
       return;
     }
     if (initialCanvasSnapshot && hasPerStepSharedCanvas(cleaned)) {
@@ -734,7 +760,9 @@ export function TasksSheet({
       const cleanedTitle = title.trim();
       const payload: any = {
         title: cleanedTitle,
-        instruction_text: instructionStepsToFallbackText(cleaned.map(s => s.text)),
+        instruction_text: instructionStepsToFallbackText(
+          cleaned.map((s, i) => instructionStepFallbackLabel(s, i)),
+        ),
         instruction_steps: cleaned.map(s => serializeInstructionStep(s)),
         instruction_image: firstStepImage(cleaned) ?? null,
       };
@@ -1109,7 +1137,7 @@ export function TasksSheet({
                                 <Button
                                   type="button"
                                   onClick={handleCreate}
-                                  disabled={busy || !steps.some(s => s.text.trim())}
+                                  disabled={busy || !steps.some(stepHasContent)}
                                   className="h-11 w-full rounded-xl bg-sky-600 px-4 text-[15px] font-medium text-white shadow-sm hover:bg-sky-700 disabled:opacity-50 min-[520px]:h-12 min-[520px]:w-auto min-[520px]:shrink-0 min-[520px]:whitespace-nowrap"
                                 >
                                   {busy ? 'Ukládám…' : 'Publikovat úkol'}
@@ -1232,6 +1260,20 @@ export function TasksSheet({
                                     rows={5}
                                     className="min-h-[100px] resize-y rounded-xl border border-slate-200 bg-slate-50/60 px-3.5 py-3 text-sm text-slate-800 outline-none transition-colors placeholder:text-slate-400 focus-visible:border-sky-300 focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-sky-400/20"
                                   />
+                                  {index > 0 ? (
+                                    <label className="mt-4 flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200/90 bg-slate-50/50 px-3.5 py-3">
+                                      <Checkbox
+                                        id={`task-step-clear-${index}`}
+                                        checked={step.clearPreviousConstructions}
+                                        onCheckedChange={checked =>
+                                          setStepClearPreviousAt(index, checked === true)
+                                        }
+                                      />
+                                      <span className="text-sm font-medium text-slate-800">
+                                        Smazat předchozí konstrukce
+                                      </span>
+                                    </label>
+                                  ) : null}
                                   <div className="mt-5 space-y-3">
                                     <Label
                                       htmlFor={`task-step-img-${index}`}

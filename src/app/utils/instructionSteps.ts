@@ -5,12 +5,14 @@ export type InstructionStep = {
   text: string;
   image?: string | null;
   canvas_snapshot?: unknown;
+  clear_previous_constructions?: boolean;
 };
 
 export type InstructionStepContent = {
   text: string;
   image: string | null;
   canvasSnapshot: GeometrySubmissionSnapshot | null;
+  clearPreviousConstructions: boolean;
 };
 
 function parseStepImage(raw: unknown): string | null {
@@ -37,23 +39,38 @@ export function parseCanvasSnapshot(raw: unknown): GeometrySubmissionSnapshot | 
   };
 }
 
+export function stepHasContent(step: Pick<InstructionStepContent, 'text' | 'image' | 'canvasSnapshot'>): boolean {
+  return Boolean(step.text.trim()) || Boolean(step.image) || Boolean(step.canvasSnapshot);
+}
+
+export function instructionStepFallbackLabel(step: InstructionStepContent, index: number): string {
+  const text = step.text.trim();
+  if (text) return text;
+  return `Krok ${index + 1}`;
+}
+
 export function normalizeInstructionSteps(raw: unknown): InstructionStepContent[] {
   if (raw == null) return [];
   if (!Array.isArray(raw)) return [];
   const out: InstructionStepContent[] = [];
   for (const item of raw) {
-    if (item && typeof item === 'object' && 'text' in item) {
-      const t = (item as { text: unknown }).text;
-      if (typeof t !== 'string' || !t.trim()) continue;
+    if (item && typeof item === 'object') {
+      const rawText = 'text' in item ? (item as { text: unknown }).text : '';
+      const text = typeof rawText === 'string' ? rawText.trim() : '';
       const image = parseStepImage(
         'image' in item ? (item as { image: unknown }).image : null,
       );
       const canvasSnapshot = parseCanvasSnapshot(
         'canvas_snapshot' in item ? (item as { canvas_snapshot: unknown }).canvas_snapshot : null,
       );
-      out.push({ text: t.trim(), image, canvasSnapshot });
+      const clearPreviousConstructions = Boolean(
+        'clear_previous_constructions' in item &&
+          (item as { clear_previous_constructions: unknown }).clear_previous_constructions,
+      );
+      if (!text && !image && !canvasSnapshot) continue;
+      out.push({ text, image, canvasSnapshot, clearPreviousConstructions });
     } else if (typeof item === 'string' && item.trim()) {
-      out.push({ text: item.trim(), image: null, canvasSnapshot: null });
+      out.push({ text: item.trim(), image: null, canvasSnapshot: null, clearPreviousConstructions: false });
     }
   }
   return out;
@@ -94,5 +111,6 @@ export function serializeInstructionStep(step: InstructionStepContent): Instruct
   const out: InstructionStep = { text: step.text };
   if (step.image) out.image = step.image;
   if (step.canvasSnapshot) out.canvas_snapshot = step.canvasSnapshot;
+  if (step.clearPreviousConstructions) out.clear_previous_constructions = true;
   return out;
 }
