@@ -55,8 +55,11 @@ import { parseAssignmentIdFromUrlOrUuid } from '@/app/utils/assignmentUrl';
 import { normalizeInitialCanvasSnapshot } from '@/app/utils/assignmentCanvasFixes';
 import {
   firstStepImage,
+  instructionStepsHaveCanvasSnapshot,
   instructionStepsToFallbackText,
   normalizeInstructionSteps,
+  parseCanvasSnapshot,
+  serializeInstructionStep,
 } from '@/app/utils/instructionSteps';
 import { toast } from 'sonner';
 import '../../../../rysovani/src/index.css';
@@ -71,7 +74,13 @@ const FreeGeometryEditor = lazy(() =>
   })),
 );
 
-type StepDraft = { text: string; image: string | null };
+type StepDraft = { text: string; image: string | null; canvasSnapshot: GeometrySubmissionSnapshot | null };
+
+const EMPTY_STEP: StepDraft = { text: '', image: null, canvasSnapshot: null };
+
+function hasPerStepSharedCanvas(steps: StepDraft[]): boolean {
+  return steps.some(s => s.canvasSnapshot != null);
+}
 
 function formatCzechStepCount(n: number): string {
   if (n <= 0) return 'Bez kroků';
@@ -273,7 +282,7 @@ export function TasksSheet({
   const readConfigInfo = () => getSupabaseConfigInfoProp?.() ?? getSupabaseConfigInfo();
   const createdLinkInputRef = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState('');
-  const [steps, setSteps] = useState<StepDraft[]>([{ text: '', image: null }]);
+  const [steps, setSteps] = useState<StepDraft[]>([{ ...EMPTY_STEP }]);
   const [dragActiveStep, setDragActiveStep] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [createdUrl, setCreatedUrl] = useState<string | null>(null);
@@ -288,8 +297,14 @@ export function TasksSheet({
   const [geometryDarkMode, setGeometryDarkMode] = useState(false);
   const geometryCanvasExportRef = useRef<(() => HTMLCanvasElement | null) | null>(null);
   const geometrySubmissionSnapshotRef = useRef<(() => GeometrySubmissionSnapshot | null) | null>(null);
-  /** Potvrzení nahrazení již vloženého sdíleného plátna — z editoru nebo z odkazu. */
-  const [replaceSharedCanvasMode, setReplaceSharedCanvasMode] = useState<'editor' | 'url' | null>(null);
+  /** Potvrzení nahrazení již vloženého sdíleného plátna — z editoru, z odkazu, nebo v kroku. */
+  const [replaceSharedCanvasMode, setReplaceSharedCanvasMode] = useState<
+    'editor-step' | 'editor-global' | 'url' | null
+  >(null);
+  const [replaceSharedCanvasStepIndex, setReplaceSharedCanvasStepIndex] = useState<number | null>(null);
+  const [sharedCanvasInsertChoiceOpen, setSharedCanvasInsertChoiceOpen] = useState(false);
+  const [confirmGlobalWipeStepsOpen, setConfirmGlobalWipeStepsOpen] = useState(false);
+  const [confirmStepWipeGlobalOpen, setConfirmStepWipeGlobalOpen] = useState(false);
   /** title + instruction_image + počet kroků z DB podle UUID zadání (pro knihovnu) */
   const [libraryDbMeta, setLibraryDbMeta] = useState<
     Record<string, { instruction_image: string | null; title: string | null; stepCount: number }>
@@ -383,7 +398,7 @@ export function TasksSheet({
 
   const resetForm = () => {
     setTitle('');
-    setSteps([{ text: '', image: null }]);
+    setSteps([{ ...EMPTY_STEP }]);
     setDragActiveStep(null);
     setSharedCanvasUrl('');
     setInitialCanvasSnapshot(null);
@@ -393,7 +408,7 @@ export function TasksSheet({
     if (title.trim()) return true;
     if (sharedCanvasUrl.trim()) return true;
     if (initialCanvasSnapshot) return true;
-    return steps.some(s => Boolean(s.text.trim()) || Boolean(s.image));
+    return steps.some(s => Boolean(s.text.trim()) || Boolean(s.image) || Boolean(s.canvasSnapshot));
   };
 
   const openGeometryDrawForStep = (index: number) => {
@@ -419,11 +434,17 @@ export function TasksSheet({
     }
   };
 
-  const applySharedCanvasFromEditor = () => {
+  const setStepCanvasSnapshotAt = (index: number, snapshot: GeometrySubmissionSnapshot | null) => {
+    setSteps(prev =>
+      prev.map((s, i) => (i === index ? { ...s, canvasSnapshot: snapshot } : s)),
+    );
+  };
+
+  const readEditorCanvasSnapshot = (): GeometrySubmissionSnapshot | null => {
     const snap = geometrySubmissionSnapshotRef.current?.();
     if (!snap) {
       toast.error('Nepodařilo se načíst stav plátna.');
-      return;
+      return null;
     }
     const empty =
       snap.points.length === 0 &&
@@ -431,41 +452,118 @@ export function TasksSheet({
       (!snap.freehandPaths || snap.freehandPaths.length === 0);
     if (empty) {
       toast.error('Plátno je prázdné – nejdřív něco narýsuj.');
-      return;
+      return null;
     }
+    return snap;
+  };
+
+  const applySharedCanvasFromEditorGlobal = () => {
+    const snap = readEditorCanvasSnapshot();
+    if (!snap) return;
     setInitialCanvasSnapshot(snap);
     setSharedCanvasUrl('');
+    setSteps(prev => prev.map(s => ({ ...s, canvasSnapshot: null })));
     setGeometryDrawOpen(false);
     setReplaceSharedCanvasMode(null);
-    toast.success('Sdílené plátno vloženo do úkolu.');
+    setReplaceSharedCanvasStepIndex(null);
+    setConfirmGlobalWipeStepsOpen(false);
+    toast.success('Sdílené plátno vloženo pro všechny kroky úkolu.');
+  };
+
+  const applySharedCanvasToStepFromEditor = (index: number) => {
+    const snap = readEditorCanvasSnapshot();
+    if (!snap) return;
+    setInitialCanvasSnapshot(null);
+    setSharedCanvasUrl('');
+    setStepCanvasSnapshotAt(index, snap);
+    setGeometryDrawOpen(false);
+    setReplaceSharedCanvasMode(null);
+    setReplaceSharedCanvasStepIndex(null);
+    setConfirmStepWipeGlobalOpen(false);
+    toast.success(`Sdílené plátno vloženo do kroku ${index + 1}.`);
   };
 
   const applySharedCanvasFromUrl = () => {
+    if (hasPerStepSharedCanvas(steps)) {
+      toast.error(
+        'Úkol už má sdílené plátno v jednotlivých krocích. Odeber ho ze kroků, pokud chceš jedno plátno pro celý úkol.',
+      );
+      return;
+    }
     const snap = decodeSharedCanvasFromUrl(sharedCanvasUrl.trim());
     if (!snap) {
       toast.error('Odkaz na sdílené plátno je neplatný.');
       return;
     }
     setInitialCanvasSnapshot(snap);
+    setSteps(prev => prev.map(s => ({ ...s, canvasSnapshot: null })));
     setReplaceSharedCanvasMode(null);
-    toast.success('Sdílené plátno vloženo do úkolu.');
+    setReplaceSharedCanvasStepIndex(null);
+    toast.success('Sdílené plátno vloženo pro všechny kroky úkolu.');
   };
 
   const onInsertSharedCanvasClick = () => {
+    if (geometryDrawStepIndex == null) return;
+    if (!readEditorCanvasSnapshot()) return;
+    setSharedCanvasInsertChoiceOpen(true);
+  };
+
+  const onChooseSharedCanvasForWholeAssignment = () => {
+    setSharedCanvasInsertChoiceOpen(false);
+    if (hasPerStepSharedCanvas(steps)) {
+      setConfirmGlobalWipeStepsOpen(true);
+      return;
+    }
     if (initialCanvasSnapshot) {
-      setReplaceSharedCanvasMode('editor');
+      setReplaceSharedCanvasStepIndex(null);
+      setReplaceSharedCanvasMode('editor-global');
+      return;
+    }
+    applySharedCanvasFromEditorGlobal();
+  };
+
+  const onChooseSharedCanvasForStepOnly = () => {
+    setSharedCanvasInsertChoiceOpen(false);
+    const idx = geometryDrawStepIndex;
+    if (idx == null) return;
+    if (initialCanvasSnapshot) {
+      setConfirmStepWipeGlobalOpen(true);
+      return;
+    }
+    if (steps[idx]?.canvasSnapshot) {
+      setReplaceSharedCanvasStepIndex(idx);
+      setReplaceSharedCanvasMode('editor-step');
     } else {
-      applySharedCanvasFromEditor();
+      applySharedCanvasToStepFromEditor(idx);
+    }
+  };
+
+  const confirmSharedCanvasForStepOnly = () => {
+    const idx = geometryDrawStepIndex;
+    if (idx == null) return;
+    setConfirmStepWipeGlobalOpen(false);
+    if (steps[idx]?.canvasSnapshot) {
+      setReplaceSharedCanvasStepIndex(idx);
+      setReplaceSharedCanvasMode('editor-step');
+    } else {
+      applySharedCanvasToStepFromEditor(idx);
     }
   };
 
   const onInsertSharedCanvasFromUrlClick = () => {
+    if (hasPerStepSharedCanvas(steps)) {
+      toast.error(
+        'Úkol už má sdílené plátno v jednotlivých krocích. Odeber ho ze kroků, pokud chceš jedno plátno pro celý úkol.',
+      );
+      return;
+    }
     const snap = decodeSharedCanvasFromUrl(sharedCanvasUrl.trim());
     if (!snap) {
       toast.error('Odkaz na sdílené plátno je neplatný.');
       return;
     }
     if (initialCanvasSnapshot) {
+      setReplaceSharedCanvasStepIndex(null);
       setReplaceSharedCanvasMode('url');
     } else {
       applySharedCanvasFromUrl();
@@ -506,30 +604,34 @@ export function TasksSheet({
       const normalized = normalizeInstructionSteps((data as any).instruction_steps);
       const nextSteps: StepDraft[] =
         normalized.length > 0
-          ? normalized.map(s => ({ text: s.text, image: s.image }))
+          ? normalized.map(s => ({
+              text: s.text,
+              image: s.image,
+              canvasSnapshot: s.canvasSnapshot,
+            }))
           : [
               {
                 text: String((data as any).instruction_text ?? '').trim(),
                 image: null,
+                canvasSnapshot: null,
               },
             ];
 
       setTitle(String((data as any).title ?? '').trim());
-      setSteps(nextSteps.length > 0 ? nextSteps : [{ text: '', image: null }]);
+      setSteps(nextSteps.length > 0 ? nextSteps : [{ ...EMPTY_STEP }]);
       const snap = normalizeInitialCanvasSnapshot(assignmentId, (data as any).initial_canvas_snapshot);
-      if (snap && typeof snap === 'object') {
-        const s = snap as any;
-        if (Array.isArray(s.points) && Array.isArray(s.shapes)) {
-          setInitialCanvasSnapshot({
-            points: s.points,
-            shapes: s.shapes,
-            freehandPaths: Array.isArray(s.freehandPaths) ? s.freehandPaths : [],
-          } as GeometrySubmissionSnapshot);
-        } else {
-          setInitialCanvasSnapshot(null);
-        }
+      const parsedGlobal =
+        snap && typeof snap === 'object'
+          ? parseCanvasSnapshot(snap)
+          : null;
+      const perStepCanvas = instructionStepsHaveCanvasSnapshot(normalized);
+      if (parsedGlobal && !perStepCanvas) {
+        setInitialCanvasSnapshot(parsedGlobal);
       } else {
         setInitialCanvasSnapshot(null);
+        if (parsedGlobal && perStepCanvas) {
+          toast.message('Úkol měl oba typy sdíleného plátna — načteno plátno jen v krocích.');
+        }
       }
       setSharedCanvasUrl('');
       setDragActiveStep(null);
@@ -554,7 +656,7 @@ export function TasksSheet({
     setSteps(prev => prev.map((s, i) => (i === index ? { ...s, image: dataUrl } : s)));
   };
 
-  const addStep = () => setSteps(prev => [...prev, { text: '', image: null }]);
+  const addStep = () => setSteps(prev => [...prev, { ...EMPTY_STEP }]);
 
   const removeStep = (index: number) => {
     setSteps(prev => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)));
@@ -617,10 +719,14 @@ export function TasksSheet({
       return;
     }
     const cleaned = steps
-      .map(s => ({ text: s.text.trim(), image: s.image }))
+      .map(s => ({ text: s.text.trim(), image: s.image, canvasSnapshot: s.canvasSnapshot }))
       .filter(s => s.text.length > 0);
     if (cleaned.length === 0) {
       toast.error('Vyplň aspoň jeden krok zadání.');
+      return;
+    }
+    if (initialCanvasSnapshot && hasPerStepSharedCanvas(cleaned)) {
+      toast.error('Sdílené plátno nelze mít zároveň pro celý úkol i v jednotlivých krocích.');
       return;
     }
     setBusy(true);
@@ -629,12 +735,13 @@ export function TasksSheet({
       const payload: any = {
         title: cleanedTitle,
         instruction_text: instructionStepsToFallbackText(cleaned.map(s => s.text)),
-        instruction_steps: cleaned.map(s => (s.image ? { text: s.text, image: s.image } : { text: s.text })),
+        instruction_steps: cleaned.map(s => serializeInstructionStep(s)),
         instruction_image: firstStepImage(cleaned) ?? null,
       };
 
-      // Attempt to save snapshot only if DB supports it.
-      if (initialCanvasSnapshot) payload.initial_canvas_snapshot = initialCanvasSnapshot;
+      if (initialCanvasSnapshot && !hasPerStepSharedCanvas(cleaned)) {
+        payload.initial_canvas_snapshot = initialCanvasSnapshot;
+      }
 
       let data: any = null;
       let error: any = null;
@@ -676,6 +783,8 @@ export function TasksSheet({
       setBusy(false);
     }
   };
+
+  const perStepSharedCanvasActive = hasPerStepSharedCanvas(steps);
 
   const tasksRow = (
             <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
@@ -1030,10 +1139,18 @@ export function TasksSheet({
                           <div className="space-y-2.5">
                             <Label className="text-base font-medium text-slate-800" htmlFor="task-shared-canvas">
                               Sdílené plátno{' '}
-                              <span className="text-sm font-normal text-slate-500">(volitelné)</span>
+                              <span className="text-sm font-normal text-slate-500">(volitelné, pro všechny kroky)</span>
                             </Label>
                             <p className="m-0 text-sm leading-relaxed text-zinc-500">
-                              Vlož odkaz ze tlačítka „Sdílet plátno“ v rýsování. Úkol se pak otevře s tímto plátnem jako výchozím stavem.
+                              Vlož odkaz ze tlačítka „Sdílet plátno“ v rýsování. Studenti pak ve všech krocích uvidí stejné výchozí plátno.
+                              {perStepSharedCanvasActive ? (
+                                <>
+                                  {' '}
+                                  <span className="font-medium text-amber-800">
+                                    Teď je sdílené plátno nastavené v jednotlivých krocích — pro celý úkol ho nejdřív odeber ze kroků.
+                                  </span>
+                                </>
+                              ) : null}
                             </p>
                             <div className="flex flex-col gap-3 min-[720px]:flex-row min-[720px]:items-stretch">
                               <input
@@ -1041,14 +1158,15 @@ export function TasksSheet({
                                 value={sharedCanvasUrl}
                                 onChange={e => setSharedCanvasUrl(e.target.value)}
                                 placeholder="Vlož odkaz na sdílené plátno…"
-                                className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 shadow-sm outline-none ring-sky-400/0 transition-shadow placeholder:text-slate-400 focus-visible:border-sky-400 focus-visible:ring-2 focus-visible:ring-sky-400/25"
+                                disabled={busy || perStepSharedCanvasActive}
+                                className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 shadow-sm outline-none ring-sky-400/0 transition-shadow placeholder:text-slate-400 focus-visible:border-sky-400 focus-visible:ring-2 focus-visible:ring-sky-400/25 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
                                 style={{ fontFamily: 'ui-monospace, monospace' }}
                               />
                               <div className="flex flex-wrap items-center gap-2">
                                 <Button
                                   type="button"
                                   variant="outline"
-                                  disabled={busy || !sharedCanvasUrl.trim()}
+                                  disabled={busy || !sharedCanvasUrl.trim() || perStepSharedCanvasActive}
                                   onClick={onInsertSharedCanvasFromUrlClick}
                                   className="h-11 rounded-xl border-2 border-sky-200 bg-white text-[14px] font-medium text-sky-900 hover:bg-sky-50"
                                 >
@@ -1062,7 +1180,7 @@ export function TasksSheet({
                                     onClick={() => {
                                       setInitialCanvasSnapshot(null);
                                       setSharedCanvasUrl('');
-                                      toast.success('Sdílené plátno odebráno.');
+                                      toast.success('Sdílené plátno pro celý úkol odebráno.');
                                     }}
                                     className="h-11 rounded-xl border-2 border-zinc-200 bg-white text-[14px] font-medium text-zinc-800 hover:bg-zinc-50"
                                   >
@@ -1073,7 +1191,7 @@ export function TasksSheet({
                             </div>
                             {initialCanvasSnapshot ? (
                               <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-                                Sdílené plátno je připojeno k úkolu.
+                                Sdílené plátno je připojeno ke všem krokům úkolu.
                               </div>
                             ) : null}
                           </div>
@@ -1205,6 +1323,24 @@ export function TasksSheet({
                                         >
                                           <X size={16} aria-hidden />
                                         </button>
+                                      </div>
+                                    ) : null}
+                                    {step.canvasSnapshot ? (
+                                      <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+                                        <div className="flex items-start justify-between gap-3">
+                                          <span>Sdílené plátno je připojeno jen k tomuto kroku.</span>
+                                          <button
+                                            type="button"
+                                            disabled={busy || Boolean(initialCanvasSnapshot)}
+                                            onClick={() => {
+                                              setStepCanvasSnapshotAt(index, null);
+                                              toast.success(`Sdílené plátno odebráno z kroku ${index + 1}.`);
+                                            }}
+                                            className="shrink-0 text-xs font-medium text-emerald-800 underline underline-offset-2 hover:text-emerald-950 disabled:cursor-not-allowed disabled:no-underline disabled:opacity-50"
+                                          >
+                                            Odebrat
+                                          </button>
+                                        </div>
                                       </div>
                                     ) : null}
                                   </div>
@@ -1426,10 +1562,92 @@ export function TasksSheet({
         </DialogContent>
       </Dialog>
 
+      <Dialog open={sharedCanvasInsertChoiceOpen} onOpenChange={setSharedCanvasInsertChoiceOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Kam vložit sdílené plátno?</DialogTitle>
+            <DialogDescription>
+              Vyber, jestli se výchozí plátno zobrazí ve všech krocích úkolu, nebo jen v kroku{' '}
+              {geometryDrawStepIndex != null ? geometryDrawStepIndex + 1 : ''}.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-col gap-2 sm:flex-col sm:space-x-0">
+            <Button type="button" className="w-full" onClick={onChooseSharedCanvasForWholeAssignment}>
+              Pro celý úkol
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={onChooseSharedCanvasForStepOnly}
+            >
+              Pouze pro tento krok
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full"
+              onClick={() => setSharedCanvasInsertChoiceOpen(false)}
+            >
+              Zrušit
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={confirmGlobalWipeStepsOpen} onOpenChange={setConfirmGlobalWipeStepsOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Smazat sdílená plátna v krocích?</AlertDialogTitle>
+            <AlertDialogDescription>
+              V některých krocích už máš sdílené plátno. Při vložení plátna pro celý úkol se tato plátna
+              v jednotlivých krocích smažou.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Zrušit</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (initialCanvasSnapshot) {
+                  setConfirmGlobalWipeStepsOpen(false);
+                  setReplaceSharedCanvasStepIndex(null);
+                  setReplaceSharedCanvasMode('editor-global');
+                } else {
+                  applySharedCanvasFromEditorGlobal();
+                }
+              }}
+            >
+              Vložit pro celý úkol
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={confirmStepWipeGlobalOpen} onOpenChange={setConfirmStepWipeGlobalOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Zrušit plátno pro celý úkol?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Úkol už má sdílené plátno pro všechny kroky. Vložením plátna jen do kroku{' '}
+              {geometryDrawStepIndex != null ? geometryDrawStepIndex + 1 : ''} se toto společné plátno zruší.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Zrušit</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmSharedCanvasForStepOnly}>
+              Vložit jen do tohoto kroku
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <AlertDialog
         open={replaceSharedCanvasMode !== null}
         onOpenChange={open => {
-          if (!open) setReplaceSharedCanvasMode(null);
+          if (!open) {
+            setReplaceSharedCanvasMode(null);
+            setReplaceSharedCanvasStepIndex(null);
+          }
         }}
       >
         <AlertDialogContent>
@@ -1437,8 +1655,12 @@ export function TasksSheet({
             <AlertDialogTitle>Nahradit sdílené plátno?</AlertDialogTitle>
             <AlertDialogDescription>
               {replaceSharedCanvasMode === 'url'
-                ? 'V úkolu je už vložené sdílené plátno. Chceš ho nahradit plátnem z vloženého odkazu?'
-                : 'V úkolu je už vložené sdílené plátno. Chceš ho nahradit aktuálním rýsováním z editoru?'}
+                ? 'V úkolu je už sdílené plátno pro všechny kroky. Chceš ho nahradit plátnem z vloženého odkazu?'
+                : replaceSharedCanvasMode === 'editor-global'
+                  ? 'V úkolu je už sdílené plátno pro všechny kroky. Chceš ho nahradit aktuálním rýsováním z editoru?'
+                  : replaceSharedCanvasStepIndex != null
+                    ? `V kroku ${replaceSharedCanvasStepIndex + 1} je už sdílené plátno. Chceš ho nahradit aktuálním rýsováním z editoru?`
+                    : 'Chceš nahradit stávající sdílené plátno?'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1447,8 +1669,10 @@ export function TasksSheet({
               onClick={() => {
                 if (replaceSharedCanvasMode === 'url') {
                   applySharedCanvasFromUrl();
-                } else {
-                  applySharedCanvasFromEditor();
+                } else if (replaceSharedCanvasMode === 'editor-global') {
+                  applySharedCanvasFromEditorGlobal();
+                } else if (replaceSharedCanvasStepIndex != null) {
+                  applySharedCanvasToStepFromEditor(replaceSharedCanvasStepIndex);
                 }
               }}
             >
