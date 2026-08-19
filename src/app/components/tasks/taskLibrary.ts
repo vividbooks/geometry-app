@@ -128,6 +128,12 @@ export const TASK_LIBRARY: TaskLibraryEntry[] = [
     assignmentId: '7c3e9b12-4f8a-4d6e-9c21-8b5a0e17d4f3',
     grade: 7,
   },
+  {
+    key: 'c4d8e2a1-7b3f-4c9e-a812-6f0d5b47e9c3',
+    title: 'Střední příčky',
+    assignmentId: 'c4d8e2a1-7b3f-4c9e-a812-6f0d5b47e9c3',
+    grade: 7,
+  },
 ];
 
 export function taskLibraryGradeOf(entry: TaskLibraryEntry): TaskLibraryGrade {
