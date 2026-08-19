@@ -54,6 +54,7 @@ import {
 import { parseAssignmentIdFromUrlOrUuid } from '@/app/utils/assignmentUrl';
 import { normalizeInitialCanvasSnapshot } from '@/app/utils/assignmentCanvasFixes';
 import {
+  applyAssignmentInstructionStepFixes,
   firstStepImage,
   instructionStepsHaveCanvasSnapshot,
   instructionStepsToFallbackText,
@@ -615,7 +616,7 @@ export function TasksSheet({
       }
 
       const normalized = normalizeInstructionSteps((data as any).instruction_steps);
-      const nextSteps: StepDraft[] =
+      let nextSteps: StepDraft[] =
         normalized.length > 0
           ? normalized.map(s => ({
               text: s.text,
@@ -631,6 +632,7 @@ export function TasksSheet({
                 clearPreviousConstructions: false,
               },
             ];
+      nextSteps = applyAssignmentInstructionStepFixes(assignmentId, nextSteps);
 
       setTitle(String((data as any).title ?? '').trim());
       setSteps(nextSteps.length > 0 ? nextSteps : [{ ...EMPTY_STEP }]);

@@ -80,6 +80,21 @@ export function instructionStepsHaveCanvasSnapshot(steps: InstructionStepContent
   return steps.some(s => s.canvasSnapshot != null);
 }
 
+/** Úkoly, u kterých se nemá mezi kroky mazat kresba (dočasná oprava v DB). */
+const DISABLE_CLEAR_PREVIOUS_ASSIGNMENT_IDS = new Set([
+  '541e27b8-25cc-49e8-ad8c-122346200d30',
+]);
+
+export function applyAssignmentInstructionStepFixes(
+  assignmentId: string | undefined,
+  steps: InstructionStepContent[],
+): InstructionStepContent[] {
+  if (!assignmentId || !DISABLE_CLEAR_PREVIOUS_ASSIGNMENT_IDS.has(assignmentId)) {
+    return steps;
+  }
+  return steps.map(s => ({ ...s, clearPreviousConstructions: false }));
+}
+
 /** Sloučí texty kroků do jednoho pole pro `instruction_text` (zpětná kompatibilita). */
 export function instructionStepsToFallbackText(stepTexts: string[]): string {
   if (stepTexts.length === 0) return '';
@@ -88,12 +103,16 @@ export function instructionStepsToFallbackText(stepTexts: string[]): string {
 }
 
 export function assignmentInstructionDisplay(row: {
+  id?: string;
   instruction_steps?: unknown;
   instruction_text: string;
 }):
   | { kind: 'steps'; steps: InstructionStepContent[] }
   | { kind: 'text'; text: string } {
-  const steps = normalizeInstructionSteps(row.instruction_steps);
+  const steps = applyAssignmentInstructionStepFixes(
+    row.id,
+    normalizeInstructionSteps(row.instruction_steps),
+  );
   if (steps.length > 0) return { kind: 'steps', steps };
   return { kind: 'text', text: row.instruction_text || '' };
 }
