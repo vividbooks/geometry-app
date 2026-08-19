@@ -3187,15 +3187,14 @@ export function FreeGeometryEditor({
     };
   }, []);
 
-  /** Zarovnání a zoom pro read-only náhled odevzdání — v režimu řešení úkolu zůstává výchozí zoom jako u volného plátna. */
+  /** Sdílené plátno v úkolu / náhled odevzdání: po otevření vycentrovat a přizoomovat, aby byl vidět celý obsah. */
   useEffect(() => {
     if (sharedRecording && sharedRecording.steps.length > 0) return;
     if (!initialCanvasSnapshot) {
       assignmentSnapshotFitLayoutKeyRef.current = null;
       return;
     }
-    if (embedInAssignment) return;
-    if (!readOnlyCanvas) return;
+    if (!embedInAssignment && !readOnlyCanvas) return;
     if (canvasSize.width < 8 || canvasSize.height < 8) return;
 
     const bounds = computeGeometryWorldBounds(initialCanvasSnapshot);
