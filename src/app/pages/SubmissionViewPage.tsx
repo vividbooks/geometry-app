@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo, useCallback, lazy, Suspense } from 'react';
 import { useParams } from 'react-router-dom';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { TopBar } from '../components/TopBar';
 import type { ViewMode } from '../components/ComponentSvg';
 import { ComponentPalette, type Tool } from '../components/ComponentPalette';
@@ -7,7 +8,7 @@ import { CircuitCanvas } from '../components/CircuitCanvas';
 import { getSupabase } from '@/lib/supabase';
 import { CIRCUIT_ASSIGNMENTS_TABLE, CIRCUIT_SUBMISSIONS_TABLE } from '@/lib/circuitTables';
 import { decodeCircuit } from '../utils/circuitUrl';
-import { parseGeometrySubmission } from '../utils/geometrySubmissionCodec';
+import { parseGeometrySubmissionAny } from '../utils/geometrySubmissionCodec';
 import { assignmentInstructionDisplay } from '../utils/instructionSteps';
 import { useIsTouch, useToolbarScale } from '../hooks/editorChrome';
 import '../../../rysovani/src/index.css';
@@ -50,6 +51,7 @@ export default function SubmissionViewPage() {
   const [loadState, setLoadState] = useState<'loading' | 'error' | 'ready'>('loading');
   const [submission, setSubmission] = useState<SubmissionRow | null>(null);
   const [assignment, setAssignment] = useState<AssignmentRow | null>(null);
+  const [viewStepIndex, setViewStepIndex] = useState(0);
 
   useEffect(() => {
     if (!submissionId) {
@@ -98,22 +100,30 @@ export default function SubmissionViewPage() {
     };
   }, [submissionId]);
 
+  const parsedGeometry = useMemo(() => {
+    if (!submission?.circuit_encoded) return null;
+    return parseGeometrySubmissionAny(submission.circuit_encoded);
+  }, [submission]);
+
   const submissionKind = useMemo<'geometry' | 'circuit' | null>(() => {
     if (!submission?.circuit_encoded) return null;
-    if (parseGeometrySubmission(submission.circuit_encoded)) return 'geometry';
+    if (parsedGeometry) return 'geometry';
     if (decodeCircuit(submission.circuit_encoded)) return 'circuit';
     return null;
-  }, [submission]);
+  }, [submission, parsedGeometry]);
 
   const circuitInitialState = useMemo(() => {
     if (!submission?.circuit_encoded || submissionKind !== 'circuit') return undefined;
     return decodeCircuit(submission.circuit_encoded);
   }, [submission, submissionKind]);
 
-  const geometrySnapshot = useMemo(() => {
-    if (!submission?.circuit_encoded || submissionKind !== 'geometry') return null;
-    return parseGeometrySubmission(submission.circuit_encoded);
-  }, [submission, submissionKind]);
+  const geometrySnapshots = useMemo((): GeometrySubmissionSnapshot[] => {
+    if (!parsedGeometry) return [];
+    if (parsedGeometry.version === 2) {
+      return parsedGeometry.steps as GeometrySubmissionSnapshot[];
+    }
+    return [parsedGeometry.snapshot as GeometrySubmissionSnapshot];
+  }, [parsedGeometry]);
 
   if (!submissionId) {
     return <div className="min-h-screen flex items-center justify-center text-zinc-600">Neplatný odkaz.</div>;
@@ -132,9 +142,12 @@ export default function SubmissionViewPage() {
   }
 
   const instructionView = assignment ? assignmentInstructionDisplay(assignment) : null;
+  const geometryStepCount = geometrySnapshots.length;
+  const clampedViewStep = Math.min(Math.max(0, viewStepIndex), Math.max(0, geometryStepCount - 1));
+  const activeGeometrySnapshot = geometrySnapshots[clampedViewStep] ?? null;
 
   const mainCanvas =
-    submissionKind === 'geometry' && geometrySnapshot ? (
+    submissionKind === 'geometry' && activeGeometrySnapshot ? (
       <Suspense
         fallback={
           <div className="flex h-full w-full items-center justify-center bg-white text-zinc-500">
@@ -143,13 +156,14 @@ export default function SubmissionViewPage() {
         }
       >
         <FreeGeometryEditor
+          key={`${submission.id}-step-${clampedViewStep}`}
           onBack={() => {}}
           darkMode={darkMode}
           onDarkModeChange={setDarkMode}
           deviceType="computer"
           embedInAssignment
           readOnlyCanvas
-          initialCanvasSnapshot={geometrySnapshot as GeometrySubmissionSnapshot}
+          initialCanvasSnapshot={activeGeometrySnapshot}
         />
       </Suspense>
     ) : (
@@ -211,6 +225,31 @@ export default function SubmissionViewPage() {
               <p className="mt-1 text-sm text-zinc-700 whitespace-pre-wrap">{submission.student_note.trim()}</p>
             </div>
           ) : null}
+          {submissionKind === 'geometry' && geometryStepCount > 1 ? (
+            <div className="mt-3 flex items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-white px-2 py-1.5">
+              <button
+                type="button"
+                onClick={() => setViewStepIndex(i => Math.max(0, i - 1))}
+                disabled={clampedViewStep <= 0}
+                className="flex size-8 items-center justify-center rounded-md text-zinc-600 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-35"
+                aria-label="Předchozí plátno"
+              >
+                <ChevronLeft className="size-4" aria-hidden />
+              </button>
+              <span className="text-sm font-medium tabular-nums text-zinc-800">
+                Plátno {clampedViewStep + 1} z {geometryStepCount}
+              </span>
+              <button
+                type="button"
+                onClick={() => setViewStepIndex(i => Math.min(geometryStepCount - 1, i + 1))}
+                disabled={clampedViewStep >= geometryStepCount - 1}
+                className="flex size-8 items-center justify-center rounded-md text-zinc-600 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-35"
+                aria-label="Další plátno"
+              >
+                <ChevronRight className="size-4" aria-hidden />
+              </button>
+            </div>
+          ) : null}
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-3">
@@ -223,7 +262,13 @@ export default function SubmissionViewPage() {
               {instructionView.kind === 'steps' ? (
                 <ol className="m-0 list-decimal space-y-3 pl-4 text-sm leading-relaxed text-zinc-800 marker:text-zinc-500">
                   {instructionView.steps.map((s, i) => (
-                    <li key={i} className="space-y-2 pl-0.5">
+                    <li
+                      key={i}
+                      className={[
+                        'space-y-2 pl-0.5 rounded-lg px-1.5 py-1.5 -mx-1.5',
+                        geometryStepCount > 1 && i === clampedViewStep ? 'bg-sky-50' : '',
+                      ].join(' ')}
+                    >
                       {s.text.trim() ? (
                         <div className="whitespace-pre-wrap">{s.text}</div>
                       ) : null}

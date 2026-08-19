@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useRef, useEffect, type ReactNode } from 'react';
+import { lazy, Suspense, useState, useRef, useEffect, useMemo, type ReactNode } from 'react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   ArrowLeft,
@@ -47,14 +47,17 @@ import { CIRCUIT_ASSIGNMENTS_TABLE, CIRCUIT_SUBMISSIONS_TABLE } from '@/lib/circ
 import { assignmentPublicUrl } from '../../utils/appUrl';
 import {
   TASK_LIBRARY,
+  TASK_LIBRARY_GRADES,
+  formatTaskLibraryGradeLabel,
   resolveLibraryImageSrc,
   resolveStudentLink,
+  taskLibraryEntriesForGrade,
   type TaskLibraryEntry,
+  type TaskLibraryGrade,
 } from './taskLibrary';
 import { parseAssignmentIdFromUrlOrUuid } from '@/app/utils/assignmentUrl';
 import { normalizeInitialCanvasSnapshot } from '@/app/utils/assignmentCanvasFixes';
 import {
-  applyAssignmentInstructionStepFixes,
   firstStepImage,
   instructionStepsHaveCanvasSnapshot,
   instructionStepsToFallbackText,
@@ -62,6 +65,7 @@ import {
   normalizeInstructionSteps,
   parseCanvasSnapshot,
   serializeInstructionStep,
+  assignmentUsesNewCanvasPerStep,
   stepHasContent,
 } from '@/app/utils/instructionSteps';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -82,14 +86,12 @@ type StepDraft = {
   text: string;
   image: string | null;
   canvasSnapshot: GeometrySubmissionSnapshot | null;
-  clearPreviousConstructions: boolean;
 };
 
 const EMPTY_STEP: StepDraft = {
   text: '',
   image: null,
   canvasSnapshot: null,
-  clearPreviousConstructions: false,
 };
 
 function hasPerStepSharedCanvas(steps: StepDraft[]): boolean {
@@ -207,10 +209,15 @@ function formatDbError(e: unknown): string {
 
 function isMissingColumnInSchemaCache(e: unknown, column: string): boolean {
   if (!e || typeof e !== 'object') return false;
-  const o = e as { code?: string; message?: string; details?: string };
-  if (o.code === 'PGRST204') return true;
-  const hay = `${o.message ?? ''}\n${o.details ?? ''}`.toLowerCase();
-  return hay.includes(`could not find the '${column}' column`.toLowerCase());
+  const o = e as { code?: string; message?: string; details?: string; hint?: string };
+  if (o.code === 'PGRST204' || o.code === '42703') return true;
+  const hay = `${o.message ?? ''}\n${o.details ?? ''}\n${o.hint ?? ''}`.toLowerCase();
+  const col = column.toLowerCase();
+  return (
+    hay.includes(`could not find the '${col}' column`) ||
+    hay.includes(`column ${col}`) && hay.includes('does not exist') ||
+    hay.includes(`'${col}'`) && hay.includes('schema cache')
+  );
 }
 
 /** Radix SheetTitle vyžaduje kořen `Sheet` (Dialog); v `embedded` režimu ho nemáme. */
@@ -293,6 +300,11 @@ export function TasksSheet({
   const resolveClient = () => getSupabaseProp?.() ?? getSupabase();
   const supabaseConfigured = getSupabaseProp ? Boolean(getSupabaseProp()) : isSupabaseConfigured;
   const taskEntries = taskLibraryProp ?? TASK_LIBRARY;
+  const [libraryGrade, setLibraryGrade] = useState<TaskLibraryGrade>(6);
+  const libraryEntriesForGrade = useMemo(
+    () => taskLibraryEntriesForGrade(taskEntries, libraryGrade),
+    [taskEntries, libraryGrade],
+  );
   const readConfigInfo = () => getSupabaseConfigInfoProp?.() ?? getSupabaseConfigInfo();
   const createdLinkInputRef = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState('');
@@ -304,6 +316,7 @@ export function TasksSheet({
   const [editAssignmentUrl, setEditAssignmentUrl] = useState('');
   const [sharedCanvasUrl, setSharedCanvasUrl] = useState('');
   const [initialCanvasSnapshot, setInitialCanvasSnapshot] = useState<GeometrySubmissionSnapshot | null>(null);
+  const [newCanvasPerStep, setNewCanvasPerStep] = useState(false);
   const [confirmClearDraftOpen, setConfirmClearDraftOpen] = useState(false);
   const [geometryDrawOpen, setGeometryDrawOpen] = useState(false);
   const [geometryDrawStepIndex, setGeometryDrawStepIndex] = useState<number | null>(null);
@@ -416,6 +429,7 @@ export function TasksSheet({
     setDragActiveStep(null);
     setSharedCanvasUrl('');
     setInitialCanvasSnapshot(null);
+    setNewCanvasPerStep(false);
   };
 
   const hasDraft = () => {
@@ -452,6 +466,7 @@ export function TasksSheet({
     setSteps(prev =>
       prev.map((s, i) => (i === index ? { ...s, canvasSnapshot: snapshot } : s)),
     );
+    if (snapshot != null) setNewCanvasPerStep(true);
   };
 
   const readEditorCanvasSnapshot = (): GeometrySubmissionSnapshot | null => {
@@ -595,6 +610,12 @@ export function TasksSheet({
       const queryWithSnapshot = () =>
         supabase
           .from(CIRCUIT_ASSIGNMENTS_TABLE)
+          .select('id, title, instruction_text, instruction_steps, initial_canvas_snapshot, new_canvas_per_step')
+          .eq('id', assignmentId)
+          .maybeSingle();
+      const queryWithoutNewCanvasFlag = () =>
+        supabase
+          .from(CIRCUIT_ASSIGNMENTS_TABLE)
           .select('id, title, instruction_text, instruction_steps, initial_canvas_snapshot')
           .eq('id', assignmentId)
           .maybeSingle();
@@ -608,31 +629,32 @@ export function TasksSheet({
       let data: any = null;
       let error: any = null;
       ({ data, error } = await queryWithSnapshot());
-      if (error && isMissingColumnInSchemaCache(error, 'initial_canvas_snapshot')) {
+      if (error) {
+        ({ data, error } = await queryWithoutNewCanvasFlag());
+      }
+      if (error) {
         ({ data, error } = await queryWithoutSnapshot());
       }
-      if (error || !data) {
-        throw error ?? new Error('Zadání se nepodařilo načíst.');
+      if (error) throw error;
+      if (!data) {
+        throw new Error('Toto zadání v databázi není. Ulož ho znovu přes „Publikovat úkol“.');
       }
 
       const normalized = normalizeInstructionSteps((data as any).instruction_steps);
-      let nextSteps: StepDraft[] =
+      const nextSteps: StepDraft[] =
         normalized.length > 0
           ? normalized.map(s => ({
               text: s.text,
               image: s.image,
               canvasSnapshot: s.canvasSnapshot,
-              clearPreviousConstructions: s.clearPreviousConstructions,
             }))
           : [
               {
                 text: String((data as any).instruction_text ?? '').trim(),
                 image: null,
                 canvasSnapshot: null,
-                clearPreviousConstructions: false,
               },
             ];
-      nextSteps = applyAssignmentInstructionStepFixes(assignmentId, nextSteps);
 
       setTitle(String((data as any).title ?? '').trim());
       setSteps(nextSteps.length > 0 ? nextSteps : [{ ...EMPTY_STEP }]);
@@ -642,6 +664,13 @@ export function TasksSheet({
           ? parseCanvasSnapshot(snap)
           : null;
       const perStepCanvas = instructionStepsHaveCanvasSnapshot(normalized);
+      setNewCanvasPerStep(
+        assignmentUsesNewCanvasPerStep({
+          id: assignmentId,
+          new_canvas_per_step: (data as any).new_canvas_per_step,
+          instruction_steps: (data as any).instruction_steps,
+        }),
+      );
       if (parsedGlobal && !perStepCanvas) {
         setInitialCanvasSnapshot(parsedGlobal);
       } else {
@@ -659,7 +688,14 @@ export function TasksSheet({
       toast.success('Zadání načteno – uprav a ulož jako nové.');
     } catch (e) {
       console.error('Načtení zadání pro úpravu (Supabase):', e);
-      toast.error('Nepodařilo se načíst zadání pro úpravu.');
+      const detail = formatDbError(e);
+      toast.error(
+        detail && !detail.startsWith('{')
+          ? `Nepodařilo se načíst zadání: ${detail}`
+          : e instanceof Error
+            ? e.message
+            : 'Nepodařilo se načíst zadání pro úpravu.',
+      );
     } finally {
       setBusy(false);
     }
@@ -667,12 +703,6 @@ export function TasksSheet({
 
   const setStepTextAt = (index: number, value: string) => {
     setSteps(prev => prev.map((s, i) => (i === index ? { ...s, text: value } : s)));
-  };
-
-  const setStepClearPreviousAt = (index: number, value: boolean) => {
-    setSteps(prev =>
-      prev.map((s, i) => (i === index ? { ...s, clearPreviousConstructions: value } : s)),
-    );
   };
 
   const setStepImageAt = (index: number, dataUrl: string | null) => {
@@ -742,11 +772,10 @@ export function TasksSheet({
       return;
     }
     const cleaned = steps
-      .map((s, i) => ({
+      .map(s => ({
         text: s.text.trim(),
         image: s.image,
         canvasSnapshot: s.canvasSnapshot,
-        clearPreviousConstructions: i === 0 ? false : s.clearPreviousConstructions,
       }))
       .filter(stepHasContent);
     if (cleaned.length === 0) {
@@ -767,6 +796,7 @@ export function TasksSheet({
         ),
         instruction_steps: cleaned.map(s => serializeInstructionStep(s)),
         instruction_image: firstStepImage(cleaned) ?? null,
+        new_canvas_per_step: newCanvasPerStep || hasPerStepSharedCanvas(cleaned),
       };
 
       if (initialCanvasSnapshot && !hasPerStepSharedCanvas(cleaned)) {
@@ -776,6 +806,10 @@ export function TasksSheet({
       let data: any = null;
       let error: any = null;
       ({ data, error } = await supabase.from(CIRCUIT_ASSIGNMENTS_TABLE).insert(payload).select("id"));
+      if (error && payload.new_canvas_per_step != null && isMissingColumnInSchemaCache(error, 'new_canvas_per_step')) {
+        delete payload.new_canvas_per_step;
+        ({ data, error } = await supabase.from(CIRCUIT_ASSIGNMENTS_TABLE).insert(payload).select("id"));
+      }
       if (error && payload.initial_canvas_snapshot && isMissingColumnInSchemaCache(error, 'initial_canvas_snapshot')) {
         delete payload.initial_canvas_snapshot;
         ({ data, error } = await supabase.from(CIRCUIT_ASSIGNMENTS_TABLE).insert(payload).select("id"));
@@ -922,17 +956,52 @@ export function TasksSheet({
                           embedded={embedded}
                           className="text-left text-[15px] leading-relaxed text-slate-600 max-w-prose"
                         >
-                          Hotová zadání z databáze — otevři náhled, pošli odkaz studentům, nebo si zadání načti do
-                          editoru a uprav.
+                          Hotová zadání z databáze podle ročníku — otevři náhled, pošli odkaz studentům, nebo si
+                          zadání načti do editoru a uprav.
                         </TasksSheetSubtext>
                       </div>
-                      {taskEntries.length === 0 ? (
+                      <div
+                        className="mb-6 flex flex-wrap gap-2"
+                        role="tablist"
+                        aria-label="Ročník"
+                      >
+                        {TASK_LIBRARY_GRADES.map(grade => {
+                          const active = libraryGrade === grade;
+                          const count = taskLibraryEntriesForGrade(taskEntries, grade).length;
+                          return (
+                            <button
+                              key={grade}
+                              type="button"
+                              role="tab"
+                              aria-selected={active}
+                              onClick={() => setLibraryGrade(grade)}
+                              className={[
+                                'inline-flex h-10 items-center gap-2 rounded-xl border px-4 text-sm font-medium transition-colors',
+                                active
+                                  ? 'border-[#565e75] bg-[#565e75] text-white shadow-sm'
+                                  : 'border-sky-200 bg-sky-50 text-sky-950 hover:bg-sky-100',
+                              ].join(' ')}
+                            >
+                              {formatTaskLibraryGradeLabel(grade)}
+                              <span
+                                className={[
+                                  'inline-flex min-w-[1.25rem] items-center justify-center rounded-full px-1.5 py-0.5 text-xs font-semibold tabular-nums',
+                                  active ? 'bg-white/15 text-white' : 'bg-white text-sky-900',
+                                ].join(' ')}
+                              >
+                                {count}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {libraryEntriesForGrade.length === 0 ? (
                         <p className="rounded-2xl border border-dashed border-sky-200 bg-sky-50 px-6 py-10 text-center text-[15px] leading-relaxed text-slate-600">
-                          Zatím žádné úkoly.
+                          V {formatTaskLibraryGradeLabel(libraryGrade).toLowerCase()} zatím žádné úkoly.
                         </p>
                       ) : (
                         <ul className="grid grid-cols-1 justify-items-stretch gap-6 sm:grid-cols-2 xl:grid-cols-3">
-                          {taskEntries.map((entry, index) => {
+                          {libraryEntriesForGrade.map((entry, index) => {
                             const link = resolveStudentLink(entry, assignmentPublicUrlForHost);
                             const id = entry.assignmentId?.trim();
                             const fromDb = id ? libraryDbMeta[id] : undefined;
@@ -1226,6 +1295,36 @@ export function TasksSheet({
                             ) : null}
                           </div>
 
+                          <label
+                            className={[
+                              'flex items-start gap-3 rounded-xl border px-3.5 py-3',
+                              perStepSharedCanvasActive
+                                ? 'cursor-default border-sky-200 bg-sky-50/70'
+                                : 'cursor-pointer border-slate-200/90 bg-slate-50/50',
+                            ].join(' ')}
+                          >
+                            <Checkbox
+                              id="task-new-canvas-per-step"
+                              checked={newCanvasPerStep || perStepSharedCanvasActive}
+                              disabled={perStepSharedCanvasActive}
+                              onCheckedChange={checked => {
+                                if (perStepSharedCanvasActive) return;
+                                setNewCanvasPerStep(checked === true);
+                              }}
+                            />
+                            <span className="space-y-1">
+                              <span className="block text-sm font-medium text-slate-800">
+                                Každý krok na novém plátně
+                              </span>
+                              <span className="block text-sm leading-relaxed text-slate-500">
+                                Student rýsuje každý krok zvlášť; předchozí plátna se uloží a odevzdají spolu s úkolem.
+                                {perStepSharedCanvasActive
+                                  ? ' Zapnuto automaticky, protože některý krok má vlastní plátno.'
+                                  : ''}
+                              </span>
+                            </span>
+                          </label>
+
                           <Label className="block text-base font-medium text-slate-800">Kroky zadání</Label>
                           <p className="m-0 text-sm leading-relaxed text-zinc-500">
                             Každý krok se studentům zobrazí jako očíslovaný bod; obrázek u kroku je volitelný.
@@ -1262,20 +1361,6 @@ export function TasksSheet({
                                     rows={5}
                                     className="min-h-[100px] resize-y rounded-xl border border-slate-200 bg-slate-50/60 px-3.5 py-3 text-sm text-slate-800 outline-none transition-colors placeholder:text-slate-400 focus-visible:border-sky-300 focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-sky-400/20"
                                   />
-                                  {index > 0 ? (
-                                    <label className="mt-4 flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200/90 bg-slate-50/50 px-3.5 py-3">
-                                      <Checkbox
-                                        id={`task-step-clear-${index}`}
-                                        checked={step.clearPreviousConstructions}
-                                        onCheckedChange={checked =>
-                                          setStepClearPreviousAt(index, checked === true)
-                                        }
-                                      />
-                                      <span className="text-sm font-medium text-slate-800">
-                                        Smazat předchozí konstrukce
-                                      </span>
-                                    </label>
-                                  ) : null}
                                   <div className="mt-5 space-y-3">
                                     <Label
                                       htmlFor={`task-step-img-${index}`}

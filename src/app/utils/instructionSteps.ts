@@ -5,14 +5,12 @@ export type InstructionStep = {
   text: string;
   image?: string | null;
   canvas_snapshot?: unknown;
-  clear_previous_constructions?: boolean;
 };
 
 export type InstructionStepContent = {
   text: string;
   image: string | null;
   canvasSnapshot: GeometrySubmissionSnapshot | null;
-  clearPreviousConstructions: boolean;
 };
 
 function parseStepImage(raw: unknown): string | null {
@@ -63,14 +61,10 @@ export function normalizeInstructionSteps(raw: unknown): InstructionStepContent[
       const canvasSnapshot = parseCanvasSnapshot(
         'canvas_snapshot' in item ? (item as { canvas_snapshot: unknown }).canvas_snapshot : null,
       );
-      const clearPreviousConstructions = Boolean(
-        'clear_previous_constructions' in item &&
-          (item as { clear_previous_constructions: unknown }).clear_previous_constructions,
-      );
       if (!text && !image && !canvasSnapshot) continue;
-      out.push({ text, image, canvasSnapshot, clearPreviousConstructions });
+      out.push({ text, image, canvasSnapshot });
     } else if (typeof item === 'string' && item.trim()) {
-      out.push({ text: item.trim(), image: null, canvasSnapshot: null, clearPreviousConstructions: false });
+      out.push({ text: item.trim(), image: null, canvasSnapshot: null });
     }
   }
   return out;
@@ -80,19 +74,19 @@ export function instructionStepsHaveCanvasSnapshot(steps: InstructionStepContent
   return steps.some(s => s.canvasSnapshot != null);
 }
 
-/** Úkoly, u kterých se nemá mezi kroky mazat kresba (dočasná oprava v DB). */
-const DISABLE_CLEAR_PREVIOUS_ASSIGNMENT_IDS = new Set([
-  '541e27b8-25cc-49e8-ad8c-122346200d30',
+/** Úkoly, kde má být každý krok na novém plátně i bez sloupce v DB. */
+const FORCE_NEW_CANVAS_PER_STEP_IDS = new Set([
+  '7c3e9b12-4f8a-4d6e-9c21-8b5a0e17d4f3',
 ]);
 
-export function applyAssignmentInstructionStepFixes(
-  assignmentId: string | undefined,
-  steps: InstructionStepContent[],
-): InstructionStepContent[] {
-  if (!assignmentId || !DISABLE_CLEAR_PREVIOUS_ASSIGNMENT_IDS.has(assignmentId)) {
-    return steps;
-  }
-  return steps.map(s => ({ ...s, clearPreviousConstructions: false }));
+export function assignmentUsesNewCanvasPerStep(row: {
+  id?: string;
+  new_canvas_per_step?: unknown;
+  instruction_steps?: unknown;
+}): boolean {
+  if (row.id && FORCE_NEW_CANVAS_PER_STEP_IDS.has(row.id)) return true;
+  if (row.new_canvas_per_step === true) return true;
+  return instructionStepsHaveCanvasSnapshot(normalizeInstructionSteps(row.instruction_steps));
 }
 
 /** Sloučí texty kroků do jednoho pole pro `instruction_text` (zpětná kompatibilita). */
@@ -109,10 +103,7 @@ export function assignmentInstructionDisplay(row: {
 }):
   | { kind: 'steps'; steps: InstructionStepContent[] }
   | { kind: 'text'; text: string } {
-  const steps = applyAssignmentInstructionStepFixes(
-    row.id,
-    normalizeInstructionSteps(row.instruction_steps),
-  );
+  const steps = normalizeInstructionSteps(row.instruction_steps);
   if (steps.length > 0) return { kind: 'steps', steps };
   return { kind: 'text', text: row.instruction_text || '' };
 }
@@ -130,6 +121,5 @@ export function serializeInstructionStep(step: InstructionStepContent): Instruct
   const out: InstructionStep = { text: step.text };
   if (step.image) out.image = step.image;
   if (step.canvasSnapshot) out.canvas_snapshot = step.canvasSnapshot;
-  if (step.clearPreviousConstructions) out.clear_previous_constructions = true;
   return out;
 }

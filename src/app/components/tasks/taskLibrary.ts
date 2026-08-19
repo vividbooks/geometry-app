@@ -6,12 +6,18 @@ import { assignmentPublicUrl } from '@/app/utils/appUrl';
  *
  * Náhled: z DB (`instruction_image`), pokud existuje; `imageUrl` může přebít statickým obrázkem.
  */
+export type TaskLibraryGrade = 6 | 7 | 8 | 9;
+
+export const TASK_LIBRARY_GRADES: TaskLibraryGrade[] = [6, 7, 8, 9];
+
 export type TaskLibraryEntry = {
   key: string;
   title: string;
   assignmentId?: string;
   studentUrl?: string;
   imageUrl?: string;
+  /** Ročník ZŠ; výchozí 6. */
+  grade?: TaskLibraryGrade;
 };
 
 /** Výchozí prázdná knihovna — doplň položky s `assignmentId` z `geometry_circuit_assignments`. */
@@ -116,7 +122,28 @@ export const TASK_LIBRARY: TaskLibraryEntry[] = [
     title: 'Středová souměrnost 3',
     assignmentId: 'e9ce3925-a2c9-4086-b579-15280cff2375',
   },
+  {
+    key: '7c3e9b12-4f8a-4d6e-9c21-8b5a0e17d4f3',
+    title: 'Konstrukce trojúhelníků',
+    assignmentId: '7c3e9b12-4f8a-4d6e-9c21-8b5a0e17d4f3',
+    grade: 7,
+  },
 ];
+
+export function taskLibraryGradeOf(entry: TaskLibraryEntry): TaskLibraryGrade {
+  return entry.grade ?? 6;
+}
+
+export function taskLibraryEntriesForGrade(
+  entries: TaskLibraryEntry[],
+  grade: TaskLibraryGrade,
+): TaskLibraryEntry[] {
+  return entries.filter(entry => taskLibraryGradeOf(entry) === grade);
+}
+
+export function formatTaskLibraryGradeLabel(grade: TaskLibraryGrade): string {
+  return `${grade}. ročník`;
+}
 
 /** Absolutni src pro <img> (Vite base + relativni cesta z public). */
 export function resolveLibraryImageSrc(imageUrl: string | undefined): string | null {

@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight, GripVertical, Image as ImageIcon } from 'luc
 import { ShareModal } from '../components/ShareModal';
 import '../../../rysovani/src/index.css';
 import type { GeometrySubmissionSnapshot } from '../../../rysovani/src/components/FreeGeometryEditor';
-import { formatGeometrySubmission } from '../utils/geometrySubmissionCodec';
+import { formatGeometryStepSubmissions, formatGeometrySubmission, geometrySnapshotIsEmpty } from '../utils/geometrySubmissionCodec';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -20,7 +20,7 @@ import { getSupabase } from '@/lib/supabase';
 import { CIRCUIT_ASSIGNMENTS_TABLE, CIRCUIT_SUBMISSIONS_TABLE } from '@/lib/circuitTables';
 import { submissionPublicUrl } from '../utils/appUrl';
 import { normalizeInitialCanvasSnapshot } from '../utils/assignmentCanvasFixes';
-import { assignmentInstructionDisplay, parseCanvasSnapshot } from '../utils/instructionSteps';
+import { assignmentInstructionDisplay, assignmentUsesNewCanvasPerStep, parseCanvasSnapshot } from '../utils/instructionSteps';
 import { toast } from 'sonner';
 
 const FreeGeometryEditor = lazy(() =>
@@ -74,6 +74,10 @@ function noteStorageKey(assignmentId: string) {
   return `${NOTE_KEY_PREFIX}${assignmentId}`;
 }
 
+function emptyGeometrySnapshot(): GeometrySubmissionSnapshot {
+  return { points: [], shapes: [], freehandPaths: [] };
+}
+
 type AssignmentRow = {
   id: string;
   title?: string;
@@ -81,6 +85,7 @@ type AssignmentRow = {
   instruction_image: string | null;
   instruction_steps?: unknown;
   initial_canvas_snapshot?: unknown;
+  new_canvas_per_step?: boolean;
 };
 
 class StudentAssignmentErrorBoundary extends Component<
@@ -148,6 +153,7 @@ export default function StudentAssignmentPage() {
     useState<GeometrySubmissionSnapshot | null>(null);
   const [editorCanvasReady, setEditorCanvasReady] = useState(false);
   const prevStepIndexRef = useRef(0);
+  const stepSnapshotsRef = useRef<(GeometrySubmissionSnapshot | null)[]>([]);
 
   useEffect(() => {
     sessionStorage.setItem(ASIDE_W_KEY, String(asideWidth));
@@ -263,6 +269,13 @@ export default function StudentAssignmentPage() {
     }
   }, [assignmentId, studentNote]);
 
+  const instructionView = useMemo(() => {
+    return assignment ? assignmentInstructionDisplay(assignment) : null;
+  }, [assignment]);
+
+  const newCanvasPerStep = assignment ? assignmentUsesNewCanvasPerStep(assignment) : false;
+  const stepsCount = instructionView?.kind === 'steps' ? instructionView.steps.length : 0;
+
   const collectGeometrySubmission = useCallback((): string | null => {
     const fn = submissionSnapshotRef.current;
     if (!fn) {
@@ -274,14 +287,23 @@ export default function StudentAssignmentPage() {
       toast.error('Nepodařilo se přečíst plátno.');
       return null;
     }
-    const empty =
-      snap.points.length === 0 && snap.shapes.length === 0 && snap.freehandPaths.length === 0;
-    if (empty) {
+    if (newCanvasPerStep && stepsCount > 0) {
+      const saved = [...stepSnapshotsRef.current];
+      saved[stepIndex] = snap;
+      stepSnapshotsRef.current = saved;
+      const steps = Array.from({ length: stepsCount }, (_, i) => saved[i] ?? emptyGeometrySnapshot());
+      if (steps.every(geometrySnapshotIsEmpty)) {
+        toast.error('Plátna jsou prázdná – v aspoň jednom kroku něco narýsuj.');
+        return null;
+      }
+      return formatGeometryStepSubmissions(steps);
+    }
+    if (geometrySnapshotIsEmpty(snap)) {
       toast.error('Plátno je prázdné – něco narýsuj.');
       return null;
     }
     return formatGeometrySubmission(snap);
-  }, []);
+  }, [newCanvasPerStep, stepIndex, stepsCount]);
 
   const handleSubmit = useCallback(() => {
     const encoded = collectGeometrySubmission();
@@ -317,10 +339,6 @@ export default function StudentAssignmentPage() {
     void performSubmit(encoded, n);
   }, [assignmentId, gateName, performSubmit, collectGeometrySubmission]);
 
-  const instructionView = useMemo(() => {
-    return assignment ? assignmentInstructionDisplay(assignment) : null;
-  }, [assignment]);
-
   const resolveGlobalCanvasSnapshot = useCallback((): GeometrySubmissionSnapshot | null => {
     if (!assignment?.initial_canvas_snapshot) return null;
     const raw =
@@ -342,7 +360,6 @@ export default function StudentAssignmentPage() {
     [assignment, usesGlobalSharedCanvas, resolveGlobalCanvasSnapshot],
   );
 
-  const stepsCount = instructionView?.kind === 'steps' ? instructionView.steps.length : 0;
   const activeStep =
     instructionView?.kind === 'steps' && stepsCount > 0
       ? instructionView.steps[Math.min(Math.max(0, stepIndex), stepsCount - 1)]
@@ -356,25 +373,29 @@ export default function StudentAssignmentPage() {
     setEditorInitialSnapshot(baselineSnapshotForStep(0));
     setCanvasSessionKey(0);
     prevStepIndexRef.current = 0;
+    stepSnapshotsRef.current = [];
     setEditorCanvasReady(true);
   }, [loadState, assignment, assignmentId, baselineSnapshotForStep]);
 
   useEffect(() => {
     if (loadState !== 'ready' || !editorCanvasReady || instructionView?.kind !== 'steps') return;
+    if (!newCanvasPerStep) return;
     const prev = prevStepIndexRef.current;
     if (prev === stepIndex) return;
+    const currentSnap = submissionSnapshotRef.current?.() ?? null;
+    const saved = [...stepSnapshotsRef.current];
+    saved[prev] = currentSnap;
+    stepSnapshotsRef.current = saved;
     prevStepIndexRef.current = stepIndex;
-    const step = instructionView.steps[stepIndex];
-    if (step?.clearPreviousConstructions) {
-      setEditorInitialSnapshot(baselineSnapshotForStep(stepIndex));
-      setCanvasSessionKey(k => k + 1);
-    }
+    setEditorInitialSnapshot(saved[stepIndex] ?? baselineSnapshotForStep(stepIndex));
+    setCanvasSessionKey(k => k + 1);
   }, [
     stepIndex,
     loadState,
     editorCanvasReady,
     instructionView,
     baselineSnapshotForStep,
+    newCanvasPerStep,
   ]);
 
   const geometryEditorKey = `${assignmentId}-canvas-${canvasSessionKey}`;
@@ -548,6 +569,11 @@ export default function StudentAssignmentPage() {
                           style={{ width: `${((Math.min(stepIndex + 1, stepsCount)) / stepsCount) * 100}%` }}
                         />
                       </div>
+                      {newCanvasPerStep ? (
+                        <p className="mt-2 text-xs leading-relaxed text-white/70">
+                          Tento krok má vlastní plátno. Rýsování z ostatních kroků zůstane uložené.
+                        </p>
+                      ) : null}
                     </div>
                   ) : null}
 
