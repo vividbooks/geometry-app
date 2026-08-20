@@ -238,6 +238,24 @@ export const TASK_LIBRARY: TaskLibraryEntry[] = [
     grade: 8,
   },
   {
+    key: 'ce22a06a-5c8c-4fe9-b495-1b64e965ce71',
+    title: 'Různé konstrukční úlohy 1',
+    assignmentId: 'ce22a06a-5c8c-4fe9-b495-1b64e965ce71',
+    grade: 8,
+  },
+  {
+    key: '6f403ea4-d726-40eb-b176-d01784a7d2f5',
+    title: 'Různé konstrukční úlohy 2',
+    assignmentId: '6f403ea4-d726-40eb-b176-d01784a7d2f5',
+    grade: 8,
+  },
+  {
+    key: '0878fc3e-0be6-42b4-9fd2-4cda24027c77',
+    title: 'Různé konstrukční úlohy 3',
+    assignmentId: '0878fc3e-0be6-42b4-9fd2-4cda24027c77',
+    grade: 8,
+  },
+  {
     key: '4a1829f5-69f3-4737-b8e6-8b898b176901',
     title: 'Rovnoběžník s delší úhlopříčkou',
     assignmentId: '4a1829f5-69f3-4737-b8e6-8b898b176901',
