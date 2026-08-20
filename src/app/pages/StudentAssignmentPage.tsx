@@ -404,12 +404,30 @@ export default function StudentAssignmentPage() {
     if (!assignment) return;
     setPdfBusy(true);
     try {
+      const live = submissionSnapshotRef.current?.() ?? null;
+      let solutionSnapshots: GeometrySubmissionSnapshot[] | undefined;
+      if (live) {
+        if (newCanvasPerStep && stepsCount > 0) {
+          const saved = [...stepSnapshotsRef.current];
+          saved[stepIndex] = live;
+          stepSnapshotsRef.current = saved;
+          solutionSnapshots = Array.from(
+            { length: stepsCount },
+            (_, i) => saved[i] ?? baselineSnapshotForStep(i) ?? emptyGeometrySnapshot(),
+          );
+        } else if (stepsCount > 0) {
+          solutionSnapshots = Array.from({ length: stepsCount }, () => live);
+        } else {
+          solutionSnapshots = [live];
+        }
+      }
       await downloadAssignmentPdf({
         id: assignment.id,
         title: assignment.title,
         instruction_text: assignment.instruction_text,
         instruction_image: assignment.instruction_image,
         instruction_steps: assignment.instruction_steps,
+        solutionSnapshots,
       });
       toast.success('PDF se stahuje');
     } catch (e) {
@@ -418,7 +436,7 @@ export default function StudentAssignmentPage() {
     } finally {
       setPdfBusy(false);
     }
-  }, [assignment]);
+  }, [assignment, baselineSnapshotForStep, newCanvasPerStep, stepIndex, stepsCount]);
 
   const geometryEditorKey = `${assignmentId}-canvas-${canvasSessionKey}`;
 
@@ -528,7 +546,7 @@ export default function StudentAssignmentPage() {
                   onClick={() => void handleDownloadPdf()}
                   disabled={pdfBusy}
                   className="flex shrink-0 items-center gap-1.5 rounded-xl border border-white/20 bg-[#4f566b] px-3 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:border-white/30 hover:bg-[#5c647a] disabled:cursor-not-allowed disabled:opacity-50"
-                  title="Stáhnout zadání jako PDF"
+                  title="Stáhnout zadání i s aktuálním rýsováním jako PDF"
                 >
                   <Download className="size-4 shrink-0 opacity-90" aria-hidden />
                   {pdfBusy ? 'PDF…' : 'PDF'}

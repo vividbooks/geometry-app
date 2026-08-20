@@ -10,6 +10,10 @@ export type AssignmentPdfSource = {
   instruction_text: string;
   instruction_image?: string | null;
   instruction_steps?: unknown;
+  /** Aktuální plátna z otevřeného úkolu (po krocích). Přepíší výchozí náčrt zadání. */
+  solutionSnapshots?: (GeometrySubmissionSnapshot | null)[];
+  studentName?: string | null;
+  studentNote?: string | null;
 };
 
 const PAGE_W = 1191;
@@ -78,6 +82,9 @@ function snapshotBounds(snap: GeometrySubmissionSnapshot): {
   for (const p of points) {
     if (p.hidden) continue;
     add(p.x, p.y);
+  }
+  for (const path of snap.freehandPaths ?? []) {
+    for (const q of path.points ?? []) add(q.x, q.y);
   }
   for (const s of shapes) {
     const p1 = pointById(points, s.definition?.p1Id);
@@ -202,6 +209,21 @@ function drawSnapshot(
   }
 
   ctx.setLineDash([]);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (const path of snap.freehandPaths ?? []) {
+    const pts = path.points ?? [];
+    if (pts.length < 2) continue;
+    ctx.beginPath();
+    ctx.moveTo(tx(pts[0]!.x), ty(pts[0]!.y));
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(tx(pts[i]!.x), ty(pts[i]!.y));
+    ctx.strokeStyle = path.color || '#111827';
+    ctx.lineWidth = Math.max(1.2, (path.width || 2) * 1.4);
+    ctx.globalAlpha = path.isHighlight ? 0.45 : 1;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
   ctx.strokeStyle = '#111827';
   ctx.lineWidth = 2.4;
   ctx.lineCap = 'round';
@@ -362,7 +384,7 @@ function downloadBlob(blob: Blob, filename: string) {
 
 function snapshotIsEmpty(snap: GeometrySubmissionSnapshot): boolean {
   const pts = (snap.points ?? []).filter(p => !(p as Pt).hidden);
-  return pts.length === 0 && (snap.shapes ?? []).length === 0;
+  return pts.length === 0 && (snap.shapes ?? []).length === 0 && (snap.freehandPaths ?? []).length === 0;
 }
 
 function stepsOf(row: AssignmentPdfSource): {
@@ -381,6 +403,21 @@ function stepsOf(row: AssignmentPdfSource): {
     view.kind === 'steps'
       ? view.steps
       : [{ text: view.text, image: fallbackImage, canvasSnapshot: null }];
+  const solutions = row.solutionSnapshots;
+  if (solutions && solutions.length > 0) {
+    const merged = steps.map((step, i) => ({
+      ...step,
+      canvasSnapshot: solutions[i] ?? solutions[solutions.length - 1] ?? step.canvasSnapshot,
+    }));
+    for (let i = merged.length; i < solutions.length; i++) {
+      merged.push({
+        text: '',
+        image: null,
+        canvasSnapshot: solutions[i] ?? null,
+      });
+    }
+    return { title, fallbackImage, steps: merged };
+  }
   return { title, fallbackImage, steps };
 }
 
@@ -391,6 +428,8 @@ async function renderStepPage(opts: {
   headerLeft: string;
   headerRight: string;
   pageLabel: string;
+  studentLine?: string;
+  note?: string;
 }): Promise<HTMLCanvasElement> {
   const canvas = document.createElement('canvas');
   canvas.width = PAGE_W;
@@ -419,6 +458,12 @@ async function renderStepPage(opts: {
     ctx.fillText(line, MARGIN, y);
     y += 34;
   }
+  if (opts.studentLine) {
+    ctx.fillStyle = '#334155';
+    ctx.font = '18px system-ui, sans-serif';
+    ctx.fillText(opts.studentLine, MARGIN, y);
+    y += 26;
+  }
   y += 10;
 
   ctx.strokeStyle = '#e2e8f0';
@@ -428,6 +473,17 @@ async function renderStepPage(opts: {
   ctx.lineTo(PAGE_W - MARGIN, y);
   ctx.stroke();
   y += 22;
+
+  if (opts.note) {
+    ctx.fillStyle = '#475569';
+    ctx.font = '16px system-ui, sans-serif';
+    const noteLines = wrapText(ctx, `Poznámka: ${opts.note}`, PAGE_W - MARGIN * 2);
+    for (const line of noteLines.slice(0, 5)) {
+      ctx.fillText(line, MARGIN, y);
+      y += 22;
+    }
+    y += 10;
+  }
 
   const body = opts.step.text.trim();
   if (body) {
@@ -581,7 +637,11 @@ export async function buildAssignmentsPdfBlob(
         fallbackImage,
         headerLeft: collection?.heading
           ? `${collection.heading} · pracovní list`
-          : 'Rýsování · pracovní list',
+          : row.studentName?.trim()
+            ? `Odevzdání · ${row.studentName.trim()}`
+            : row.solutionSnapshots?.length
+              ? 'Rýsování · zadání s řešením'
+              : 'Rýsování · pracovní list',
         headerRight:
           rows.length > 1
             ? `Úkol ${t + 1} / ${rows.length}${steps.length > 1 ? ` · krok ${i + 1}/${steps.length}` : ''}`
@@ -589,6 +649,8 @@ export async function buildAssignmentsPdfBlob(
               ? `Krok ${i + 1} / ${steps.length}`
               : 'Úkol',
         pageLabel: String(pages.length + 1),
+        studentLine: row.studentName?.trim() ? `Student: ${row.studentName.trim()}` : undefined,
+        note: i === 0 ? row.studentNote?.trim() || undefined : undefined,
       });
       pages.push(await canvasToJpegBytes(canvas));
     }
@@ -599,7 +661,10 @@ export async function buildAssignmentsPdfBlob(
 export async function downloadAssignmentPdf(row: AssignmentPdfSource): Promise<void> {
   const title = row.title?.trim() || 'Úkol';
   const pdf = await buildAssignmentsPdfBlob([row]);
-  downloadBlob(pdf, filenameFromTitle(title));
+  const parts = [title];
+  if (row.studentName?.trim()) parts.push(row.studentName.trim());
+  if (row.solutionSnapshots?.length) parts.push('s-resenim');
+  downloadBlob(pdf, filenameFromTitle(parts.join(' ')));
 }
 
 export async function downloadAssignmentsPdf(

@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useCallback, lazy, Suspense } from 'react';
 import { useParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download } from 'lucide-react';
 import { TopBar } from '../components/TopBar';
 import type { ViewMode } from '../components/ComponentSvg';
 import { ComponentPalette, type Tool } from '../components/ComponentPalette';
@@ -10,6 +10,8 @@ import { CIRCUIT_ASSIGNMENTS_TABLE, CIRCUIT_SUBMISSIONS_TABLE } from '@/lib/circ
 import { decodeCircuit } from '../utils/circuitUrl';
 import { parseGeometrySubmissionAny } from '../utils/geometrySubmissionCodec';
 import { assignmentInstructionDisplay } from '../utils/instructionSteps';
+import { downloadAssignmentPdf } from '../utils/assignmentPdf';
+import { toast } from 'sonner';
 import { useIsTouch, useToolbarScale } from '../hooks/editorChrome';
 import '../../../rysovani/src/index.css';
 import type { GeometrySubmissionSnapshot } from '../../../rysovani/src/components/FreeGeometryEditor';
@@ -29,6 +31,7 @@ type SubmissionRow = {
 };
 
 type AssignmentRow = {
+  id?: string;
   title?: string;
   instruction_text: string;
   instruction_image: string | null;
@@ -52,6 +55,7 @@ export default function SubmissionViewPage() {
   const [submission, setSubmission] = useState<SubmissionRow | null>(null);
   const [assignment, setAssignment] = useState<AssignmentRow | null>(null);
   const [viewStepIndex, setViewStepIndex] = useState(0);
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   useEffect(() => {
     if (!submissionId) {
@@ -81,7 +85,7 @@ export default function SubmissionViewPage() {
 
         const { data: asg } = await supabase
           .from(CIRCUIT_ASSIGNMENTS_TABLE)
-          .select('title, instruction_text, instruction_image, instruction_steps')
+          .select('id, title, instruction_text, instruction_image, instruction_steps')
           .eq('id', (sub as SubmissionRow).assignment_id)
           .maybeSingle();
 
@@ -124,6 +128,32 @@ export default function SubmissionViewPage() {
     }
     return [parsedGeometry.snapshot as GeometrySubmissionSnapshot];
   }, [parsedGeometry]);
+
+  const handleDownloadPdf = useCallback(async () => {
+    if (!assignment || geometrySnapshots.length === 0) {
+      toast.error('Zadání nebo rýsování se nepodařilo načíst.');
+      return;
+    }
+    setPdfBusy(true);
+    try {
+      await downloadAssignmentPdf({
+        id: assignment.id ?? submission?.assignment_id,
+        title: assignment.title,
+        instruction_text: assignment.instruction_text,
+        instruction_image: assignment.instruction_image,
+        instruction_steps: assignment.instruction_steps,
+        solutionSnapshots: geometrySnapshots,
+        studentName: submission?.student_name,
+        studentNote: submission?.student_note,
+      });
+      toast.success('PDF se stahuje');
+    } catch (e) {
+      console.error(e);
+      toast.error('PDF se nepodařilo vytvořit.');
+    } finally {
+      setPdfBusy(false);
+    }
+  }, [assignment, geometrySnapshots, submission]);
 
   if (!submissionId) {
     return <div className="min-h-screen flex items-center justify-center text-zinc-600">Neplatný odkaz.</div>;
@@ -215,7 +245,21 @@ export default function SubmissionViewPage() {
 
       <aside className="flex w-[min(100vw,288px)] min-w-0 shrink-0 flex-col border-l border-zinc-200 bg-zinc-50/90">
         <div className="shrink-0 border-b border-zinc-200/80 px-4 py-3">
-          <div className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Odevzdání</div>
+          <div className="flex items-start justify-between gap-2">
+            <div className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Odevzdání</div>
+            {submissionKind === 'geometry' ? (
+              <button
+                type="button"
+                onClick={() => void handleDownloadPdf()}
+                disabled={pdfBusy}
+                className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2.5 text-sm font-medium text-zinc-800 shadow-sm transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-40"
+                title="Stáhnout odevzdaný úkol jako PDF"
+              >
+                <Download className="size-3.5 shrink-0 opacity-80" aria-hidden />
+                {pdfBusy ? 'PDF…' : 'PDF'}
+              </button>
+            ) : null}
+          </div>
           <p className="mt-2 text-sm text-zinc-700">
             <span className="font-medium text-zinc-900">Student:</span> {submission.student_name}
           </p>
