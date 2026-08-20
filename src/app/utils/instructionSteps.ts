@@ -97,6 +97,27 @@ export function instructionStepsToFallbackText(stepTexts: string[]): string {
   return stepTexts.map((t, i) => `${i + 1}. ${t}`).join('\n\n');
 }
 
+const CIRCUMCIRCLE_ASSIGNMENT_ID = '4468a8e9-cb79-4dd7-9063-36734bd9ea4e';
+const CIRCUMCIRCLE_STEP_4_TEXT =
+  'Narýsuj libovolný trojúhelník včetně jeho kružnice opsané, aby platilo, že střed této kružnice leží na některé ze stran trojúhelníku.';
+
+function withAssignmentStepOverrides(
+  assignmentId: string | undefined,
+  steps: InstructionStepContent[],
+): InstructionStepContent[] {
+  if (assignmentId === CIRCUMCIRCLE_ASSIGNMENT_ID && steps.length === 3) {
+    return [
+      ...steps,
+      {
+        text: CIRCUMCIRCLE_STEP_4_TEXT,
+        image: null,
+        canvasSnapshot: { points: [], shapes: [], freehandPaths: [] },
+      },
+    ];
+  }
+  return steps;
+}
+
 export function assignmentInstructionDisplay(row: {
   id?: string;
   instruction_steps?: unknown;
@@ -104,7 +125,7 @@ export function assignmentInstructionDisplay(row: {
 }):
   | { kind: 'steps'; steps: InstructionStepContent[] }
   | { kind: 'text'; text: string } {
-  const steps = normalizeInstructionSteps(row.instruction_steps);
+  const steps = withAssignmentStepOverrides(row.id, normalizeInstructionSteps(row.instruction_steps));
   if (steps.length > 0) return { kind: 'steps', steps };
   return { kind: 'text', text: row.instruction_text || '' };
 }

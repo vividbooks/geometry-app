@@ -148,9 +148,33 @@ export const TASK_LIBRARY: TaskLibraryEntry[] = [
     grade: 7,
   },
   {
-    key: '6fe2b87a-b21e-4fc8-b362-e21ccd2d52d7',
-    title: 'Úkol 1',
-    assignmentId: '6fe2b87a-b21e-4fc8-b362-e21ccd2d52d7',
+    key: 'c60a96b6-06d7-44be-99b9-d591bc65384b',
+    title: 'Sečny',
+    assignmentId: 'c60a96b6-06d7-44be-99b9-d591bc65384b',
+    grade: 8,
+  },
+  {
+    key: '27cc796f-e013-4838-90a0-59ab02470062',
+    title: 'Tečny',
+    assignmentId: '27cc796f-e013-4838-90a0-59ab02470062',
+    grade: 8,
+  },
+  {
+    key: 'b03b566b-83c4-4efe-9dd1-f3eac24e5ae0',
+    title: 'Vzdálenost bodů',
+    assignmentId: 'b03b566b-83c4-4efe-9dd1-f3eac24e5ae0',
+    grade: 8,
+  },
+  {
+    key: '4468a8e9-cb79-4dd7-9063-36734bd9ea4e',
+    title: 'Kružnice trojúhelníku opsaná',
+    assignmentId: '4468a8e9-cb79-4dd7-9063-36734bd9ea4e',
+    grade: 8,
+  },
+  {
+    key: '7b382a2c-ec8c-486b-a2bd-e5aa46d830e9',
+    title: 'Kružnice trojúhelníku vepsaná',
+    assignmentId: '7b382a2c-ec8c-486b-a2bd-e5aa46d830e9',
     grade: 8,
   },
 ];
