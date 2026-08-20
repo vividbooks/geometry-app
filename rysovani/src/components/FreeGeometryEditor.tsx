@@ -8314,6 +8314,32 @@ export function FreeGeometryEditor({
         }
       }
 
+      // Bod na obvodu kružnice (střed zůstává křížkem)
+      let circleRadialAngle = 0;
+      const circleShape = !lineShape
+        ? shapes.find(s => {
+            if (s.type !== 'circle' && s.type !== 'circleArc') return false;
+            if (s.definition.p1Id === p.id) return false;
+            const centerRaw = points.find(pt => pt.id === s.definition.p1Id);
+            const rimRaw = s.definition.p2Id ? points.find(pt => pt.id === s.definition.p2Id) : null;
+            if (!centerRaw || !rimRaw) return false;
+            const center = getLivePoint(centerRaw);
+            const rim = getLivePoint(rimRaw);
+            if (s.definition.p2Id === p.id) return true;
+            const r = Math.hypot(rim.x - center.x, rim.y - center.y);
+            if (r < 0.0001) return false;
+            const dist = Math.abs(Math.hypot(p.x - center.x, p.y - center.y) - r);
+            return dist * scale < 4;
+          })
+        : undefined;
+      if (circleShape) {
+        const centerRaw = points.find(pt => pt.id === circleShape.definition.p1Id);
+        if (centerRaw) {
+          const center = getLivePoint(centerRaw);
+          circleRadialAngle = Math.atan2(p.y - center.y, p.x - center.x);
+        }
+      }
+
       // Výběr pro smazání (dashed ring)
       if (isActiveSelection) {
         ctx.beginPath();
@@ -8348,12 +8374,12 @@ export function FreeGeometryEditor({
         ctx.stroke();
       }
 
-      if (lineShape) {
-        // Bod je součástí přímky - nakreslit čárku KOLMOU na přímku
-        const perpAngle = lineAngle + Math.PI / 2; // Kolmý úhel
-        const dx = Math.cos(perpAngle) * tickLenWorld / 2;
-        const dy = Math.sin(perpAngle) * tickLenWorld / 2;
-        
+      if (lineShape || circleShape) {
+        // Na přímce: čárka kolmá na přímku. Na kružnici: čárka kolmá na oblouk (podél poloměru).
+        const tickAngle = lineShape ? lineAngle + Math.PI / 2 : circleRadialAngle;
+        const dx = Math.cos(tickAngle) * tickLenWorld / 2;
+        const dy = Math.sin(tickAngle) * tickLenWorld / 2;
+
         ctx.beginPath();
         ctx.moveTo(p.x - dx, p.y - dy);
         ctx.lineTo(p.x + dx, p.y + dy);

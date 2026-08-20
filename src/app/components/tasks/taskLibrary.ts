@@ -166,6 +166,12 @@ export const TASK_LIBRARY: TaskLibraryEntry[] = [
     grade: 8,
   },
   {
+    key: '01b99ac9-00ba-401c-bb64-13276890c918',
+    title: 'Vzdálenost bodu od přímky',
+    assignmentId: '01b99ac9-00ba-401c-bb64-13276890c918',
+    grade: 8,
+  },
+  {
     key: '4468a8e9-cb79-4dd7-9063-36734bd9ea4e',
     title: 'Kružnice trojúhelníku opsaná',
     assignmentId: '4468a8e9-cb79-4dd7-9063-36734bd9ea4e',
@@ -175,6 +181,12 @@ export const TASK_LIBRARY: TaskLibraryEntry[] = [
     key: '7b382a2c-ec8c-486b-a2bd-e5aa46d830e9',
     title: 'Kružnice trojúhelníku vepsaná',
     assignmentId: '7b382a2c-ec8c-486b-a2bd-e5aa46d830e9',
+    grade: 8,
+  },
+  {
+    key: '001f723d-8258-4b60-96ea-b6734d70bca3',
+    title: 'Kružnice trojúhelníku vepsaná 2',
+    assignmentId: '001f723d-8258-4b60-96ea-b6734d70bca3',
     grade: 8,
   },
 ];
