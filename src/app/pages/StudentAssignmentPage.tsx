@@ -1,6 +1,6 @@
 import { Component, useMemo, useState, useRef, useCallback, useEffect, lazy, Suspense } from 'react';
 import { useParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, GripVertical, Image as ImageIcon } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, GripVertical, Image as ImageIcon } from 'lucide-react';
 import { ShareModal } from '../components/ShareModal';
 import '../../../rysovani/src/index.css';
 import type { GeometrySubmissionSnapshot } from '../../../rysovani/src/components/FreeGeometryEditor';
@@ -21,6 +21,7 @@ import { CIRCUIT_ASSIGNMENTS_TABLE, CIRCUIT_SUBMISSIONS_TABLE } from '@/lib/circ
 import { submissionPublicUrl } from '../utils/appUrl';
 import { normalizeInitialCanvasSnapshot } from '../utils/assignmentCanvasFixes';
 import { assignmentInstructionDisplay, assignmentUsesNewCanvasPerStep, parseCanvasSnapshot } from '../utils/instructionSteps';
+import { downloadAssignmentPdf } from '../utils/assignmentPdf';
 import { toast } from 'sonner';
 
 const FreeGeometryEditor = lazy(() =>
@@ -147,6 +148,7 @@ export default function StudentAssignmentPage() {
   const [projectionOpacity, setProjectionOpacity] = useState(0.35);
   const [projectionSrc, setProjectionSrc] = useState<string | null>(null);
   const [autoDetectRequestId, setAutoDetectRequestId] = useState(0);
+  const [pdfBusy, setPdfBusy] = useState(false);
   const [autoDetectSrc, setAutoDetectSrc] = useState<string | null>(null);
   const [canvasSessionKey, setCanvasSessionKey] = useState(0);
   const [editorInitialSnapshot, setEditorInitialSnapshot] =
@@ -398,6 +400,26 @@ export default function StudentAssignmentPage() {
     newCanvasPerStep,
   ]);
 
+  const handleDownloadPdf = useCallback(async () => {
+    if (!assignment) return;
+    setPdfBusy(true);
+    try {
+      await downloadAssignmentPdf({
+        id: assignment.id,
+        title: assignment.title,
+        instruction_text: assignment.instruction_text,
+        instruction_image: assignment.instruction_image,
+        instruction_steps: assignment.instruction_steps,
+      });
+      toast.success('PDF se stahuje');
+    } catch (e) {
+      console.error(e);
+      toast.error('PDF se nepodařilo vytvořit.');
+    } finally {
+      setPdfBusy(false);
+    }
+  }, [assignment]);
+
   const geometryEditorKey = `${assignmentId}-canvas-${canvasSessionKey}`;
 
   useEffect(() => {
@@ -501,6 +523,16 @@ export default function StudentAssignmentPage() {
                 >
                   <GripVertical className="size-3.5 text-white/95" strokeWidth={2} aria-hidden />
                 </div>
+                <button
+                  type="button"
+                  onClick={() => void handleDownloadPdf()}
+                  disabled={pdfBusy}
+                  className="flex shrink-0 items-center gap-1.5 rounded-xl border border-white/20 bg-[#4f566b] px-3 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:border-white/30 hover:bg-[#5c647a] disabled:cursor-not-allowed disabled:opacity-50"
+                  title="Stáhnout zadání jako PDF"
+                >
+                  <Download className="size-4 shrink-0 opacity-90" aria-hidden />
+                  {pdfBusy ? 'PDF…' : 'PDF'}
+                </button>
                 <button
                   type="button"
                   onClick={() => setAsideCollapsed(true)}

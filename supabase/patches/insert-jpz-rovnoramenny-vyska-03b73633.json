@@ -1,0 +1,63 @@
+{
+  "id": "03b73633-c003-46dd-a9a3-1cd8253a2fea",
+  "title": "Rovnoramenný trojúhelník s výškou",
+  "instruction_text": "Bod B je vrcholem rovnoramenného trojúhelníku ABC se základnou AB. Úsečka BM je jednou z výšek tohoto trojúhelníku a bod M leží na straně AC. Vrchol A leží na přímce q.\n\nSestrojte vrcholy A a C, označte je a trojúhelník ABC narýsujte.",
+  "instruction_image": null,
+  "new_canvas_per_step": true,
+  "instruction_steps": [
+    {
+      "text": "Bod B je vrcholem rovnoramenného trojúhelníku ABC se základnou AB. Úsečka BM je jednou z výšek tohoto trojúhelníku a bod M leží na straně AC. Vrchol A leží na přímce q.\n\nSestrojte vrcholy A a C, označte je a trojúhelník ABC narýsujte.",
+      "canvas_snapshot": {
+        "points": [
+          {
+            "id": "pt-q1",
+            "x": 40,
+            "y": 350,
+            "label": "",
+            "locked": true,
+            "hidden": true
+          },
+          {
+            "id": "pt-q2",
+            "x": 620,
+            "y": 350,
+            "label": "",
+            "locked": true,
+            "hidden": true
+          },
+          {
+            "id": "pt-b",
+            "x": 440,
+            "y": 250,
+            "label": "B",
+            "locked": true
+          },
+          {
+            "id": "pt-m",
+            "x": 310,
+            "y": 175,
+            "label": "M",
+            "locked": true
+          }
+        ],
+        "shapes": [
+          {
+            "id": "line-q",
+            "type": "line",
+            "label": "q",
+            "points": [
+              "pt-q1",
+              "pt-q2"
+            ],
+            "locked": true,
+            "definition": {
+              "p1Id": "pt-q1",
+              "p2Id": "pt-q2"
+            }
+          }
+        ],
+        "freehandPaths": []
+      }
+    }
+  ]
+}

@@ -1,0 +1,56 @@
+{
+  "id": "3f73cd7a-f6d9-46ef-a2f2-9f34d1479bbe",
+  "title": "Čtverec se stranou na přímce",
+  "instruction_text": "Bod O je středem čtverce ABCD. Strana BC leží na přímce p.\n\nSestrojte všechny vrcholy čtverce ABCD, označte je a čtverec narýsujte.",
+  "instruction_image": null,
+  "new_canvas_per_step": true,
+  "instruction_steps": [
+    {
+      "text": "Bod O je středem čtverce ABCD. Strana BC leží na přímce p.\n\nSestrojte všechny vrcholy čtverce ABCD, označte je a čtverec narýsujte.",
+      "canvas_snapshot": {
+        "points": [
+          {
+            "id": "pt-p1",
+            "x": 40,
+            "y": 340,
+            "label": "",
+            "locked": true,
+            "hidden": true
+          },
+          {
+            "id": "pt-p2",
+            "x": 620,
+            "y": 340,
+            "label": "",
+            "locked": true,
+            "hidden": true
+          },
+          {
+            "id": "pt-o",
+            "x": 300,
+            "y": 180,
+            "label": "O",
+            "locked": true
+          }
+        ],
+        "shapes": [
+          {
+            "id": "line-p",
+            "type": "line",
+            "label": "p",
+            "points": [
+              "pt-p1",
+              "pt-p2"
+            ],
+            "locked": true,
+            "definition": {
+              "p1Id": "pt-p1",
+              "p2Id": "pt-p2"
+            }
+          }
+        ],
+        "freehandPaths": []
+      }
+    }
+  ]
+}

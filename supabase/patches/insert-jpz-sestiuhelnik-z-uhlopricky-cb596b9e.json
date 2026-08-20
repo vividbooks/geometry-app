@@ -1,0 +1,47 @@
+{
+  "id": "cb596b9e-c109-48f9-874a-90abe34ba852",
+  "title": "Šestiúhelník z úhlopříčky",
+  "instruction_text": "Body A a D jsou protilehlé vrcholy pravidelného šestiúhelníku ABCDEF.\n\nSestrojte zbývající vrcholy B, C, E, F, označte je a šestiúhelník narýsujte.",
+  "instruction_image": null,
+  "new_canvas_per_step": true,
+  "instruction_steps": [
+    {
+      "text": "Body A a D jsou protilehlé vrcholy pravidelného šestiúhelníku ABCDEF.\n\nSestrojte zbývající vrcholy B, C, E, F, označte je a šestiúhelník narýsujte.",
+      "canvas_snapshot": {
+        "points": [
+          {
+            "id": "pt-a",
+            "x": 190,
+            "y": 240,
+            "label": "A",
+            "locked": true
+          },
+          {
+            "id": "pt-d",
+            "x": 450,
+            "y": 240,
+            "label": "D",
+            "locked": true
+          }
+        ],
+        "shapes": [
+          {
+            "id": "seg-ad",
+            "type": "segment",
+            "label": "",
+            "points": [
+              "pt-a",
+              "pt-d"
+            ],
+            "locked": true,
+            "definition": {
+              "p1Id": "pt-a",
+              "p2Id": "pt-d"
+            }
+          }
+        ],
+        "freehandPaths": []
+      }
+    }
+  ]
+}

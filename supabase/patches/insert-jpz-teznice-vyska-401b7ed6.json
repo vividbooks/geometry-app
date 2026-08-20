@@ -1,0 +1,54 @@
+{
+  "id": "401b7ed6-fd9b-42ab-8ea0-c147657c5ab6",
+  "title": "Trojúhelník z těžnice a výšky",
+  "instruction_text": "Úsečka AB je stranou c trojúhelníku ABC. Bod M leží uvnitř tohoto trojúhelníku na těžnici tc. Výška vc měří 4 cm.\n\n1. Sestrojte těžnici tc, chybějící vrchol C a trojúhelník ABC narýsujte.\n2. Sestrojte těžiště trojúhelníku ABC a označte jej písmenem T.",
+  "instruction_image": null,
+  "new_canvas_per_step": true,
+  "instruction_steps": [
+    {
+      "text": "Úsečka AB je stranou c trojúhelníku ABC. Bod M leží uvnitř tohoto trojúhelníku na těžnici tc. Výška vc měří 4 cm.\n\n1. Sestrojte těžnici tc, chybějící vrchol C a trojúhelník ABC narýsujte.\n2. Sestrojte těžiště trojúhelníku ABC a označte jej písmenem T.",
+      "canvas_snapshot": {
+        "points": [
+          {
+            "id": "pt-a",
+            "x": 140,
+            "y": 340,
+            "label": "A",
+            "locked": true
+          },
+          {
+            "id": "pt-b",
+            "x": 460,
+            "y": 340,
+            "label": "B",
+            "locked": true
+          },
+          {
+            "id": "pt-m",
+            "x": 270,
+            "y": 265,
+            "label": "M",
+            "locked": true
+          }
+        ],
+        "shapes": [
+          {
+            "id": "seg-ab",
+            "type": "segment",
+            "label": "",
+            "points": [
+              "pt-a",
+              "pt-b"
+            ],
+            "locked": true,
+            "definition": {
+              "p1Id": "pt-a",
+              "p2Id": "pt-b"
+            }
+          }
+        ],
+        "freehandPaths": []
+      }
+    }
+  ]
+}

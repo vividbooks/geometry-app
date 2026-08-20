@@ -1,0 +1,78 @@
+{
+  "id": "3e77b1d1-4a07-4b1a-b49f-a8cd108a8de5",
+  "title": "Tětiva dané délky",
+  "instruction_text": "Bod S je středem kružnice k. Tětiva XY kružnice k je rovnoběžná s přímkou p a měří 4 cm.\n\nSestrojte tětivu XY, označte její krajní body a tětivu narýsujte.\nNajděte všechna řešení.",
+  "instruction_image": null,
+  "new_canvas_per_step": true,
+  "instruction_steps": [
+    {
+      "text": "Bod S je středem kružnice k. Tětiva XY kružnice k je rovnoběžná s přímkou p a měří 4 cm.\n\nSestrojte tětivu XY, označte její krajní body a tětivu narýsujte.\nNajděte všechna řešení.",
+      "canvas_snapshot": {
+        "points": [
+          {
+            "id": "pt-p1",
+            "x": 40,
+            "y": 380,
+            "label": "",
+            "locked": true,
+            "hidden": true
+          },
+          {
+            "id": "pt-p2",
+            "x": 620,
+            "y": 340,
+            "label": "",
+            "locked": true,
+            "hidden": true
+          },
+          {
+            "id": "pt-s",
+            "x": 300,
+            "y": 200,
+            "label": "S",
+            "locked": true
+          },
+          {
+            "id": "pt-rim",
+            "x": 450,
+            "y": 200,
+            "label": "",
+            "locked": true,
+            "hidden": true
+          }
+        ],
+        "shapes": [
+          {
+            "id": "line-p",
+            "type": "line",
+            "label": "p",
+            "points": [
+              "pt-p1",
+              "pt-p2"
+            ],
+            "locked": true,
+            "definition": {
+              "p1Id": "pt-p1",
+              "p2Id": "pt-p2"
+            }
+          },
+          {
+            "id": "circ-k",
+            "type": "circle",
+            "label": "k",
+            "points": [
+              "pt-s",
+              "pt-rim"
+            ],
+            "locked": true,
+            "definition": {
+              "p1Id": "pt-s",
+              "p2Id": "pt-rim"
+            }
+          }
+        ],
+        "freehandPaths": []
+      }
+    }
+  ]
+}

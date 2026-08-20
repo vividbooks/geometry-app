@@ -1,0 +1,63 @@
+{
+  "id": "4a1829f5-69f3-4737-b8e6-8b898b176901",
+  "title": "Rovnoběžník s delší úhlopříčkou",
+  "instruction_text": "Body A a C jsou vrcholy rovnoběžníku ABCD, jehož úhlopříčka BD je dvakrát delší než úhlopříčka AC. Jeden ze zbývajících vrcholů B, D leží na přímce p.\n\nSestrojte vrcholy B a D, označte je a rovnoběžník ABCD narýsujte.\nNajděte všechna řešení.",
+  "instruction_image": null,
+  "new_canvas_per_step": true,
+  "instruction_steps": [
+    {
+      "text": "Body A a C jsou vrcholy rovnoběžníku ABCD, jehož úhlopříčka BD je dvakrát delší než úhlopříčka AC. Jeden ze zbývajících vrcholů B, D leží na přímce p.\n\nSestrojte vrcholy B a D, označte je a rovnoběžník ABCD narýsujte.\nNajděte všechna řešení.",
+      "canvas_snapshot": {
+        "points": [
+          {
+            "id": "pt-p1",
+            "x": 40,
+            "y": 130,
+            "label": "",
+            "locked": true,
+            "hidden": true
+          },
+          {
+            "id": "pt-p2",
+            "x": 620,
+            "y": 130,
+            "label": "",
+            "locked": true,
+            "hidden": true
+          },
+          {
+            "id": "pt-a",
+            "x": 190,
+            "y": 320,
+            "label": "A",
+            "locked": true
+          },
+          {
+            "id": "pt-c",
+            "x": 400,
+            "y": 210,
+            "label": "C",
+            "locked": true
+          }
+        ],
+        "shapes": [
+          {
+            "id": "line-p",
+            "type": "line",
+            "label": "p",
+            "points": [
+              "pt-p1",
+              "pt-p2"
+            ],
+            "locked": true,
+            "definition": {
+              "p1Id": "pt-p1",
+              "p2Id": "pt-p2"
+            }
+          }
+        ],
+        "freehandPaths": []
+      }
+    }
+  ]
+}

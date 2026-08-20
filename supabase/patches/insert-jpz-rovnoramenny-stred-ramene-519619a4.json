@@ -1,0 +1,63 @@
+{
+  "id": "519619a4-1076-4da8-b81a-bf1024d9b3a8",
+  "title": "Rovnoramenný trojúhelník se středem ramene",
+  "instruction_text": "Bod C je vrcholem rovnoramenného trojúhelníku ABC se základnou AB. Bod S je středem jednoho z jeho ramen. Jeden z vrcholů A, B leží na přímce q.\n\nSestrojte vrcholy A a B, označte je a trojúhelník ABC narýsujte.\nNajděte všechna řešení.",
+  "instruction_image": null,
+  "new_canvas_per_step": true,
+  "instruction_steps": [
+    {
+      "text": "Bod C je vrcholem rovnoramenného trojúhelníku ABC se základnou AB. Bod S je středem jednoho z jeho ramen. Jeden z vrcholů A, B leží na přímce q.\n\nSestrojte vrcholy A a B, označte je a trojúhelník ABC narýsujte.\nNajděte všechna řešení.",
+      "canvas_snapshot": {
+        "points": [
+          {
+            "id": "pt-q1",
+            "x": 40,
+            "y": 350,
+            "label": "",
+            "locked": true,
+            "hidden": true
+          },
+          {
+            "id": "pt-q2",
+            "x": 620,
+            "y": 350,
+            "label": "",
+            "locked": true,
+            "hidden": true
+          },
+          {
+            "id": "pt-c",
+            "x": 300,
+            "y": 130,
+            "label": "C",
+            "locked": true
+          },
+          {
+            "id": "pt-s",
+            "x": 390,
+            "y": 235,
+            "label": "S",
+            "locked": true
+          }
+        ],
+        "shapes": [
+          {
+            "id": "line-q",
+            "type": "line",
+            "label": "q",
+            "points": [
+              "pt-q1",
+              "pt-q2"
+            ],
+            "locked": true,
+            "definition": {
+              "p1Id": "pt-q1",
+              "p2Id": "pt-q2"
+            }
+          }
+        ],
+        "freehandPaths": []
+      }
+    }
+  ]
+}

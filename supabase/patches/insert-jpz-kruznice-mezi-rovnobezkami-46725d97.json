@@ -1,0 +1,86 @@
+{
+  "id": "46725d97-9b34-4003-ae15-c020b22a2704",
+  "title": "Kružnice mezi rovnoběžkami",
+  "instruction_text": "Přímky p a q jsou rovnoběžné. Kružnice k se dotýká obou přímek a prochází bodem M.\n\nSestrojte střed S kružnice k, označte jej a kružnici narýsujte.\nNajděte všechna řešení.",
+  "instruction_image": null,
+  "new_canvas_per_step": true,
+  "instruction_steps": [
+    {
+      "text": "Přímky p a q jsou rovnoběžné. Kružnice k se dotýká obou přímek a prochází bodem M.\n\nSestrojte střed S kružnice k, označte jej a kružnici narýsujte.\nNajděte všechna řešení.",
+      "canvas_snapshot": {
+        "points": [
+          {
+            "id": "pt-p1",
+            "x": 40,
+            "y": 140,
+            "label": "",
+            "locked": true,
+            "hidden": true
+          },
+          {
+            "id": "pt-p2",
+            "x": 620,
+            "y": 140,
+            "label": "",
+            "locked": true,
+            "hidden": true
+          },
+          {
+            "id": "pt-q1",
+            "x": 40,
+            "y": 340,
+            "label": "",
+            "locked": true,
+            "hidden": true
+          },
+          {
+            "id": "pt-q2",
+            "x": 620,
+            "y": 340,
+            "label": "",
+            "locked": true,
+            "hidden": true
+          },
+          {
+            "id": "pt-m",
+            "x": 350,
+            "y": 290,
+            "label": "M",
+            "locked": true
+          }
+        ],
+        "shapes": [
+          {
+            "id": "line-p",
+            "type": "line",
+            "label": "p",
+            "points": [
+              "pt-p1",
+              "pt-p2"
+            ],
+            "locked": true,
+            "definition": {
+              "p1Id": "pt-p1",
+              "p2Id": "pt-p2"
+            }
+          },
+          {
+            "id": "line-q",
+            "type": "line",
+            "label": "q",
+            "points": [
+              "pt-q1",
+              "pt-q2"
+            ],
+            "locked": true,
+            "definition": {
+              "p1Id": "pt-q1",
+              "p2Id": "pt-q2"
+            }
+          }
+        ],
+        "freehandPaths": []
+      }
+    }
+  ]
+}

@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   Check,
   Copy,
+  Download,
   DraftingCompass,
   ExternalLink,
   ImagePlus,
@@ -45,6 +46,7 @@ import {
 import { getSupabase, getSupabaseConfigInfo, isSupabaseConfigured } from '@/lib/supabase';
 import { CIRCUIT_ASSIGNMENTS_TABLE, CIRCUIT_SUBMISSIONS_TABLE } from '@/lib/circuitTables';
 import { assignmentPublicUrl } from '../../utils/appUrl';
+import { downloadAssignmentPdf, downloadAssignmentsPdf } from '../../utils/assignmentPdf';
 import {
   TASK_LIBRARY,
   TASK_LIBRARY_GRADES,
@@ -340,6 +342,8 @@ export function TasksSheet({
   const [assignmentQrOpen, setAssignmentQrOpen] = useState(false);
   const [assignmentQrLink, setAssignmentQrLink] = useState<string>('');
   const [assignmentQrTitle, setAssignmentQrTitle] = useState<string>('');
+  const [pdfDownloadingId, setPdfDownloadingId] = useState<string | null>(null);
+  const [pdfDownloadingGrade, setPdfDownloadingGrade] = useState(false);
 
   const resetTasksUiState = () => {
     setTasksPanel('library');
@@ -765,6 +769,90 @@ export function TasksSheet({
     setAssignmentQrOpen(true);
   };
 
+  const handleDownloadGradePdf = async () => {
+    const supabase = resolveClient();
+    if (!supabase) {
+      toast.error('Supabase klient není k dispozici.');
+      return;
+    }
+    const entries = taskLibraryEntriesForGrade(taskEntries, libraryGrade);
+    const ids = entries
+      .map(e => e.assignmentId?.trim())
+      .filter((v): v is string => Boolean(v));
+    if (ids.length === 0) {
+      toast.error('V tomto ročníku nejsou úkoly ke stažení.');
+      return;
+    }
+    setPdfDownloadingGrade(true);
+    try {
+      const { data, error } = await supabase
+        .from(CIRCUIT_ASSIGNMENTS_TABLE)
+        .select('id, title, instruction_text, instruction_image, instruction_steps')
+        .in('id', ids);
+      if (error) throw error;
+      const byId = new Map((data ?? []).map((row: { id: string }) => [row.id, row]));
+      const rows = ids
+        .map(id => byId.get(id))
+        .filter(Boolean)
+        .map((row: any) => ({
+          id: row.id,
+          title: (row.title && String(row.title).trim()) || 'Úkol',
+          instruction_text: row.instruction_text ?? '',
+          instruction_image: row.instruction_image ?? null,
+          instruction_steps: row.instruction_steps,
+        }));
+      if (rows.length === 0) {
+        toast.error('Zadání se nepodařilo načíst.');
+        return;
+      }
+      const gradeLabel = formatTaskLibraryGradeLabel(libraryGrade);
+      await downloadAssignmentsPdf(rows, `ukoly-${libraryGrade}-rocnik`, {
+        heading: gradeLabel,
+        subheading: `${rows.length} konstrukčních úloh`,
+      });
+      toast.success(`PDF (${rows.length} úkolů) se stahuje`);
+    } catch (e) {
+      console.error(e);
+      toast.error('PDF se nepodařilo vytvořit.');
+    } finally {
+      setPdfDownloadingGrade(false);
+    }
+  };
+
+  const handleDownloadAssignmentPdf = async (assignmentId: string, fallbackTitle: string) => {
+    const supabase = resolveClient();
+    if (!supabase) {
+      toast.error('Supabase klient není k dispozici.');
+      return;
+    }
+    setPdfDownloadingId(assignmentId);
+    try {
+      const { data, error } = await supabase
+        .from(CIRCUIT_ASSIGNMENTS_TABLE)
+        .select('id, title, instruction_text, instruction_image, instruction_steps')
+        .eq('id', assignmentId)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) {
+        toast.error('Zadání se nepodařilo načíst.');
+        return;
+      }
+      await downloadAssignmentPdf({
+        id: data.id,
+        title: (data.title && String(data.title).trim()) || fallbackTitle,
+        instruction_text: data.instruction_text ?? '',
+        instruction_image: data.instruction_image ?? null,
+        instruction_steps: data.instruction_steps,
+      });
+      toast.success('PDF se stahuje');
+    } catch (e) {
+      console.error(e);
+      toast.error('PDF se nepodařilo vytvořit.');
+    } finally {
+      setPdfDownloadingId(null);
+    }
+  };
+
   const handleCreate = async () => {
     const supabase = resolveClient();
     if (!supabase) {
@@ -995,6 +1083,22 @@ export function TasksSheet({
                           );
                         })}
                       </div>
+                      {libraryEntriesForGrade.length > 0 ? (
+                        <div className="mb-6">
+                          <button
+                            type="button"
+                            disabled={pdfDownloadingGrade}
+                            onClick={() => void handleDownloadGradePdf()}
+                            className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 text-sm font-medium text-sky-900 transition-colors hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-40"
+                            title={`Stáhnout všechny úkoly ${formatTaskLibraryGradeLabel(libraryGrade).toLowerCase()} jako jedno PDF`}
+                          >
+                            <Download className="size-3.5 shrink-0 opacity-80" aria-hidden />
+                            {pdfDownloadingGrade
+                              ? 'Připravuji PDF…'
+                              : `Stáhnout ${formatTaskLibraryGradeLabel(libraryGrade).toLowerCase()} (PDF)`}
+                          </button>
+                        </div>
+                      ) : null}
                       {libraryEntriesForGrade.length === 0 ? (
                         <p className="rounded-2xl border border-dashed border-sky-200 bg-sky-50 px-6 py-10 text-center text-[15px] leading-relaxed text-slate-600">
                           V {formatTaskLibraryGradeLabel(libraryGrade).toLowerCase()} zatím žádné úkoly.
@@ -1038,7 +1142,6 @@ export function TasksSheet({
                                   </div>
                                   {link ? (
                                     <div className="flex min-w-0 w-full flex-col gap-3 border-t border-sky-50 pt-4">
-                                      <p className="m-0 text-sm font-medium text-slate-500">Rychlé akce</p>
                                       <div className="flex w-full flex-wrap items-center gap-2 py-0.5">
                                         <a
                                           href={link}
@@ -1064,6 +1167,16 @@ export function TasksSheet({
                                         >
                                           <QrCode className="size-3.5 shrink-0 opacity-80" aria-hidden />
                                           QR kód
+                                        </button>
+                                        <button
+                                          type="button"
+                                          disabled={!id || pdfDownloadingId === id}
+                                          onClick={() => (id ? void handleDownloadAssignmentPdf(id, displayTitle) : undefined)}
+                                          className="inline-flex h-10 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border border-sky-200 bg-sky-50 px-3 text-xs font-medium text-sky-900 transition-colors hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-40"
+                                          title="Stáhnout zadání jako PDF"
+                                        >
+                                          <Download className="size-3.5 shrink-0 opacity-80" aria-hidden />
+                                          {pdfDownloadingId === id ? 'PDF…' : 'PDF'}
                                         </button>
                                         <button
                                           type="button"

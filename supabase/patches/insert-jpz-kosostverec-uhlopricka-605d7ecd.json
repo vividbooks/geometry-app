@@ -1,0 +1,77 @@
+{
+  "id": "605d7ecd-faf2-474d-a304-3ab328ae5d0e",
+  "title": "Kosočtverec",
+  "instruction_text": "Úsečka AC je úhlopříčkou kosočtverce ABCD. Vrchol B leží na přímce p.\n\nSestrojte kosočtverec ABCD, označte zbývající vrcholy a kosočtverec narýsujte.",
+  "instruction_image": null,
+  "new_canvas_per_step": true,
+  "instruction_steps": [
+    {
+      "text": "Úsečka AC je úhlopříčkou kosočtverce ABCD. Vrchol B leží na přímce p.\n\nSestrojte kosočtverec ABCD, označte zbývající vrcholy a kosočtverec narýsujte.",
+      "canvas_snapshot": {
+        "points": [
+          {
+            "id": "pt-p1",
+            "x": 40,
+            "y": 160,
+            "label": "",
+            "locked": true,
+            "hidden": true
+          },
+          {
+            "id": "pt-p2",
+            "x": 620,
+            "y": 160,
+            "label": "",
+            "locked": true,
+            "hidden": true
+          },
+          {
+            "id": "pt-a",
+            "x": 160,
+            "y": 280,
+            "label": "A",
+            "locked": true
+          },
+          {
+            "id": "pt-c",
+            "x": 480,
+            "y": 200,
+            "label": "C",
+            "locked": true
+          }
+        ],
+        "shapes": [
+          {
+            "id": "line-p",
+            "type": "line",
+            "label": "p",
+            "points": [
+              "pt-p1",
+              "pt-p2"
+            ],
+            "locked": true,
+            "definition": {
+              "p1Id": "pt-p1",
+              "p2Id": "pt-p2"
+            }
+          },
+          {
+            "id": "seg-ac",
+            "type": "segment",
+            "label": "",
+            "points": [
+              "pt-a",
+              "pt-c"
+            ],
+            "locked": true,
+            "definition": {
+              "p1Id": "pt-a",
+              "p2Id": "pt-c"
+            }
+          }
+        ],
+        "freehandPaths": []
+      }
+    }
+  ]
+}
