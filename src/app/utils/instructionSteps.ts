@@ -77,6 +77,7 @@ export function instructionStepsHaveCanvasSnapshot(steps: InstructionStepContent
 /** Úkoly, kde má být každý krok na novém plátně i bez sloupce v DB. */
 const FORCE_NEW_CANVAS_PER_STEP_IDS = new Set([
   '7c3e9b12-4f8a-4d6e-9c21-8b5a0e17d4f3',
+  'e5f1a8c3-2d47-4b9e-91c0-8a3f6d2e5b17',
 ]);
 
 export function assignmentUsesNewCanvasPerStep(row: {

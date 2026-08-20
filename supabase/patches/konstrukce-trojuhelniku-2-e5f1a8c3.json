@@ -1,0 +1,20 @@
+{
+  "id": "e5f1a8c3-2d47-4b9e-91c0-8a3f6d2e5b17",
+  "title": "Konstrukce trojúhelníků 2",
+  "instruction_text": "1. Narýsuj trojúhelník DEF, jestliže |DF| = 6 cm, |DE| = 6 cm, |FE| = 5 cm. Zapiš, kolik neshodných trojúhelníků DEF je možné narýsovat.\n\n2. Narýsuj trojúhelník GHI, jestliže |GI| = 8 cm, |GH| = 2 cm, |IH| = 5 cm. Zapiš, kolik neshodných trojúhelníků GHI je možné narýsovat.\n\n3. Narýsuj trojúhelník KLM, jestliže |KM| = 8 cm, |KL| = 6 cm, |∠ LKM| = 60°. Zapiš, kolik neshodných trojúhelníků KLM je možné narýsovat.\n\n4. Narýsuj trojúhelník PQR, jestliže |QR| = 7 cm, |PQ| = 9 cm, |∠ PQR| = 45°. Zapiš, kolik neshodných trojúhelníků PQR je možné narýsovat.\n\n5. Narýsuj trojúhelník STU, jestliže |∠ UST| = 40°, |∠ STU| = 70°, |ST| = 9 cm. Zapiš, kolik neshodných trojúhelníků STU je možné narýsovat.\n\n6. Narýsuj trojúhelník XYZ, jestliže |∠ XYZ| = 50°, |∠ YZX| = 100°, |YZ| = 10 cm. Zapiš, kolik neshodných trojúhelníků XYZ je možné narýsovat.\n\n7. Narýsuj trojúhelník MNO, jestliže |∠ OMN| = 115°, |∠ NOM| = 80°, |OM| = 11 cm. Zapiš, kolik neshodných trojúhelníků MNO je možné narýsovat.\n\n8. Narýsuj trojúhelník UVW, jestliže |∠ WUV| = 45°, |∠ UVW| = 55°, |WU| = 10 cm. Zapiš, kolik neshodných trojúhelníků UVW je možné narýsovat.\n\n9. Narýsuj trojúhelník RST, jestliže |∠ TRS| = 50°, |TR| = 10 cm, |ST| = 7 cm. Zapiš, kolik neshodných trojúhelníků RST je možné narýsovat.\n\n10. Narýsuj trojúhelník JKL, jestliže |∠ LJK| = 30°, |LJ| = 4 cm, |KL| = 3 cm. Zapiš, kolik neshodných trojúhelníků JKL je možné narýsovat.\n\n11. Narýsuj trojúhelník FGH, jestliže |∠ HFG| = 90°, |HF| = 3 cm, |GH| = 5 cm. Zapiš, kolik neshodných trojúhelníků FGH je možné narýsovat.",
+  "instruction_image": null,
+  "new_canvas_per_step": true,
+  "instruction_steps": [
+    { "text": "Narýsuj trojúhelník DEF, jestliže |DF| = 6 cm, |DE| = 6 cm, |FE| = 5 cm. Zapiš, kolik neshodných trojúhelníků DEF je možné narýsovat." },
+    { "text": "Narýsuj trojúhelník GHI, jestliže |GI| = 8 cm, |GH| = 2 cm, |IH| = 5 cm. Zapiš, kolik neshodných trojúhelníků GHI je možné narýsovat." },
+    { "text": "Narýsuj trojúhelník KLM, jestliže |KM| = 8 cm, |KL| = 6 cm, |∠ LKM| = 60°. Zapiš, kolik neshodných trojúhelníků KLM je možné narýsovat." },
+    { "text": "Narýsuj trojúhelník PQR, jestliže |QR| = 7 cm, |PQ| = 9 cm, |∠ PQR| = 45°. Zapiš, kolik neshodných trojúhelníků PQR je možné narýsovat." },
+    { "text": "Narýsuj trojúhelník STU, jestliže |∠ UST| = 40°, |∠ STU| = 70°, |ST| = 9 cm. Zapiš, kolik neshodných trojúhelníků STU je možné narýsovat." },
+    { "text": "Narýsuj trojúhelník XYZ, jestliže |∠ XYZ| = 50°, |∠ YZX| = 100°, |YZ| = 10 cm. Zapiš, kolik neshodných trojúhelníků XYZ je možné narýsovat." },
+    { "text": "Narýsuj trojúhelník MNO, jestliže |∠ OMN| = 115°, |∠ NOM| = 80°, |OM| = 11 cm. Zapiš, kolik neshodných trojúhelníků MNO je možné narýsovat." },
+    { "text": "Narýsuj trojúhelník UVW, jestliže |∠ WUV| = 45°, |∠ UVW| = 55°, |WU| = 10 cm. Zapiš, kolik neshodných trojúhelníků UVW je možné narýsovat." },
+    { "text": "Narýsuj trojúhelník RST, jestliže |∠ TRS| = 50°, |TR| = 10 cm, |ST| = 7 cm. Zapiš, kolik neshodných trojúhelníků RST je možné narýsovat." },
+    { "text": "Narýsuj trojúhelník JKL, jestliže |∠ LJK| = 30°, |LJ| = 4 cm, |KL| = 3 cm. Zapiš, kolik neshodných trojúhelníků JKL je možné narýsovat." },
+    { "text": "Narýsuj trojúhelník FGH, jestliže |∠ HFG| = 90°, |HF| = 3 cm, |GH| = 5 cm. Zapiš, kolik neshodných trojúhelníků FGH je možné narýsovat." }
+  ]
+}

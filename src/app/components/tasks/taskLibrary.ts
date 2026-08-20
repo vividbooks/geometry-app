@@ -73,11 +73,6 @@ export const TASK_LIBRARY: TaskLibraryEntry[] = [
     assignmentId: '4a21b4c8-0f76-4404-914b-5207ee6fa7e0',
   },
   {
-    key: '6fe2b87a-b21e-4fc8-b362-e21ccd2d52d7',
-    title: 'Úkol 1',
-    assignmentId: '6fe2b87a-b21e-4fc8-b362-e21ccd2d52d7',
-  },
-  {
     key: 'c596a498-a022-4941-9f72-6650fd3a24b9',
     title: 'Úkol',
     assignmentId: 'c596a498-a022-4941-9f72-6650fd3a24b9',
@@ -129,10 +124,34 @@ export const TASK_LIBRARY: TaskLibraryEntry[] = [
     grade: 7,
   },
   {
+    key: 'e5f1a8c3-2d47-4b9e-91c0-8a3f6d2e5b17',
+    title: 'Konstrukce trojúhelníků 2',
+    assignmentId: 'e5f1a8c3-2d47-4b9e-91c0-8a3f6d2e5b17',
+    grade: 7,
+  },
+  {
     key: 'c4d8e2a1-7b3f-4c9e-a812-6f0d5b47e9c3',
     title: 'Střední příčky',
     assignmentId: 'c4d8e2a1-7b3f-4c9e-a812-6f0d5b47e9c3',
     grade: 7,
+  },
+  {
+    key: 'a7c3e19b-4d52-48f0-b6e1-9c8a2d4f0b31',
+    title: 'Těžnice',
+    assignmentId: 'a7c3e19b-4d52-48f0-b6e1-9c8a2d4f0b31',
+    grade: 7,
+  },
+  {
+    key: 'd2b9f4e6-1a38-4c7d-8e05-3f7a1c9b6d24',
+    title: 'Výšky',
+    assignmentId: 'd2b9f4e6-1a38-4c7d-8e05-3f7a1c9b6d24',
+    grade: 7,
+  },
+  {
+    key: '6fe2b87a-b21e-4fc8-b362-e21ccd2d52d7',
+    title: 'Úkol 1',
+    assignmentId: '6fe2b87a-b21e-4fc8-b362-e21ccd2d52d7',
+    grade: 8,
   },
 ];
 
