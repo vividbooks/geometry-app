@@ -189,6 +189,18 @@ export const TASK_LIBRARY: TaskLibraryEntry[] = [
     assignmentId: '001f723d-8258-4b60-96ea-b6734d70bca3',
     grade: 8,
   },
+  {
+    key: '429386b7-d8e4-4279-9d85-56dbe1afbfc0',
+    title: 'Thaletova věta',
+    assignmentId: '429386b7-d8e4-4279-9d85-56dbe1afbfc0',
+    grade: 8,
+  },
+  {
+    key: '122c7ca2-e80e-466f-b764-11b320e4c86d',
+    title: 'Thaletova věta 2',
+    assignmentId: '122c7ca2-e80e-466f-b764-11b320e4c86d',
+    grade: 8,
+  },
 ];
 
 export function taskLibraryGradeOf(entry: TaskLibraryEntry): TaskLibraryGrade {
