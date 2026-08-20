@@ -214,6 +214,30 @@ export const TASK_LIBRARY: TaskLibraryEntry[] = [
     grade: 8,
   },
   {
+    key: '9109f821-863d-4a5d-84fb-6228055fe7cd',
+    title: 'Konstrukce čtyřúhelníků 3',
+    assignmentId: '9109f821-863d-4a5d-84fb-6228055fe7cd',
+    grade: 8,
+  },
+  {
+    key: '2780a0ce-da0a-47b7-b7b8-d5603af88e03',
+    title: 'Konstrukce trojúhelníků 1',
+    assignmentId: '2780a0ce-da0a-47b7-b7b8-d5603af88e03',
+    grade: 8,
+  },
+  {
+    key: '42fbe250-54cd-4a0a-99f5-a6971a21037b',
+    title: 'Konstrukce trojúhelníků 2',
+    assignmentId: '42fbe250-54cd-4a0a-99f5-a6971a21037b',
+    grade: 8,
+  },
+  {
+    key: '50f6c4eb-f736-4fd0-baa3-545cd2e68085',
+    title: 'Konstrukce trojúhelníků 3',
+    assignmentId: '50f6c4eb-f736-4fd0-baa3-545cd2e68085',
+    grade: 8,
+  },
+  {
     key: '4a1829f5-69f3-4737-b8e6-8b898b176901',
     title: 'Rovnoběžník s delší úhlopříčkou',
     assignmentId: '4a1829f5-69f3-4737-b8e6-8b898b176901',
