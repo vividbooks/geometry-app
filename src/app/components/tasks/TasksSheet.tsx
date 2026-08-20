@@ -65,6 +65,7 @@ import {
   instructionStepsToFallbackText,
   instructionStepFallbackLabel,
   normalizeInstructionSteps,
+  packInstructionStepsJson,
   parseCanvasSnapshot,
   serializeInstructionStep,
   assignmentUsesNewCanvasPerStep,
@@ -877,14 +878,18 @@ export function TasksSheet({
     setBusy(true);
     try {
       const cleanedTitle = title.trim();
+      const persistNewCanvasPerStep = newCanvasPerStep || hasPerStepSharedCanvas(cleaned);
       const payload: any = {
         title: cleanedTitle,
         instruction_text: instructionStepsToFallbackText(
           cleaned.map((s, i) => instructionStepFallbackLabel(s, i)),
         ),
-        instruction_steps: cleaned.map(s => serializeInstructionStep(s)),
+        instruction_steps: packInstructionStepsJson(
+          cleaned.map(s => serializeInstructionStep(s)),
+          persistNewCanvasPerStep,
+        ),
         instruction_image: firstStepImage(cleaned) ?? null,
-        new_canvas_per_step: newCanvasPerStep || hasPerStepSharedCanvas(cleaned),
+        new_canvas_per_step: persistNewCanvasPerStep,
       };
 
       if (initialCanvasSnapshot && !hasPerStepSharedCanvas(cleaned)) {

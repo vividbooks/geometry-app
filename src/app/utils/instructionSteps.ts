@@ -5,6 +5,7 @@ export type InstructionStep = {
   text: string;
   image?: string | null;
   canvas_snapshot?: unknown;
+  new_canvas_per_step?: boolean;
 };
 
 export type InstructionStepContent = {
@@ -12,6 +13,43 @@ export type InstructionStepContent = {
   image: string | null;
   canvasSnapshot: GeometrySubmissionSnapshot | null;
 };
+
+/** Balíček kroků v `instruction_steps`, když sloupec `new_canvas_per_step` v DB chybí. */
+type PackedInstructionSteps = {
+  new_canvas_per_step?: boolean;
+  steps: unknown[];
+};
+
+function isPackedInstructionSteps(raw: unknown): raw is PackedInstructionSteps {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
+  return Array.isArray((raw as { steps?: unknown }).steps);
+}
+
+function rawStepItems(raw: unknown): unknown[] {
+  if (Array.isArray(raw)) return raw;
+  if (isPackedInstructionSteps(raw)) return raw.steps;
+  return [];
+}
+
+export function instructionStepsWantNewCanvasPerStep(raw: unknown): boolean {
+  if (isPackedInstructionSteps(raw) && raw.new_canvas_per_step === true) return true;
+  return rawStepItems(raw).some(
+    item =>
+      item &&
+      typeof item === 'object' &&
+      (item as { new_canvas_per_step?: unknown }).new_canvas_per_step === true,
+  );
+}
+
+export function packInstructionStepsJson(
+  steps: InstructionStep[],
+  newCanvasPerStep: boolean,
+): unknown {
+  if (!newCanvasPerStep) return steps;
+  const packedSteps =
+    steps.length > 0 ? [{ ...steps[0]!, new_canvas_per_step: true }, ...steps.slice(1)] : steps;
+  return { new_canvas_per_step: true, steps: packedSteps };
+}
 
 function parseStepImage(raw: unknown): string | null {
   if (raw == null) return null;
@@ -48,10 +86,10 @@ export function instructionStepFallbackLabel(step: InstructionStepContent, index
 }
 
 export function normalizeInstructionSteps(raw: unknown): InstructionStepContent[] {
-  if (raw == null) return [];
-  if (!Array.isArray(raw)) return [];
+  const items = rawStepItems(raw);
+  if (items.length === 0) return [];
   const out: InstructionStepContent[] = [];
-  for (const item of raw) {
+  for (const item of items) {
     if (item && typeof item === 'object') {
       const rawText = 'text' in item ? (item as { text: unknown }).text : '';
       const text = typeof rawText === 'string' ? rawText.trim() : '';
@@ -78,6 +116,8 @@ export function instructionStepsHaveCanvasSnapshot(steps: InstructionStepContent
 const FORCE_NEW_CANVAS_PER_STEP_IDS = new Set([
   '7c3e9b12-4f8a-4d6e-9c21-8b5a0e17d4f3',
   'e5f1a8c3-2d47-4b9e-91c0-8a3f6d2e5b17',
+  '42fbe250-54cd-4a0a-99f5-a6971a21037b',
+  '50f6c4eb-f736-4fd0-baa3-545cd2e68085',
 ]);
 
 export function assignmentUsesNewCanvasPerStep(row: {
@@ -87,6 +127,7 @@ export function assignmentUsesNewCanvasPerStep(row: {
 }): boolean {
   if (row.id && FORCE_NEW_CANVAS_PER_STEP_IDS.has(row.id)) return true;
   if (row.new_canvas_per_step === true) return true;
+  if (instructionStepsWantNewCanvasPerStep(row.instruction_steps)) return true;
   return instructionStepsHaveCanvasSnapshot(normalizeInstructionSteps(row.instruction_steps));
 }
 
