@@ -1,5 +1,6 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
 import { GeometryMenu } from './components/GeometryMenu';
+import { CanvasErrorBoundary } from './components/CanvasErrorBoundary';
 import { projectId, publicAnonKey } from './utils/supabase/info';
 
 // Lazy load těžké komponenty pro lepší performance na starších zařízeních
@@ -187,5 +188,9 @@ export default function App() {
     }
   };
 
-  return <>{renderView()}</>;
+  return (
+    <CanvasErrorBoundary onBack={() => setView('menu')}>
+      {renderView()}
+    </CanvasErrorBoundary>
+  );
 }

@@ -1,5 +1,6 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import { CanvasErrorBoundary } from '../../../rysovani/src/components/CanvasErrorBoundary';
 
 // Import rysovani CSS (Tailwind utility classes used by rysovani components)
 import '../../../rysovani/src/index.css';
@@ -269,7 +270,9 @@ export function RysovaniPage() {
 
   return (
     <div style={fullHeightStyle}>
-      {renderContent()}
+      <CanvasErrorBoundary onBack={() => setView('menu')}>
+        {renderContent()}
+      </CanvasErrorBoundary>
     </div>
   );
 }

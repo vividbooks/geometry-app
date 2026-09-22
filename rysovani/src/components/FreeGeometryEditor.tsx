@@ -5484,10 +5484,14 @@ export function FreeGeometryEditor({
         const endAngle = circleArcDrawRef.current.endAngle + delta;
         circleArcDrawRef.current.lastAngle = snap.angle;
         circleArcDrawRef.current.endAngle = endAngle;
+        // React updater se muze prehrat az pri renderu — to uz je ref po
+        // dokonceni vyseku `null`. Cteni `circleArcDrawRef.current!` uvnitr
+        // updateru proto shodilo cele platno do bile stranky.
+        const startAngle = circleArcDrawRef.current.startAngle;
         setCircleInput(prev => ({
           ...prev,
           arcDraw: {
-            startAngle: circleArcDrawRef.current!.startAngle,
+            startAngle,
             endAngle,
           },
           arcCrosshair: { x: snap.x, y: snap.y },
@@ -6025,9 +6029,12 @@ export function FreeGeometryEditor({
     if ((activeTool === 'freehand' || activeTool === 'highlighter') && currentPathRef.current) {
         if (currentPathRef.current.length >= 1) {
             const isHL = activeTool === 'highlighter';
+            // Stejny duvod jako u vyseku kruznice: ref se nuluje hned pod timhle
+            // blokem, takze updater ho uz nesmi cist.
+            const drawnPoints = currentPathRef.current;
             setFreehandPaths(prev => [...prev, {
                 id: crypto.randomUUID(),
-                points: currentPathRef.current!,
+                points: drawnPoints,
                 color: isHL ? highlightColorRgbaRef.current : '#3b82f6',
                 width: isHL ? 20 : 2,
                 isHighlight: isHL || undefined,
@@ -6035,8 +6042,7 @@ export function FreeGeometryEditor({
             clearSelectionAfterPlacement();
             // Save last point for shift+click straight lines
             if (isHL) {
-              const pts = currentPathRef.current!;
-              lastHighlightPointRef.current = pts[pts.length - 1];
+              lastHighlightPointRef.current = drawnPoints[drawnPoints.length - 1];
             }
         }
         currentPathRef.current = null;
