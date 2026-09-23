@@ -1,8 +1,12 @@
 
   <!DOCTYPE html>
-  <html lang="en">
+  <html lang="cs" translate="no">
     <head>
       <meta charset="UTF-8" />
+      <!-- Stránka je česky. S lang="en" ji Chrome nabízel „přeložit z angličtiny“;
+           překladač pak přepsal texty tlačítek a React spadl na insertBefore
+           (rýsování části kružnice) a zkomolil „Krychle“ na „Krichle“. -->
+      <meta name="google" content="notranslate" />
       <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
       <title>Geometrie online — 3D tělesa</title>
       <style>

@@ -11790,8 +11790,13 @@ export function FreeGeometryEditor({
                     : 'bg-blue-600 text-white shadow-blue-500/30'
                 }`}
               >
-                {isActive ? <X className="size-[0.9rem]" /> : <Check className="size-[0.9rem]" />}
-                {isActive ? 'Zrušit' : label}
+                {/* Celý obsah v jednom obalu s klíčem: při přepnutí React vymění obal,
+                    místo aby vkládal vedle holého textu. Překladač nebo rozšíření
+                    prohlížeče ten text přepíše a pak padalo insertBefore. */}
+                <span key={isActive ? 'active' : 'idle'} className="flex items-center gap-[0.45rem]">
+                  {isActive ? <X className="size-[0.9rem]" /> : <Check className="size-[0.9rem]" />}
+                  <span>{isActive ? 'Zrušit' : label}</span>
+                </span>
               </button>
             );
           })}
@@ -11896,8 +11901,13 @@ export function FreeGeometryEditor({
                     : 'bg-blue-600 text-white shadow-blue-500/30'
                 }`}
               >
-                {isActive ? <X className="size-[0.9rem]" /> : <Check className="size-[0.9rem]" />}
-                {isActive ? 'Zrušit' : label}
+                {/* Celý obsah v jednom obalu s klíčem: při přepnutí React vymění obal,
+                    místo aby vkládal vedle holého textu. Překladač nebo rozšíření
+                    prohlížeče ten text přepíše a pak padalo insertBefore. */}
+                <span key={isActive ? 'active' : 'idle'} className="flex items-center gap-[0.45rem]">
+                  {isActive ? <X className="size-[0.9rem]" /> : <Check className="size-[0.9rem]" />}
+                  <span>{isActive ? 'Zrušit' : label}</span>
+                </span>
               </button>
             );
           })}
