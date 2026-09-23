@@ -8,6 +8,8 @@ interface Props {
 
 interface State {
   error: Error | null;
+  /** Nejbližší komponenta z React stacku — z fotky učitele pozná, kde to spadlo. */
+  where: string;
 }
 
 /**
@@ -17,14 +19,21 @@ interface State {
  * se dá vrátit do menu nebo nástroj zkusit znovu.
  */
 export class CanvasErrorBoundary extends Component<Props, State> {
-  state: State = { error: null };
+  state: State = { error: null, where: '' };
 
-  static getDerivedStateFromError(error: Error): State {
+  static getDerivedStateFromError(error: Error): Partial<State> {
     return { error };
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('[Rýsování] Plátno spadlo:', error, info.componentStack);
+    const where = String(info.componentStack || '')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .slice(0, 3)
+      .join(' ← ');
+    this.setState({ where });
   }
 
   render() {
@@ -39,9 +48,16 @@ export class CanvasErrorBoundary extends Component<Props, State> {
             Rýsování přerušila chyba. Zkuste to prosím znovu — rozdělaná konstrukce
             se bohužel nezachová.
           </p>
+          {/* Chybu u sebe nevyvoláme — učitel nám posílá fotku obrazovky,
+              tak ať na ní je, co přesně spadlo. */}
+          <p className="mb-6 break-words font-mono text-[11px] leading-snug text-gray-400 select-all">
+            {error.name}: {error.message}
+            {this.state.where ? ` — ${this.state.where}` : ''}
+            {typeof navigator !== 'undefined' ? ` — ${navigator.userAgent}` : ''}
+          </p>
           <div className="flex items-center justify-center gap-3">
             <button
-              onClick={() => this.setState({ error: null })}
+              onClick={() => this.setState({ error: null, where: '' })}
               className="px-6 py-3 rounded-xl bg-blue-600 text-white font-bold hover:bg-blue-500 transition-all"
             >
               Zkusit znovu
@@ -49,7 +65,7 @@ export class CanvasErrorBoundary extends Component<Props, State> {
             {this.props.onBack && (
               <button
                 onClick={() => {
-                  this.setState({ error: null });
+                  this.setState({ error: null, where: '' });
                   this.props.onBack?.();
                 }}
                 className="px-6 py-3 rounded-xl bg-gray-100 text-gray-700 font-bold hover:bg-gray-200 transition-all"
