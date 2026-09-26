@@ -170,6 +170,7 @@ export type CheckSpec = {
   /** Přímky, které má žák sestrojit (osa, obraz přímky …): dva body řešení, jimiž vede. */
   lines?: ConstructionCheck['lines'];
   interchangeable?: ConstructionCheck['interchangeable'];
+  labelAlternatives?: ConstructionCheck['labelAlternatives'];
 };
 
 /** Kroky se skládají narůstáním: každý krok přidá body a čáry k předchozím. */
@@ -197,6 +198,7 @@ export function cumulative(
         ...(checkSpec.circles?.length ? { circles: checkSpec.circles } : {}),
         ...(checkSpec.lines?.length ? { lines: checkSpec.lines } : {}),
         ...(checkSpec.interchangeable?.length ? { interchangeable: checkSpec.interchangeable } : {}),
+        ...(checkSpec.labelAlternatives ? { labelAlternatives: checkSpec.labelAlternatives } : {}),
       }
     : undefined;
   if (check) {

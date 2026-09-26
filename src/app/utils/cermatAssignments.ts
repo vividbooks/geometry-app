@@ -18,6 +18,10 @@ import { CERMAT_2022 } from './cermat/data2022';
 import { CERMAT_2020_2021 } from './cermat/data2020-2021';
 import { CERMAT_2018_2019 } from './cermat/data2018-2019';
 import { CERMAT_2015_2017 } from './cermat/data2015-2017';
+import { GRADE9_STYLE_A } from './cermat/data9-a';
+import { GRADE9_STYLE_B } from './cermat/data9-b';
+import { GRADE9_STYLE_C } from './cermat/data9-c';
+import { GRADE9_STYLE_D } from './cermat/data9-d';
 
 export type CermatVec = { x: number; y: number };
 
@@ -114,9 +118,26 @@ export const CERMAT_ASSIGNMENTS: CermatAssignment[] = [
   instructionText: stripCermatMarkup(item.instructionMarkup),
 }));
 
+/**
+ * Úkoly 9. ročníku ve stylu úloh CERMAT (vlastní zadání, stejné nářadí: data, vzorové řešení
+ * po krocích, kontrola, kurzíva). V knihovně jsou v 9. ročníku, ne v sekci CERMAT.
+ */
+export const GRADE9_STYLE_ASSIGNMENTS: CermatAssignment[] = [
+  ...GRADE9_STYLE_A,
+  ...GRADE9_STYLE_B,
+  ...GRADE9_STYLE_C,
+  ...GRADE9_STYLE_D,
+].map(item => ({
+  ...item,
+  instructionText: stripCermatMarkup(item.instructionMarkup),
+}));
+
+/** Všechny konstrukční úlohy s daty v kódu (CERMAT i úkoly 9. ročníku ve stylu CERMAT). */
+export const CONSTRUCTION_ASSIGNMENTS: CermatAssignment[] = [...CERMAT_ASSIGNMENTS, ...GRADE9_STYLE_ASSIGNMENTS];
+
 export function getCermatAssignment(id: string | undefined): CermatAssignment | null {
   if (!id) return null;
-  return CERMAT_ASSIGNMENTS.find(item => item.id === id) ?? null;
+  return CONSTRUCTION_ASSIGNMENTS.find(item => item.id === id) ?? null;
 }
 
 /** Id bodu zadání na plátně (stejné v zadání i ve vzorovém řešení). */

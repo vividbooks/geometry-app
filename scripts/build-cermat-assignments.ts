@@ -7,49 +7,67 @@
  *     --outfile=/tmp/build-cermat.mjs && node /tmp/build-cermat.mjs [rows.json]
  *
  * Úloha má jediný krok, sloupec new_canvas_per_step proto není potřeba (v produkční DB ani není).
- * Výstup: supabase/patches/insert-cermat.sql (všechny úlohy v jedné transakci, insert … on conflict
- * do update). Volitelný argument uloží řádky i jako JSON (pro vložení přes REST).
+ * Výstup: supabase/patches/insert-cermat.sql (sekce CERMAT) a insert-grade9-cermat-style.sql
+ * (úkoly 9. ročníku ve stylu CERMAT), každý v jedné transakci, insert … on conflict do update.
+ * Volitelný argument uloží všechny řádky i jako JSON (pro vložení přes REST).
  */
 import { writeFileSync } from 'node:fs';
-import { CERMAT_ASSIGNMENTS, cermatInstructionSnapshot } from '../src/app/utils/cermatAssignments';
+import {
+  type CermatAssignment,
+  CERMAT_ASSIGNMENTS,
+  GRADE9_STYLE_ASSIGNMENTS,
+  cermatInstructionSnapshot,
+} from '../src/app/utils/cermatAssignments';
 
-const rows = CERMAT_ASSIGNMENTS.map(item => ({
+const toRow = (item: CermatAssignment) => ({
   id: item.id,
   title: item.title,
   instruction_text: item.instructionText,
   instruction_image: null,
   instruction_steps: [{ text: item.instructionText, canvas_snapshot: cermatInstructionSnapshot(item) }],
-}));
+});
+type Row = ReturnType<typeof toRow>;
 
-const sql = [
-  '-- Sekce CERMAT: konstrukční úlohy 9 a 10 z jednotné přijímací zkoušky (čtyřleté obory).',
-  '-- Vygenerováno skriptem scripts/build-cermat-assignments.ts — neupravovat ručně.',
-  '',
-  'begin;',
-  '',
-  ...rows.flatMap(row => [
-    `-- ${row.title}`,
-    'insert into public.geometry_circuit_assignments (',
-    '  id, title, instruction_text, instruction_image, instruction_steps',
-    ') values (',
-    `  '${row.id}'::uuid,`,
-    `  $txt$${row.title}$txt$,`,
-    `  $txt$${row.instruction_text}$txt$,`,
-    '  null,',
-    `  $json$${JSON.stringify(row.instruction_steps)}$json$::jsonb`,
-    ')',
-    'on conflict (id) do update set',
-    '  title = excluded.title,',
-    '  instruction_text = excluded.instruction_text,',
-    '  instruction_image = excluded.instruction_image,',
-    '  instruction_steps = excluded.instruction_steps;',
+function sqlFor(heading: string, rows: Row[]): string {
+  return [
+    `-- ${heading}`,
+    '-- Vygenerováno skriptem scripts/build-cermat-assignments.ts — neupravovat ručně.',
     '',
-  ]),
-  'commit;',
-  '',
-].join('\n');
+    'begin;',
+    '',
+    ...rows.flatMap(row => [
+      `-- ${row.title}`,
+      'insert into public.geometry_circuit_assignments (',
+      '  id, title, instruction_text, instruction_image, instruction_steps',
+      ') values (',
+      `  '${row.id}'::uuid,`,
+      `  $txt$${row.title}$txt$,`,
+      `  $txt$${row.instruction_text}$txt$,`,
+      '  null,',
+      `  $json$${JSON.stringify(row.instruction_steps)}$json$::jsonb`,
+      ')',
+      'on conflict (id) do update set',
+      '  title = excluded.title,',
+      '  instruction_text = excluded.instruction_text,',
+      '  instruction_image = excluded.instruction_image,',
+      '  instruction_steps = excluded.instruction_steps;',
+      '',
+    ]),
+    'commit;',
+    '',
+  ].join('\n');
+}
 
-writeFileSync('supabase/patches/insert-cermat.sql', sql);
+const cermat = CERMAT_ASSIGNMENTS.map(toRow);
+const grade9 = GRADE9_STYLE_ASSIGNMENTS.map(toRow);
+writeFileSync(
+  'supabase/patches/insert-cermat.sql',
+  sqlFor('Sekce CERMAT: konstrukční úlohy 9 a 10 z jednotné přijímací zkoušky (čtyřleté obory).', cermat),
+);
+writeFileSync(
+  'supabase/patches/insert-grade9-cermat-style.sql',
+  sqlFor('9. ročník: konstrukční úkoly ve stylu úloh CERMAT.', grade9),
+);
 const rowsOut = process.argv[2];
-if (rowsOut) writeFileSync(rowsOut, `${JSON.stringify(rows)}\n`);
-console.log(`Zapsáno ${rows.length} úloh.`);
+if (rowsOut) writeFileSync(rowsOut, `${JSON.stringify([...cermat, ...grade9])}\n`);
+console.log(`Zapsáno ${cermat.length} úloh CERMAT a ${grade9.length} úkolů 9. ročníku.`);

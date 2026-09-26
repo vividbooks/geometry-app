@@ -1,5 +1,5 @@
 import { assignmentPublicUrl } from '@/app/utils/appUrl';
-import { CERMAT_ASSIGNMENTS } from '@/app/utils/cermatAssignments';
+import { CERMAT_ASSIGNMENTS, GRADE9_STYLE_ASSIGNMENTS } from '@/app/utils/cermatAssignments';
 
 /**
  * Knihovna úkolů (přednastavené položky). Doplň po vytvoření zadání v `geometry_circuit_assignments`.
@@ -377,6 +377,13 @@ export const TASK_LIBRARY: TaskLibraryEntry[] = [
     assignmentId: '0daeda38-6964-4e93-a3db-745003b63e53',
     grade: 9,
   },
+  // 9. ročník: další úkoly ve stylu úloh CERMAT (data a řešení v `src/app/utils/cermat/data9-*.ts`).
+  ...GRADE9_STYLE_ASSIGNMENTS.map(item => ({
+    key: item.id,
+    title: item.title,
+    assignmentId: item.id,
+    grade: 9 as const,
+  })),
   // Sekce CERMAT: konstrukční úlohy z přijímacích zkoušek (viz `cermatAssignments.ts`).
   ...CERMAT_ASSIGNMENTS.map(item => ({
     key: item.id,
