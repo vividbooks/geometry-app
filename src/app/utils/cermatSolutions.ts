@@ -163,6 +163,7 @@ class Board {
 type CheckSpec = {
   figures: Array<{ name: string; vertices: string[]; extra?: string[] }>;
   circles?: ConstructionCheck['circles'];
+  interchangeable?: ConstructionCheck['interchangeable'];
 };
 
 /** Kroky se skládají narůstáním: každý krok přidá body a čáry k předchozím. */
@@ -188,6 +189,7 @@ function cumulative(
           ...(f.extra?.length ? { extra: f.extra.map(id => board.checkPoint(id)) } : {}),
         })),
         ...(checkSpec.circles?.length ? { circles: checkSpec.circles } : {}),
+        ...(checkSpec.interchangeable?.length ? { interchangeable: checkSpec.interchangeable } : {}),
       }
     : undefined;
   if (check) {
@@ -332,6 +334,8 @@ function rhombusAxisSolution(): AssignmentModelSolution {
     ],
     {
       figures: [{ name: 'rovnoběžník ABCD', vertices: ['sol-a', 'sol-b', 'sol-c', 'sol-d'] }],
+      // B a D leží oba na ose o — prohozením vznikne pořád rovnoběžník ABCD.
+      interchangeable: [['sol-b', 'sol-d']],
     },
   );
 }
@@ -723,6 +727,8 @@ function rectangleInCircleSolution(): AssignmentModelSolution {
     {
       figures: [{ name: 'obdélník ABCD', vertices: ['sol-a', 'sol-b', 'sol-c', 'sol-d'] }],
       circles: [{ name: 'k', centerId: 'sol-s', rimId: 'sol-d' }],
+      // A a C leží oba na přímce u — prohozením vznikne pořád obdélník ABCD.
+      interchangeable: [['sol-a', 'sol-c']],
     },
   );
 }

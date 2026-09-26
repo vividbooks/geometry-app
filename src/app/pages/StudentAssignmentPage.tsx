@@ -206,7 +206,7 @@ function ConstructionCheckPanel({
           {result.ok ? (
             <p className="flex items-start gap-2 font-semibold">
               <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden />
-              Výborně, řešení je správně.
+              {result.labelIssues.length ? 'Řešení je správně, jen názvy nesedí.' : 'Výborně, řešení je správně.'}
             </p>
           ) : result.empty ? (
             <p className="flex items-start gap-2">
@@ -237,11 +237,23 @@ function ConstructionCheckPanel({
               ) : null}
             </>
           )}
+          {result.labelIssues.length && !result.empty ? (
+            <div className="mt-2 rounded-md border border-amber-300 bg-amber-100/70 px-2.5 py-2 text-amber-950">
+              <p className="font-semibold">Pozor na názvy bodů</p>
+              <ul className="mt-1 space-y-0.5">
+                {result.labelIssues.map(t => (
+                  <li key={t}>{t}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           {stale ? (
             <p className="mt-1.5 pl-6 text-[12px] opacity-80">Rýsování se od kontroly změnilo — zkontrolujte znovu.</p>
-          ) : !result.ok && !result.empty ? (
+          ) : !result.empty && (!result.ok || result.labelIssues.length) ? (
             <p className="mt-1.5 pl-6 text-[12px] opacity-80">
-              Na plátně jsou zeleně body, které sedí, a červeně body mimo správnou polohu (tolerance 2 mm).
+              Na plátně jsou zeleně body, které sedí
+              {result.labelIssues.length ? ', oranžově body se špatným názvem' : ''}
+              {result.ok ? '' : ' a červeně body mimo správnou polohu (tolerance 2 mm)'}.
             </p>
           ) : null}
         </div>

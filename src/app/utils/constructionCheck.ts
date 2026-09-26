@@ -4,8 +4,12 @@
  * Hodnotí se jen výsledek, ne postup: každý hledaný bod musí na plátně ležet
  * do 2 mm od správné polohy a strany útvaru musí být narýsované — úsečkou,
  * nebo ležet na narýsované přímce či polopřímce.
- * Popisky bodů se nekontrolují, takže projde i jiné pojmenování nebo jiný
- * správný postup konstrukce.
+ * Postup konstrukce se nehodnotí, projde i jiný správný postup.
+ *
+ * Názvy bodů na výsledek nemají vliv: správně narýsovaný útvar se špatně
+ * pojmenovaným vrcholem je splněný, žák jen dostane upozornění, že název nesedí.
+ * Porovnává se písmeno bez indexu (C, C₁, C1 i C' jsou pro vrchol C₂ v pořádku,
+ * u úloh s více řešeními tedy nezáleží, které řešení je první).
  */
 import type { GeometrySubmissionSnapshot } from '../../../rysovani/src/components/FreeGeometryEditor';
 import type { ConstructionCheck, ConstructionCheckPoint } from './assignmentSolutions';
@@ -19,7 +23,8 @@ export const CHECK_TOLERANCE_PX = 2 * PX_PER_MM;
 /** Do 1,5 cm hlásíme „vedle“ i se vzdáleností, dál už bod bereme jako chybějící. */
 const NEAR_PX = 15 * PX_PER_MM;
 
-export type CheckMarker = V & { ok: boolean };
+/** `warn` = bod sedí, ale má jiný název, než má mít. */
+export type CheckMarker = V & { ok: boolean; warn?: boolean };
 
 export type CheckFigureResult = {
   name: string;
@@ -33,14 +38,21 @@ export type ConstructionCheckResult = {
   empty: boolean;
   figures: CheckFigureResult[];
   circleIssues: string[];
-  /** Kroužky na plátně: zelené u správných bodů, červené u bodů vedle. */
+  /** Upozornění na názvy bodů (výsledek neovlivňují). */
+  labelIssues: string[];
+  /** Kroužky na plátně: zelené u správných bodů, oranžové u špatného názvu, červené u bodů vedle. */
   markers: CheckMarker[];
 };
 
 type PointMatch =
-  | { status: 'ok'; at: V; distance: number }
-  | { status: 'off'; at: V; distance: number }
+  | { status: 'ok'; at: V; distance: number; label: string }
+  | { status: 'off'; at: V; distance: number; label: string }
   | { status: 'missing' };
+
+/** Písmeno názvu bez indexu a čárek: „C₂“, „C2“, „C'“ → „C“. */
+export function labelBase(label: string): string {
+  return label.replace(/[₀-₉0-9'′″_\s]/g, '');
+}
 
 const dist = (a: V, b: V) => Math.hypot(a.x - b.x, a.y - b.y);
 
@@ -99,15 +111,25 @@ export function checkConstruction(
   for (const f of check.figures) {
     for (const p of [...f.vertices, ...(f.extra ?? [])]) if (p.sought) sought.set(p.id, p);
   }
-  const pairs: Array<{ id: string; sp: V & { id: string }; d: number }> = [];
+  // Písmena, která smí bod nést: jeho vlastní, u zaměnitelné skupiny kterékoli ze skupiny.
+  const groupOf = new Map<string, string[]>();
+  for (const group of check.interchangeable ?? []) for (const id of group) groupOf.set(id, group);
+  const allowedBases = (id: string): string[] =>
+    (groupOf.get(id) ?? [id]).map(g => labelBase(sought.get(g)?.name ?? ''));
+
+  const pairs: Array<{ id: string; sp: V & { id: string; label: string }; d: number; named: boolean }> = [];
   for (const id of sought.keys()) {
     const target = at(id);
+    const bases = allowedBases(id);
     for (const sp of candidates) {
       const d = dist(target, sp);
-      if (d <= NEAR_PX) pairs.push({ id, sp, d });
+      if (d <= NEAR_PX) pairs.push({ id, sp, d, named: bases.includes(labelBase(sp.label ?? '')) });
     }
   }
-  pairs.sort((a, b) => a.d - b.d);
+  // Nejdřív body v toleranci, mezi nimi ty se správným názvem (když žák má na místě
+  // vrcholu dva body, třeba průsečík a pojmenovaný bod), pak podle vzdálenosti.
+  const within = (d: number) => (d <= CHECK_TOLERANCE_PX ? 0 : 1);
+  pairs.sort((a, b) => within(a.d) - within(b.d) || Number(b.named) - Number(a.named) || a.d - b.d);
   const matches = new Map<string, PointMatch>();
   const usedStudent = new Set<string>();
   for (const pair of pairs) {
@@ -117,6 +139,7 @@ export function checkConstruction(
       status: pair.d <= CHECK_TOLERANCE_PX ? 'ok' : 'off',
       at: { x: pair.sp.x, y: pair.sp.y },
       distance: pair.d,
+      label: pair.sp.label ?? '',
     });
   }
   const matchOf = (id: string): PointMatch => matches.get(id) ?? { status: 'missing' };
@@ -208,10 +231,49 @@ export function checkConstruction(
     }
   }
 
+  // Názvy: u každé zaměnitelné skupiny se písmena rozdělí mezi body, jednotlivé body
+  // musí mít své písmeno. Hlásí se jen body, které žák sestrojil.
+  const vertexIds = new Set(check.figures.flatMap(f => f.vertices.map(v => v.id)));
+  const badLabel = new Set<string>();
+  const labelIssues: string[] = [];
+  const done = new Set<string>();
+  for (const id of sought.keys()) {
+    if (done.has(id)) continue;
+    const group = groupOf.get(id) ?? [id];
+    group.forEach(g => done.add(g));
+    const pool = group.map(g => sought.get(g)!);
+    const members = group
+      .map(g => ({ id: g, m: matchOf(g) }))
+      .filter((x): x is { id: string; m: Extract<PointMatch, { label: string }> } => x.m.status !== 'missing');
+    const wrong: typeof members = [];
+    const free = [...pool];
+    for (const x of members) {
+      const i = free.findIndex(p => labelBase(p.name) === labelBase(x.m.label));
+      if (i >= 0) free.splice(i, 1);
+      else wrong.push(x);
+    }
+    for (const x of wrong) {
+      // Očekávané jméno: vlastní, pokud ho nikdo ze skupiny nepoužil, jinak první volné.
+      const own = sought.get(x.id)!;
+      const expectedName = (free.find(p => p.id === own.id) ?? free[0] ?? own).name;
+      const i = free.findIndex(p => p.name === expectedName);
+      if (i >= 0) free.splice(i, 1);
+      const word = vertexIds.has(x.id) ? 'Vrchol' : 'Bod';
+      badLabel.add(x.id);
+      labelIssues.push(
+        x.m.label.trim()
+          ? `${word} označený ${x.m.label.trim()} má mít název ${expectedName}.`
+          : `${word} ${expectedName} nemá název.`,
+      );
+    }
+  }
+
   const markers: CheckMarker[] = [];
   for (const id of sought.keys()) {
     const m = matchOf(id);
-    if (m.status !== 'missing') markers.push({ ...m.at, ok: m.status === 'ok' });
+    if (m.status === 'missing') continue;
+    const ok = m.status === 'ok';
+    markers.push({ x: m.at.x, y: m.at.y, ok, ...(ok && badLabel.has(id) ? { warn: true } : {}) });
   }
 
   return {
@@ -219,6 +281,7 @@ export function checkConstruction(
     empty,
     figures,
     circleIssues,
+    labelIssues,
     markers,
   };
 }

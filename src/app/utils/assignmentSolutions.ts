@@ -27,6 +27,11 @@ export type ConstructionCheck = {
   }>;
   /** Kružnice, které má zadání sestrojit (střed a bod na obvodu z `snapshot`). */
   circles?: Array<{ name: string; centerId: string; rimId: string }>;
+  /**
+   * Skupiny hledaných bodů, jejichž názvy smí žák prohodit a útvar je pořád správně
+   * pojmenovaný (např. B a D na ose kosočtverce).
+   */
+  interchangeable?: string[][];
 };
 
 export type AssignmentModelSolution = {

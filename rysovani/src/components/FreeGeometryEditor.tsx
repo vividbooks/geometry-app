@@ -586,8 +586,8 @@ interface FreeGeometryEditorProps {
   autoDetectRequestId?: number;
   /** Vzorové řešení vykreslené přes plátno (úkol). */
   overlaySnapshot?: GeometrySubmissionSnapshot | null;
-  /** Výsledek kontroly řešení: kroužky u bodů (zelený = správně, červený = vedle). */
-  checkMarkers?: ReadonlyArray<{ x: number; y: number; ok: boolean }> | null;
+  /** Výsledek kontroly řešení: kroužky u bodů (zelený = správně, oranžový = špatný název, červený = vedle). */
+  checkMarkers?: ReadonlyArray<{ x: number; y: number; ok: boolean; warn?: boolean }> | null;
   /** Zavolá se po každé změně bodů, tvarů nebo kresby na plátně. */
   onCanvasChange?: () => void;
 }
@@ -8550,7 +8550,7 @@ export function FreeGeometryEditor({
       ctx.setLineDash([]);
       ctx.lineWidth = 3 / scale;
       for (const m of checkMarkers) {
-        ctx.strokeStyle = m.ok ? '#16a34a' : '#dc2626';
+        ctx.strokeStyle = !m.ok ? '#dc2626' : m.warn ? '#d97706' : '#16a34a';
         ctx.beginPath();
         ctx.arc(m.x, m.y, 13 / scale, 0, Math.PI * 2);
         ctx.stroke();
