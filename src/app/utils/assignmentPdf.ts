@@ -3,6 +3,7 @@ import {
   assignmentInstructionDisplay,
   type InstructionStepContent,
 } from './instructionSteps';
+import { cermatInstructionSegments } from './cermatAssignments';
 
 export type AssignmentPdfSource = {
   id?: string;
@@ -51,6 +52,87 @@ function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number)
     if (cur) lines.push(cur);
   }
   return lines;
+}
+
+type Run = { text: string; italic: boolean };
+/** Slovo složené z úseků různého řezu (např. kurzívní „b“ a za ním obyčejná čárka). */
+type RichWord = Run[];
+
+/** Rozdělí úseky textu na odstavce slov (mezery a konce řádků slova oddělují). */
+function richParagraphs(segments: Run[]): RichWord[][] {
+  const paragraphs: RichWord[][] = [[]];
+  let word: RichWord = [];
+  const endWord = () => {
+    if (word.length) paragraphs[paragraphs.length - 1]!.push(word);
+    word = [];
+  };
+  for (const seg of segments) {
+    for (const piece of seg.text.split(/(\n|[ \t]+)/)) {
+      if (!piece) continue;
+      if (piece === '\n') {
+        endWord();
+        paragraphs.push([]);
+      } else if (/^[ \t]+$/.test(piece)) {
+        endWord();
+      } else {
+        word.push({ text: piece, italic: seg.italic });
+      }
+    }
+  }
+  endWord();
+  return paragraphs;
+}
+
+/**
+ * Vysází text s kurzívními úseky do šířky `maxWidth`; vrátí novou svislou polohu.
+ * Prázdný odstavec je prázdný řádek (jako u `wrapText`).
+ */
+function drawRichText(
+  ctx: CanvasRenderingContext2D,
+  segments: Run[],
+  opts: { x: number; y: number; maxWidth: number; lineHeight: number; maxY: number; font: string; italicFont: string },
+): number {
+  const fontOf = (r: Run) => (r.italic ? opts.italicFont : opts.font);
+  const width = (w: RichWord) =>
+    w.reduce((sum, r) => {
+      ctx.font = fontOf(r);
+      return sum + ctx.measureText(r.text).width;
+    }, 0);
+  ctx.font = opts.font;
+  const space = ctx.measureText(' ').width;
+  let y = opts.y;
+  const drawLine = (line: RichWord[]) => {
+    let x = opts.x;
+    line.forEach((w, i) => {
+      if (i > 0) x += space;
+      for (const r of w) {
+        ctx.font = fontOf(r);
+        ctx.fillText(r.text, x, y);
+        x += ctx.measureText(r.text).width;
+      }
+    });
+  };
+  for (const para of richParagraphs(segments)) {
+    if (y > opts.maxY) break;
+    let line: RichWord[] = [];
+    let lineW = 0;
+    for (const w of para) {
+      const ww = width(w);
+      if (line.length && lineW + space + ww > opts.maxWidth) {
+        drawLine(line);
+        y += opts.lineHeight;
+        if (y > opts.maxY) return y;
+        line = [];
+        lineW = 0;
+      }
+      lineW += (line.length ? space : 0) + ww;
+      line.push(w);
+    }
+    drawLine(line);
+    y += opts.lineHeight;
+  }
+  ctx.font = opts.font;
+  return y;
 }
 
 function pointById(points: Pt[], id: string | undefined): Pt | undefined {
@@ -452,6 +534,8 @@ function stepsOf(row: AssignmentPdfSource): {
 }
 
 async function renderStepPage(opts: {
+  /** Id úkolu — u úloh CERMAT se podle něj sází názvy útvarů kurzívou. */
+  assignmentId?: string;
   title: string;
   step: InstructionStepContent;
   fallbackImage: string | null;
@@ -519,11 +603,24 @@ async function renderStepPage(opts: {
   if (body) {
     ctx.fillStyle = '#1e293b';
     ctx.font = '20px system-ui, sans-serif';
-    const lines = wrapText(ctx, body, PAGE_W - MARGIN * 2);
-    for (const line of lines) {
-      if (y > PAGE_H - MARGIN - 80) break;
-      ctx.fillText(line || ' ', MARGIN, y);
-      y += 28;
+    const segments = cermatInstructionSegments(opts.assignmentId, body);
+    if (segments) {
+      y = drawRichText(ctx, segments, {
+        x: MARGIN,
+        y,
+        maxWidth: PAGE_W - MARGIN * 2,
+        lineHeight: 28,
+        maxY: PAGE_H - MARGIN - 80,
+        font: '20px system-ui, sans-serif',
+        italicFont: 'italic 20px system-ui, sans-serif',
+      });
+    } else {
+      const lines = wrapText(ctx, body, PAGE_W - MARGIN * 2);
+      for (const line of lines) {
+        if (y > PAGE_H - MARGIN - 80) break;
+        ctx.fillText(line || ' ', MARGIN, y);
+        y += 28;
+      }
     }
     y += 16;
   }
@@ -662,6 +759,7 @@ export async function buildAssignmentsPdfBlob(
     const { title, fallbackImage, steps } = stepsOf(row);
     for (let i = 0; i < steps.length; i++) {
       const canvas = await renderStepPage({
+        assignmentId: row.id,
         title,
         step: steps[i]!,
         fallbackImage,

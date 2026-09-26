@@ -13,6 +13,7 @@ import {
   ListChecks,
 } from 'lucide-react';
 import { ShareModal } from '../components/ShareModal';
+import { InstructionText } from '../components/tasks/InstructionText';
 import '../../../rysovani/src/index.css';
 import type { GeometrySubmissionSnapshot } from '../../../rysovani/src/components/FreeGeometryEditor';
 import { formatGeometryStepSubmissions, formatGeometrySubmission, geometrySnapshotIsEmpty } from '../utils/geometrySubmissionCodec';
@@ -848,7 +849,7 @@ export default function StudentAssignmentPage() {
                     <article className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm">
                       {activeStep.text.trim() ? (
                         <div className="text-[15px] leading-relaxed text-slate-800 whitespace-pre-wrap [font-family:'Fenomen_Sans',system-ui,sans-serif]">
-                          {activeStep.text}
+                          <InstructionText assignmentId={assignment.id} text={activeStep.text} />
                         </div>
                       ) : null}
                       {checkPanel(activeStep.text.trim() ? 'mt-4 space-y-3' : 'space-y-3')}
@@ -935,7 +936,11 @@ export default function StudentAssignmentPage() {
               ) : (
                 <article className="rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm">
                   <div className="text-[15px] leading-relaxed text-slate-800 whitespace-pre-wrap [font-family:'Fenomen_Sans',system-ui,sans-serif]">
-                    {instructionView.text || '—'}
+                    {instructionView.text ? (
+                      <InstructionText assignmentId={assignment.id} text={instructionView.text} />
+                    ) : (
+                      '—'
+                    )}
                   </div>
                   {checkPanel('mt-4 space-y-3')}
                   {modelSolution ? (

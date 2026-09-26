@@ -10,6 +10,7 @@ import { CIRCUIT_ASSIGNMENTS_TABLE, CIRCUIT_SUBMISSIONS_TABLE } from '@/lib/circ
 import { decodeCircuit } from '../utils/circuitUrl';
 import { parseGeometrySubmissionAny } from '../utils/geometrySubmissionCodec';
 import { assignmentInstructionDisplay } from '../utils/instructionSteps';
+import { InstructionText } from '../components/tasks/InstructionText';
 import { downloadAssignmentPdf } from '../utils/assignmentPdf';
 import { toast } from 'sonner';
 import { useIsTouch, useToolbarScale } from '../hooks/editorChrome';
@@ -314,7 +315,9 @@ export default function SubmissionViewPage() {
                       ].join(' ')}
                     >
                       {s.text.trim() ? (
-                        <div className="whitespace-pre-wrap">{s.text}</div>
+                        <div className="whitespace-pre-wrap">
+                          <InstructionText assignmentId={assignment.id ?? submission?.assignment_id} text={s.text} />
+                        </div>
                       ) : null}
                       {s.image ? (
                         <img
@@ -328,7 +331,11 @@ export default function SubmissionViewPage() {
                 </ol>
               ) : (
                 <>
-                  <p className="text-sm text-zinc-800 whitespace-pre-wrap">{instructionView.text || '—'}</p>
+                  <p className="text-sm text-zinc-800 whitespace-pre-wrap">{instructionView.text ? (
+                      <InstructionText assignmentId={assignment.id ?? submission?.assignment_id} text={instructionView.text} />
+                    ) : (
+                      '—'
+                    )}</p>
                   {assignment.instruction_image ? (
                     <img
                       src={assignment.instruction_image}
