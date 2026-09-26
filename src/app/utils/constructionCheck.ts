@@ -275,6 +275,16 @@ export function checkConstruction(
     const ok = m.status === 'ok';
     markers.push({ x: m.at.x, y: m.at.y, ok, ...(ok && badLabel.has(id) ? { warn: true } : {}) });
   }
+  // Vrcholy daných bodů zadání (třeba A, B) se zezelenají, když je útvar, do kterého patří, správně.
+  const givenMarked = new Set<string>();
+  check.figures.forEach((f, i) => {
+    if (!figures[i]!.ok) return;
+    for (const v of f.vertices) {
+      if (v.sought || givenMarked.has(v.id)) continue;
+      givenMarked.add(v.id);
+      markers.push({ ...at(v.id), ok: true });
+    }
+  });
 
   return {
     ok: figures.every(f => f.ok) && circleIssues.length === 0,

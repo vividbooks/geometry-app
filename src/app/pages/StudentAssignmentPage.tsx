@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { ShareModal } from '../components/ShareModal';
 import { InstructionText } from '../components/tasks/InstructionText';
+import { ConfettiBurst } from '../components/tasks/ConfettiBurst';
 import '../../../rysovani/src/index.css';
 import type { GeometrySubmissionSnapshot } from '../../../rysovani/src/components/FreeGeometryEditor';
 import { formatGeometryStepSubmissions, formatGeometrySubmission, geometrySnapshotIsEmpty } from '../utils/geometrySubmissionCodec';
@@ -171,6 +172,19 @@ function ModelSolutionPanel({
   );
 }
 
+/** Popis kroužků na plátně — jen barvy, které tam opravdu jsou. */
+function markerLegend(result: ConstructionCheckResult): string | null {
+  const parts: string[] = [];
+  if (result.markers.some(m => m.ok && !m.warn)) parts.push('zeleně body, které sedí');
+  if (result.markers.some(m => m.ok && m.warn)) parts.push('oranžově body se špatným názvem');
+  if (result.markers.some(m => !m.ok)) parts.push('červeně body mimo správnou polohu (tolerance 2 mm)');
+  if (!parts.length) return null;
+  // Vedlejší věta „…, které sedí“ se před dalším členem uzavírá čárkou.
+  const head = parts.slice(0, -1).join(', ');
+  const list = parts.length > 1 ? `${head}${head.includes(',') ? ',' : ''} a ${parts[parts.length - 1]}` : parts[0];
+  return `Na plátně jsou ${list}.`;
+}
+
 /** Tlačítko „Zkontrolovat řešení“ a výpis, co sedí a co ještě chybí. */
 function ConstructionCheckPanel({
   result,
@@ -249,12 +263,8 @@ function ConstructionCheckPanel({
           ) : null}
           {stale ? (
             <p className="mt-1.5 pl-6 text-[12px] opacity-80">Rýsování se od kontroly změnilo — zkontrolujte znovu.</p>
-          ) : !result.empty && (!result.ok || result.labelIssues.length) ? (
-            <p className="mt-1.5 pl-6 text-[12px] opacity-80">
-              Na plátně jsou zeleně body, které sedí
-              {result.labelIssues.length ? ', oranžově body se špatným názvem' : ''}
-              {result.ok ? '' : ' a červeně body mimo správnou polohu (tolerance 2 mm)'}.
-            </p>
+          ) : !result.empty && (!result.ok || result.labelIssues.length) && markerLegend(result) ? (
+            <p className="mt-1.5 pl-6 text-[12px] opacity-80">{markerLegend(result)}</p>
           ) : null}
         </div>
       ) : null}
@@ -326,6 +336,7 @@ export default function StudentAssignmentPage() {
   const [solutionStepIndex, setSolutionStepIndex] = useState(0);
   const [checkResult, setCheckResult] = useState<ConstructionCheckResult | null>(null);
   const [checkStale, setCheckStale] = useState(false);
+  const [confettiId, setConfettiId] = useState(0);
   const [autoDetectSrc, setAutoDetectSrc] = useState<string | null>(null);
   const [canvasSessionKey, setCanvasSessionKey] = useState(0);
   const [editorInitialSnapshot, setEditorInitialSnapshot] =
@@ -476,8 +487,10 @@ export default function StudentAssignmentPage() {
     const live = submissionSnapshotRef.current?.() ?? null;
     const given = new Set((editorInitialSnapshot?.points ?? []).map(p => p.id));
     try {
-      setCheckResult(checkConstruction(check, modelSolution.snapshot, live, given));
+      const result = checkConstruction(check, modelSolution.snapshot, live, given);
+      setCheckResult(result);
       setCheckStale(false);
+      if (result.ok) setConfettiId(n => n + 1);
     } catch (e) {
       console.error('Kontrola řešení:', e);
       toast.error('Řešení se nepodařilo zkontrolovat.');
@@ -712,6 +725,14 @@ export default function StudentAssignmentPage() {
   return (
     <StudentAssignmentErrorBoundary>
       <div className="relative h-screen h-[100dvh] w-full overflow-hidden bg-white">
+        <ConfettiBurst
+          burstId={confettiId}
+          origin={() => ({
+            // Střed plátna vlevo od panelu se zadáním.
+            x: (window.innerWidth - (asideCollapsed ? 0 : asideWidth)) / 2,
+            y: window.innerHeight * 0.55,
+          })}
+        />
         <div className="absolute inset-0 min-h-0 min-w-0">
           <Suspense
             fallback={
