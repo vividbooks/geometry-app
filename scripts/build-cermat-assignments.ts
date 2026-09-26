@@ -1,15 +1,17 @@
 /**
- * Složí SQL a JSON pro úlohy sekce CERMAT (`geometry_circuit_assignments`) ze souřadnic
- * v `src/app/utils/cermatAssignments.ts`.
+ * Složí SQL pro úlohy sekce CERMAT (`geometry_circuit_assignments`) ze zadání
+ * v `src/app/utils/cermatAssignments.ts` (data ročníků v `src/app/utils/cermat/`).
  *
- * Usage (Node 22+):
- *   node --experimental-strip-types scripts/build-cermat-assignments.ts
+ * Usage:
+ *   npx esbuild scripts/build-cermat-assignments.ts --bundle --platform=node --format=esm \
+ *     --outfile=/tmp/build-cermat.mjs && node /tmp/build-cermat.mjs [rows.json]
+ *
  * Úloha má jediný krok, sloupec new_canvas_per_step proto není potřeba (v produkční DB ani není).
- * Výstup: supabase/patches/insert-cermat-2026.sql (všech 8 úloh v jedné transakci)
- *         a supabase/patches/insert-cermat-2026-<id>.json pro každou úlohu.
+ * Výstup: supabase/patches/insert-cermat.sql (všechny úlohy v jedné transakci, insert … on conflict
+ * do update). Volitelný argument uloží řádky i jako JSON (pro vložení přes REST).
  */
 import { writeFileSync } from 'node:fs';
-import { CERMAT_ASSIGNMENTS, cermatInstructionSnapshot } from '../src/app/utils/cermatAssignments.ts';
+import { CERMAT_ASSIGNMENTS, cermatInstructionSnapshot } from '../src/app/utils/cermatAssignments';
 
 const rows = CERMAT_ASSIGNMENTS.map(item => ({
   id: item.id,
@@ -20,7 +22,7 @@ const rows = CERMAT_ASSIGNMENTS.map(item => ({
 }));
 
 const sql = [
-  '-- Sekce CERMAT: konstrukční úlohy 9 a 10 z jednotné přijímací zkoušky 2026 (čtyřleté obory).',
+  '-- Sekce CERMAT: konstrukční úlohy 9 a 10 z jednotné přijímací zkoušky (čtyřleté obory).',
   '-- Vygenerováno skriptem scripts/build-cermat-assignments.ts — neupravovat ručně.',
   '',
   'begin;',
@@ -47,8 +49,7 @@ const sql = [
   '',
 ].join('\n');
 
-writeFileSync('supabase/patches/insert-cermat-2026.sql', sql);
-for (const row of rows) {
-  writeFileSync(`supabase/patches/insert-cermat-2026-${row.id.slice(0, 8)}.json`, `${JSON.stringify(row, null, 2)}\n`);
-}
+writeFileSync('supabase/patches/insert-cermat.sql', sql);
+const rowsOut = process.argv[2];
+if (rowsOut) writeFileSync(rowsOut, `${JSON.stringify(rows)}\n`);
 console.log(`Zapsáno ${rows.length} úloh.`);

@@ -11,7 +11,15 @@ export function InstructionText({ assignmentId, text }: { assignmentId: string |
   return (
     <>
       {segments.map((part, i) =>
-        part.italic ? <i key={i}>{part.text}</i> : <Fragment key={i}>{part.text}</Fragment>,
+        part.sub ? (
+          <sub key={i} className="italic">
+            {part.text}
+          </sub>
+        ) : part.italic ? (
+          <i key={i}>{part.text}</i>
+        ) : (
+          <Fragment key={i}>{part.text}</Fragment>
+        ),
       )}
     </>
   );

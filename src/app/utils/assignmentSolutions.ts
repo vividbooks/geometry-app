@@ -20,13 +20,18 @@ export type ConstructionCheck = {
   /** Útvary k narýsování — u „najděte všechna řešení“ jeden za každé řešení. */
   figures: Array<{
     name: string;
-    /** Vrcholy v pořadí obvodu; strany jsou sousední dvojice. */
+    /**
+     * Vrcholy v pořadí obvodu; strany jsou sousední dvojice. Jeden bod = jen bod (bez stran),
+     * dva body = úsečka (např. výška, těžnice), tři a víc = mnohoúhelník.
+     */
     vertices: ConstructionCheckPoint[];
     /** Další hledané body, které nejsou vrcholy (např. střed strany). */
     extra?: ConstructionCheckPoint[];
   }>;
   /** Kružnice, které má zadání sestrojit (střed a bod na obvodu z `snapshot`). */
   circles?: Array<{ name: string; centerId: string; rimId: string }>;
+  /** Přímky, které má zadání sestrojit (osa úhlu, obraz přímky …): dva body z `snapshot`, jimiž vedou. */
+  lines?: Array<{ name: string; p1Id: string; p2Id: string }>;
   /**
    * Skupiny hledaných bodů, jejichž názvy smí žák prohodit a útvar je pořád správně
    * pojmenovaný (např. B a D na ose kosočtverce).

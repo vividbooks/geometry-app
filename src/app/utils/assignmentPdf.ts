@@ -54,7 +54,7 @@ function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number)
   return lines;
 }
 
-type Run = { text: string; italic: boolean };
+type Run = { text: string; italic: boolean; sub?: boolean };
 /** Slovo složené z úseků různého řezu (např. kurzívní „b“ a za ním obyčejná čárka). */
 type RichWord = Run[];
 
@@ -75,7 +75,7 @@ function richParagraphs(segments: Run[]): RichWord[][] {
       } else if (/^[ \t]+$/.test(piece)) {
         endWord();
       } else {
-        word.push({ text: piece, italic: seg.italic });
+        word.push({ text: piece, italic: seg.italic, ...(seg.sub ? { sub: true } : {}) });
       }
     }
   }
@@ -90,9 +90,19 @@ function richParagraphs(segments: Run[]): RichWord[][] {
 function drawRichText(
   ctx: CanvasRenderingContext2D,
   segments: Run[],
-  opts: { x: number; y: number; maxWidth: number; lineHeight: number; maxY: number; font: string; italicFont: string },
+  opts: {
+    x: number;
+    y: number;
+    maxWidth: number;
+    lineHeight: number;
+    maxY: number;
+    font: string;
+    italicFont: string;
+    subFont: string;
+  },
 ): number {
-  const fontOf = (r: Run) => (r.italic ? opts.italicFont : opts.font);
+  // Dolní index: menší kurzíva posazená pod účaří.
+  const fontOf = (r: Run) => (r.sub ? opts.subFont : r.italic ? opts.italicFont : opts.font);
   const width = (w: RichWord) =>
     w.reduce((sum, r) => {
       ctx.font = fontOf(r);
@@ -107,7 +117,7 @@ function drawRichText(
       if (i > 0) x += space;
       for (const r of w) {
         ctx.font = fontOf(r);
-        ctx.fillText(r.text, x, y);
+        ctx.fillText(r.text, x, r.sub ? y + 5 : y);
         x += ctx.measureText(r.text).width;
       }
     });
@@ -613,6 +623,7 @@ async function renderStepPage(opts: {
         maxY: PAGE_H - MARGIN - 80,
         font: '20px system-ui, sans-serif',
         italicFont: 'italic 20px system-ui, sans-serif',
+        subFont: 'italic 14px system-ui, sans-serif',
       });
     } else {
       const lines = wrapText(ctx, body, PAGE_W - MARGIN * 2);

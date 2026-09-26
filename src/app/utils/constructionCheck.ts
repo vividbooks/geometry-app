@@ -37,7 +37,8 @@ export type ConstructionCheckResult = {
   /** Žák zatím nenarýsoval nic vlastního. */
   empty: boolean;
   figures: CheckFigureResult[];
-  circleIssues: string[];
+  /** Chybějící nebo špatné kružnice a přímky, které zadání chce sestrojit. */
+  extraIssues: string[];
   /** Upozornění na názvy bodů (výsledek neovlivňují). */
   labelIssues: string[];
   /** Kroužky na plátně: zelené u správných bodů, oranžové u špatného názvu, červené u bodů vedle. */
@@ -52,6 +53,11 @@ type PointMatch =
 /** Písmeno názvu bez indexu a čárek: „C₂“, „C2“, „C'“ → „C“. */
 export function labelBase(label: string): string {
   return label.replace(/[₀-₉0-9'′″_\s]/g, '');
+}
+
+/** Přípustná písmena bodu; bod společný dvěma řešením může mít dvě jména („A₁ = B₂“). */
+function nameBases(name: string): string[] {
+  return name.split('=').map(labelBase).filter(Boolean);
 }
 
 const dist = (a: V, b: V) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -115,7 +121,7 @@ export function checkConstruction(
   const groupOf = new Map<string, string[]>();
   for (const group of check.interchangeable ?? []) for (const id of group) groupOf.set(id, group);
   const allowedBases = (id: string): string[] =>
-    (groupOf.get(id) ?? [id]).map(g => labelBase(sought.get(g)?.name ?? ''));
+    (groupOf.get(id) ?? [id]).flatMap(g => nameBases(sought.get(g)?.name ?? ''));
 
   const pairs: Array<{ id: string; sp: V & { id: string; label: string }; d: number; named: boolean }> = [];
   for (const id of sought.keys()) {
@@ -123,7 +129,7 @@ export function checkConstruction(
     const bases = allowedBases(id);
     for (const sp of candidates) {
       const d = dist(target, sp);
-      if (d <= NEAR_PX) pairs.push({ id, sp, d, named: bases.includes(labelBase(sp.label ?? '')) });
+      if (d <= NEAR_PX) pairs.push({ id, sp, d, named: nameBases(sp.label ?? '').some(b => bases.includes(b)) });
     }
   }
   // Nejdřív body v toleranci, mezi nimi ty se správným názvem (když žák má na místě
@@ -186,7 +192,8 @@ export function checkConstruction(
       return { name: f.name, ok: false, issues: ['toto řešení zatím chybí'] };
     }
 
-    const isVertex = new Set(f.vertices.map(v => v.id));
+    const polygon = f.vertices.length >= 3;
+    const isVertex = new Set(polygon ? f.vertices.map(v => v.id) : []);
     for (const p of own) {
       const m = matchOf(p.id);
       const word = isVertex.has(p.id) ? 'vrchol' : 'bod';
@@ -195,20 +202,23 @@ export function checkConstruction(
     }
 
     const missingSides: string[] = [];
-    f.vertices.forEach((v, i) => {
+    // Jeden bod nemá strany, dva body tvoří úsečku, tři a víc mnohoúhelník.
+    const sideCount = f.vertices.length < 2 ? 0 : f.vertices.length === 2 ? 1 : f.vertices.length;
+    f.vertices.slice(0, sideCount).forEach((v, i) => {
       const w = f.vertices[(i + 1) % f.vertices.length]!;
       const a = placed(v);
       const b = placed(w);
       if (!a || !b) return; // chybějící vrchol už je v hlášení
       if (!sideDrawn(a, b)) missingSides.push(`${v.name}${w.name}`);
     });
-    if (missingSides.length === 1) issues.push(`není narýsovaná strana ${missingSides[0]}`);
+    if (!polygon && missingSides.length) issues.push(`není narýsovaná úsečka ${missingSides[0]}`);
+    else if (missingSides.length === 1) issues.push(`není narýsovaná strana ${missingSides[0]}`);
     else if (missingSides.length > 1) issues.push(`nejsou narýsované strany ${listCz(missingSides)}`);
 
     return { name: f.name, ok: issues.length === 0, issues };
   });
 
-  const circleIssues: string[] = [];
+  const extraIssues: string[] = [];
   for (const c of check.circles ?? []) {
     const center = at(c.centerId);
     const r = dist(center, at(c.rimId));
@@ -225,15 +235,49 @@ export function checkConstruction(
     );
     if (!good) {
       const sameCenter = circles.some(k => dist(k.c, center) <= CHECK_TOLERANCE_PX);
-      circleIssues.push(
+      extraIssues.push(
         sameCenter ? `kružnice ${c.name} má jiný poloměr` : `chybí kružnice ${c.name}`,
+      );
+    }
+  }
+
+  // Přímky, které se mají sestrojit (osa, obraz přímky …): žákova přímka, polopřímka nebo úsečka
+  // (i čárkovaná) musí po prodloužení vést oběma kontrolními body, které leží daleko od sebe.
+  const lineCarriers: Carrier[] = [];
+  for (const s of studentShapes) {
+    if (s.type === 'circle' || s.type === 'circleArc') continue;
+    const a = studentById.get(s.definition.p1Id);
+    if (!a) continue;
+    const b = s.definition.p2Id ? studentById.get(s.definition.p2Id) : undefined;
+    let d: V | null = null;
+    if (b) d = { x: b.x - a.x, y: b.y - a.y };
+    else if (s.definition.angle !== undefined) {
+      const rad = (-s.definition.angle * Math.PI) / 180;
+      d = { x: Math.cos(rad), y: Math.sin(rad) };
+    }
+    if (d) lineCarriers.push({ kind: 'line', a: { x: a.x, y: a.y }, d });
+  }
+  for (const l of check.lines ?? []) {
+    const p1 = at(l.p1Id);
+    const p2 = at(l.p2Id);
+    const len = dist(p1, p2) || 1;
+    const u = { x: (p2.x - p1.x) / len, y: (p2.y - p1.y) / len };
+    const m = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+    // Kontrolní body 3 cm na obě strany od středu: přímka musí mít správnou polohu i směr.
+    const q1 = { x: m.x - u.x * 150, y: m.y - u.y * 150 };
+    const q2 = { x: m.x + u.x * 150, y: m.y + u.y * 150 };
+    const through = (q: V) => lineCarriers.filter(c => distToCarrier(q, c) <= CHECK_TOLERANCE_PX);
+    const good = through(q1).some(c => distToCarrier(q2, c) <= CHECK_TOLERANCE_PX);
+    if (!good) {
+      extraIssues.push(
+        through(m).length ? `přímka ${l.name} má jiný směr` : `chybí přímka ${l.name}`,
       );
     }
   }
 
   // Názvy: u každé zaměnitelné skupiny se písmena rozdělí mezi body, jednotlivé body
   // musí mít své písmeno. Hlásí se jen body, které žák sestrojil.
-  const vertexIds = new Set(check.figures.flatMap(f => f.vertices.map(v => v.id)));
+  const vertexIds = new Set(check.figures.flatMap(f => (f.vertices.length >= 3 ? f.vertices.map(v => v.id) : [])));
   const badLabel = new Set<string>();
   const labelIssues: string[] = [];
   const done = new Set<string>();
@@ -248,7 +292,8 @@ export function checkConstruction(
     const wrong: typeof members = [];
     const free = [...pool];
     for (const x of members) {
-      const i = free.findIndex(p => labelBase(p.name) === labelBase(x.m.label));
+      const given = nameBases(x.m.label);
+      const i = free.findIndex(p => nameBases(p.name).some(b => given.includes(b)));
       if (i >= 0) free.splice(i, 1);
       else wrong.push(x);
     }
@@ -287,10 +332,10 @@ export function checkConstruction(
   });
 
   return {
-    ok: figures.every(f => f.ok) && circleIssues.length === 0,
+    ok: figures.every(f => f.ok) && extraIssues.length === 0,
     empty,
     figures,
-    circleIssues,
+    extraIssues,
     labelIssues,
     markers,
   };

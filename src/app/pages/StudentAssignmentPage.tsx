@@ -240,7 +240,7 @@ function ConstructionCheckPanel({
                     {f.issues.length ? <span>: {f.issues.join(', ')}</span> : null}
                   </li>
                 ))}
-                {result.circleIssues.map(t => (
+                {result.extraIssues.map(t => (
                   <li key={t}>✗ {t}</li>
                 ))}
               </ul>

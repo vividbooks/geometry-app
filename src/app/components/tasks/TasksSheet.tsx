@@ -307,9 +307,27 @@ export function TasksSheet({
   const supabaseConfigured = getSupabaseProp ? Boolean(getSupabaseProp()) : isSupabaseConfigured;
   const taskEntries = taskLibraryProp ?? TASK_LIBRARY;
   const [libraryGrade, setLibraryGrade] = useState<TaskLibraryGrade>(6);
-  const libraryEntriesForGrade = useMemo(
+  const gradeEntries = useMemo(
     () => taskLibraryEntriesForGrade(taskEntries, libraryGrade),
     [taskEntries, libraryGrade],
+  );
+  /** Sekce CERMAT: filtr podle roku zkoušky (rok je na začátku názvu úlohy). */
+  const [cermatYear, setCermatYear] = useState<number | 'all'>('all');
+  const cermatYears = useMemo(() => {
+    if (libraryGrade !== 'cermat') return [];
+    const years = new Set<number>();
+    for (const e of gradeEntries) {
+      const y = /^(\d{4})\b/.exec(e.title)?.[1];
+      if (y) years.add(Number(y));
+    }
+    return [...years].sort((a, b) => b - a);
+  }, [gradeEntries, libraryGrade]);
+  const libraryEntriesForGrade = useMemo(
+    () =>
+      libraryGrade === 'cermat' && cermatYear !== 'all'
+        ? gradeEntries.filter(e => e.title.startsWith(`${cermatYear} `))
+        : gradeEntries,
+    [gradeEntries, libraryGrade, cermatYear],
   );
   const readConfigInfo = () => getSupabaseConfigInfoProp?.() ?? getSupabaseConfigInfo();
   const createdLinkInputRef = useRef<HTMLInputElement>(null);
@@ -779,7 +797,7 @@ export function TasksSheet({
       toast.error('Supabase klient není k dispozici.');
       return;
     }
-    const entries = taskLibraryEntriesForGrade(taskEntries, libraryGrade);
+    const entries = libraryEntriesForGrade;
     const ids = entries
       .map(e => e.assignmentId?.trim())
       .filter((v): v is string => Boolean(v));
@@ -809,8 +827,10 @@ export function TasksSheet({
         toast.error('Zadání se nepodařilo načíst.');
         return;
       }
-      const gradeLabel = formatTaskLibraryGradeLabel(libraryGrade);
-      await downloadAssignmentsPdf(rows, taskLibraryGradePdfName(libraryGrade), {
+      const yearSuffix = libraryGrade === 'cermat' && cermatYear !== 'all' ? ` ${cermatYear}` : '';
+      const gradeLabel = `${formatTaskLibraryGradeLabel(libraryGrade)}${yearSuffix}`;
+      const pdfName = `${taskLibraryGradePdfName(libraryGrade)}${yearSuffix ? `-${cermatYear}` : ''}`;
+      await downloadAssignmentsPdf(rows, pdfName, {
         heading: gradeLabel,
         subheading: `${rows.length} konstrukčních úloh`,
       });
@@ -1091,6 +1111,30 @@ export function TasksSheet({
                           );
                         })}
                       </div>
+                      {cermatYears.length > 1 ? (
+                        <div className="-mt-2 mb-6 flex flex-wrap gap-1.5" role="tablist" aria-label="Rok zkoušky">
+                          {(['all', ...cermatYears] as const).map(year => {
+                            const active = cermatYear === year;
+                            return (
+                              <button
+                                key={year}
+                                type="button"
+                                role="tab"
+                                aria-selected={active}
+                                onClick={() => setCermatYear(year)}
+                                className={[
+                                  'inline-flex h-8 items-center rounded-lg border px-3 text-xs font-medium tabular-nums transition-colors',
+                                  active
+                                    ? 'border-sky-700 bg-sky-700 text-white'
+                                    : 'border-sky-200 bg-white text-sky-900 hover:bg-sky-50',
+                                ].join(' ')}
+                              >
+                                {year === 'all' ? 'Všechny roky' : year}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : null}
                       {libraryEntriesForGrade.length > 0 ? (
                         <div className="mb-6">
                           <button
