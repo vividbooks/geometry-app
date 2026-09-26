@@ -1,0 +1,78 @@
+{
+  "id": "5b33aef9-b257-4238-8fd7-195745c28f33",
+  "title": "2026 · 1. náhradní termín · 9. Rovnoramenný trojúhelník se středy stran",
+  "instruction_text": "V rovině leží body A, S a přímka p procházející bodem A.\n\nBod A je vrchol rovnoramenného trojúhelníku ABC, jehož strany AC a BC mají stejnou délku.\nBod S je střed strany AC a na přímce p leží střed P strany BC trojúhelníku ABC.\n\nSestrojte vrchol C, střed P a vrchol B, označte je písmeny a narýsujte trojúhelník ABC.\nNajděte všechna řešení.",
+  "instruction_image": null,
+  "instruction_steps": [
+    {
+      "text": "V rovině leží body A, S a přímka p procházející bodem A.\n\nBod A je vrchol rovnoramenného trojúhelníku ABC, jehož strany AC a BC mají stejnou délku.\nBod S je střed strany AC a na přímce p leží střed P strany BC trojúhelníku ABC.\n\nSestrojte vrchol C, střed P a vrchol B, označte je písmeny a narýsujte trojúhelník ABC.\nNajděte všechna řešení.",
+      "canvas_snapshot": {
+        "points": [
+          {
+            "id": "pt-frame-tl",
+            "x": 0,
+            "y": 0,
+            "label": "",
+            "locked": true,
+            "hidden": true
+          },
+          {
+            "id": "pt-frame-br",
+            "x": 815,
+            "y": 521,
+            "label": "",
+            "locked": true,
+            "hidden": true
+          },
+          {
+            "id": "pt-p1",
+            "x": 68.6,
+            "y": 385.7,
+            "label": "",
+            "locked": true,
+            "hidden": true
+          },
+          {
+            "id": "pt-p2",
+            "x": 631.6,
+            "y": 140.5,
+            "label": "",
+            "locked": true,
+            "hidden": true
+          },
+          {
+            "id": "pt-a",
+            "x": 131.7,
+            "y": 358.2,
+            "label": "A",
+            "locked": true
+          },
+          {
+            "id": "pt-s",
+            "x": 243.4,
+            "y": 232,
+            "label": "S",
+            "locked": true
+          }
+        ],
+        "shapes": [
+          {
+            "id": "line-p",
+            "type": "line",
+            "label": "p",
+            "points": [
+              "pt-p1",
+              "pt-p2"
+            ],
+            "locked": true,
+            "definition": {
+              "p1Id": "pt-p1",
+              "p2Id": "pt-p2"
+            }
+          }
+        ],
+        "freehandPaths": []
+      }
+    }
+  ]
+}

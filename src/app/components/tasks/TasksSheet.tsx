@@ -50,7 +50,10 @@ import { downloadAssignmentPdf, downloadAssignmentsPdf } from '../../utils/assig
 import {
   TASK_LIBRARY,
   TASK_LIBRARY_GRADES,
+  formatTaskLibraryGradeInline,
   formatTaskLibraryGradeLabel,
+  formatTaskLibraryGradeWhere,
+  taskLibraryGradePdfName,
   resolveLibraryImageSrc,
   resolveStudentLink,
   taskLibraryEntriesForGrade,
@@ -781,7 +784,7 @@ export function TasksSheet({
       .map(e => e.assignmentId?.trim())
       .filter((v): v is string => Boolean(v));
     if (ids.length === 0) {
-      toast.error('V tomto ročníku nejsou úkoly ke stažení.');
+      toast.error(`${formatTaskLibraryGradeWhere(libraryGrade).replace(/^v/, 'V')} nejsou úkoly ke stažení.`);
       return;
     }
     setPdfDownloadingGrade(true);
@@ -807,7 +810,7 @@ export function TasksSheet({
         return;
       }
       const gradeLabel = formatTaskLibraryGradeLabel(libraryGrade);
-      await downloadAssignmentsPdf(rows, `ukoly-${libraryGrade}-rocnik`, {
+      await downloadAssignmentsPdf(rows, taskLibraryGradePdfName(libraryGrade), {
         heading: gradeLabel,
         subheading: `${rows.length} konstrukčních úloh`,
       });
@@ -1095,18 +1098,18 @@ export function TasksSheet({
                             disabled={pdfDownloadingGrade}
                             onClick={() => void handleDownloadGradePdf()}
                             className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 text-sm font-medium text-sky-900 transition-colors hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-40"
-                            title={`Stáhnout všechny úkoly ${formatTaskLibraryGradeLabel(libraryGrade).toLowerCase()} jako jedno PDF`}
+                            title={`Stáhnout všechny úkoly ${formatTaskLibraryGradeInline(libraryGrade)} jako jedno PDF`}
                           >
                             <Download className="size-3.5 shrink-0 opacity-80" aria-hidden />
                             {pdfDownloadingGrade
                               ? 'Připravuji PDF…'
-                              : `Stáhnout ${formatTaskLibraryGradeLabel(libraryGrade).toLowerCase()} (PDF)`}
+                              : `Stáhnout ${formatTaskLibraryGradeInline(libraryGrade)} (PDF)`}
                           </button>
                         </div>
                       ) : null}
                       {libraryEntriesForGrade.length === 0 ? (
                         <p className="rounded-2xl border border-dashed border-sky-200 bg-sky-50 px-6 py-10 text-center text-[15px] leading-relaxed text-slate-600">
-                          V {formatTaskLibraryGradeLabel(libraryGrade).toLowerCase()} zatím žádné úkoly.
+                          {formatTaskLibraryGradeWhere(libraryGrade).replace(/^v/, 'V')} zatím žádné úkoly.
                         </p>
                       ) : (
                         <ul className="grid grid-cols-1 justify-items-stretch gap-6 sm:grid-cols-2 xl:grid-cols-3">

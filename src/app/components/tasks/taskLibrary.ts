@@ -1,4 +1,5 @@
 import { assignmentPublicUrl } from '@/app/utils/appUrl';
+import { CERMAT_ASSIGNMENTS } from '@/app/utils/cermatAssignments';
 
 /**
  * Knihovna úkolů (přednastavené položky). Doplň po vytvoření zadání v `geometry_circuit_assignments`.
@@ -6,9 +7,10 @@ import { assignmentPublicUrl } from '@/app/utils/appUrl';
  *
  * Náhled: z DB (`instruction_image`), pokud existuje; `imageUrl` může přebít statickým obrázkem.
  */
-export type TaskLibraryGrade = 6 | 7 | 8 | 9;
+/** Ročník ZŠ, nebo sekce „CERMAT“ s úlohami z jednotných přijímacích zkoušek. */
+export type TaskLibraryGrade = 6 | 7 | 8 | 9 | 'cermat';
 
-export const TASK_LIBRARY_GRADES: TaskLibraryGrade[] = [6, 7, 8, 9];
+export const TASK_LIBRARY_GRADES: TaskLibraryGrade[] = [6, 7, 8, 9, 'cermat'];
 
 export type TaskLibraryEntry = {
   key: string;
@@ -16,7 +18,7 @@ export type TaskLibraryEntry = {
   assignmentId?: string;
   studentUrl?: string;
   imageUrl?: string;
-  /** Ročník ZŠ; výchozí 6. */
+  /** Ročník ZŠ (nebo sekce CERMAT); výchozí 6. */
   grade?: TaskLibraryGrade;
 };
 
@@ -375,6 +377,13 @@ export const TASK_LIBRARY: TaskLibraryEntry[] = [
     assignmentId: '0daeda38-6964-4e93-a3db-745003b63e53',
     grade: 9,
   },
+  // Sekce CERMAT: konstrukční úlohy z přijímacích zkoušek (viz `cermatAssignments.ts`).
+  ...CERMAT_ASSIGNMENTS.map(item => ({
+    key: item.id,
+    title: item.title,
+    assignmentId: item.id,
+    grade: 'cermat' as const,
+  })),
 ];
 
 export function taskLibraryGradeOf(entry: TaskLibraryEntry): TaskLibraryGrade {
@@ -389,7 +398,22 @@ export function taskLibraryEntriesForGrade(
 }
 
 export function formatTaskLibraryGradeLabel(grade: TaskLibraryGrade): string {
-  return `${grade}. ročník`;
+  return grade === 'cermat' ? 'CERMAT' : `${grade}. ročník`;
+}
+
+/** „v 6. ročníku“ / „v sekci CERMAT“ — do vět v rozhraní. */
+export function formatTaskLibraryGradeWhere(grade: TaskLibraryGrade): string {
+  return grade === 'cermat' ? 'v sekci CERMAT' : `v ${grade}. ročníku`;
+}
+
+/** Název ročníku uprostřed věty: „6. ročník“, „CERMAT“. */
+export function formatTaskLibraryGradeInline(grade: TaskLibraryGrade): string {
+  return grade === 'cermat' ? 'CERMAT' : formatTaskLibraryGradeLabel(grade).toLowerCase();
+}
+
+/** Název souboru PDF se všemi úkoly sekce. */
+export function taskLibraryGradePdfName(grade: TaskLibraryGrade): string {
+  return grade === 'cermat' ? 'ukoly-cermat' : `ukoly-${grade}-rocnik`;
 }
 
 /** Absolutni src pro <img> (Vite base + relativni cesta z public). */

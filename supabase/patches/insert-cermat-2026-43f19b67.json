@@ -1,0 +1,78 @@
+{
+  "id": "43f19b67-3f62-41f2-a75b-ef0f62d76310",
+  "title": "2026 · 1. náhradní termín · 10. Obdélník se středem V",
+  "instruction_text": "V rovině leží body U, V a přímka k.\n\nBod U leží uvnitř strany KN obdélníku KLMN.\nNa přímce k leží strana KL tohoto obdélníku.\nBod V má stejnou vzdálenost od všech čtyř vrcholů obdélníku KLMN.\n\nSestrojte všechny vrcholy obdélníku KLMN, označte je písmeny a obdélník narýsujte.",
+  "instruction_image": null,
+  "instruction_steps": [
+    {
+      "text": "V rovině leží body U, V a přímka k.\n\nBod U leží uvnitř strany KN obdélníku KLMN.\nNa přímce k leží strana KL tohoto obdélníku.\nBod V má stejnou vzdálenost od všech čtyř vrcholů obdélníku KLMN.\n\nSestrojte všechny vrcholy obdélníku KLMN, označte je písmeny a obdélník narýsujte.",
+      "canvas_snapshot": {
+        "points": [
+          {
+            "id": "pt-frame-tl",
+            "x": 0,
+            "y": 0,
+            "label": "",
+            "locked": true,
+            "hidden": true
+          },
+          {
+            "id": "pt-frame-br",
+            "x": 815,
+            "y": 546,
+            "label": "",
+            "locked": true,
+            "hidden": true
+          },
+          {
+            "id": "pt-k1",
+            "x": 57.6,
+            "y": 461.4,
+            "label": "",
+            "locked": true,
+            "hidden": true
+          },
+          {
+            "id": "pt-k2",
+            "x": 681.6,
+            "y": 286.2,
+            "label": "",
+            "locked": true,
+            "hidden": true
+          },
+          {
+            "id": "pt-u",
+            "x": 101.6,
+            "y": 283.2,
+            "label": "U",
+            "locked": true
+          },
+          {
+            "id": "pt-v",
+            "x": 296.8,
+            "y": 281.3,
+            "label": "V",
+            "locked": true
+          }
+        ],
+        "shapes": [
+          {
+            "id": "line-k",
+            "type": "line",
+            "label": "k",
+            "points": [
+              "pt-k1",
+              "pt-k2"
+            ],
+            "locked": true,
+            "definition": {
+              "p1Id": "pt-k1",
+              "p2Id": "pt-k2"
+            }
+          }
+        ],
+        "freehandPaths": []
+      }
+    }
+  ]
+}

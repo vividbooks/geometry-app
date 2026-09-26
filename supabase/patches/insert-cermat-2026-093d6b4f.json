@@ -1,0 +1,78 @@
+{
+  "id": "093d6b4f-f088-40c3-bf5b-d958a62cde63",
+  "title": "2026 · 2. náhradní termín · 9. Lichoběžník z pravoúhlého trojúhelníku",
+  "instruction_text": "V rovině leží přímka p a body B, D.\n\nBody B, D jsou vrcholy pravoúhlého rovnoramenného trojúhelníku BCD s pravým úhlem při vrcholu C. Bod C má od přímky p větší vzdálenost než bod B.\n\n9.1 Sestrojte vrchol C trojúhelníku BCD a označte ho písmenem.\n\n9.2 Body B, C, D jsou zároveň vrcholy lichoběžníku ABCD.\nVrchol A tohoto lichoběžníku leží na přímce p.\nSestrojte vrchol A lichoběžníku ABCD, označte ho písmenem a lichoběžník narýsujte.\nNajděte všechna řešení.",
+  "instruction_image": null,
+  "instruction_steps": [
+    {
+      "text": "V rovině leží přímka p a body B, D.\n\nBody B, D jsou vrcholy pravoúhlého rovnoramenného trojúhelníku BCD s pravým úhlem při vrcholu C. Bod C má od přímky p větší vzdálenost než bod B.\n\n9.1 Sestrojte vrchol C trojúhelníku BCD a označte ho písmenem.\n\n9.2 Body B, C, D jsou zároveň vrcholy lichoběžníku ABCD.\nVrchol A tohoto lichoběžníku leží na přímce p.\nSestrojte vrchol A lichoběžníku ABCD, označte ho písmenem a lichoběžník narýsujte.\nNajděte všechna řešení.",
+      "canvas_snapshot": {
+        "points": [
+          {
+            "id": "pt-frame-tl",
+            "x": 0,
+            "y": 0,
+            "label": "",
+            "locked": true,
+            "hidden": true
+          },
+          {
+            "id": "pt-frame-br",
+            "x": 815,
+            "y": 471,
+            "label": "",
+            "locked": true,
+            "hidden": true
+          },
+          {
+            "id": "pt-p1",
+            "x": 132.1,
+            "y": 63.5,
+            "label": "",
+            "locked": true,
+            "hidden": true
+          },
+          {
+            "id": "pt-p2",
+            "x": 388.6,
+            "y": 438.2,
+            "label": "",
+            "locked": true,
+            "hidden": true
+          },
+          {
+            "id": "pt-d",
+            "x": 452.1,
+            "y": 140.1,
+            "label": "D",
+            "locked": true
+          },
+          {
+            "id": "pt-b",
+            "x": 489.8,
+            "y": 356.7,
+            "label": "B",
+            "locked": true
+          }
+        ],
+        "shapes": [
+          {
+            "id": "line-p",
+            "type": "line",
+            "label": "p",
+            "points": [
+              "pt-p1",
+              "pt-p2"
+            ],
+            "locked": true,
+            "definition": {
+              "p1Id": "pt-p1",
+              "p2Id": "pt-p2"
+            }
+          }
+        ],
+        "freehandPaths": []
+      }
+    }
+  ]
+}

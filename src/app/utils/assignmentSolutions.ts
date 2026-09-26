@@ -1,5 +1,6 @@
 import type { GeometrySubmissionSnapshot } from '../../../rysovani/src/components/FreeGeometryEditor';
 import { rotateSnapshotForAssignment } from './assignmentTransforms';
+import { CERMAT_SOLUTION_BUILDERS } from './cermatSolutions';
 
 export type AssignmentSolutionStep = {
   text: string;
@@ -1326,6 +1327,8 @@ const SOLUTION_BUILDERS: [string, () => AssignmentModelSolution][] = [
   ['a6d9de88-c424-46fa-8af1-814c07a4466e', circleTangentToLineSolution],
   ['66fa2048-f25d-43ce-97ca-491807df805b', triangleFromOrthocenterSolution],
   ['0daeda38-6964-4e93-a3db-745003b63e53', triangleFromAngleBisectorSolution],
+  // Sekce CERMAT: úlohy z přijímacích zkoušek (bez natočení, přesně podle sešitu).
+  ...CERMAT_SOLUTION_BUILDERS,
 ];
 
 const SOLUTIONS: Record<string, AssignmentModelSolution> = Object.fromEntries(

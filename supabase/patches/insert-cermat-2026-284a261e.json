@@ -1,0 +1,54 @@
+{
+  "id": "284a261e-1323-404c-8d69-b90f4ffdd8d8",
+  "title": "2026 · 2. řádný termín · 9. Pravidelný šestiúhelník",
+  "instruction_text": "V rovině leží body A, O, P.\n\nBod A je vrchol pravidelného šestiúhelníku ABCDEF.\nPřímka OP je osa strany AB tohoto šestiúhelníku.\nNa polopřímce OP leží střed souměrnosti S šestiúhelníku ABCDEF.\n\nSestrojte vrcholy B, C, D, E, F šestiúhelníku ABCDEF, označte je písmeny a šestiúhelník narýsujte.",
+  "instruction_image": null,
+  "instruction_steps": [
+    {
+      "text": "V rovině leží body A, O, P.\n\nBod A je vrchol pravidelného šestiúhelníku ABCDEF.\nPřímka OP je osa strany AB tohoto šestiúhelníku.\nNa polopřímce OP leží střed souměrnosti S šestiúhelníku ABCDEF.\n\nSestrojte vrcholy B, C, D, E, F šestiúhelníku ABCDEF, označte je písmeny a šestiúhelník narýsujte.",
+      "canvas_snapshot": {
+        "points": [
+          {
+            "id": "pt-frame-tl",
+            "x": 0,
+            "y": 0,
+            "label": "",
+            "locked": true,
+            "hidden": true
+          },
+          {
+            "id": "pt-frame-br",
+            "x": 815,
+            "y": 471,
+            "label": "",
+            "locked": true,
+            "hidden": true
+          },
+          {
+            "id": "pt-a",
+            "x": 151.1,
+            "y": 229.4,
+            "label": "A",
+            "locked": true
+          },
+          {
+            "id": "pt-o",
+            "x": 134.8,
+            "y": 328.5,
+            "label": "O",
+            "locked": true
+          },
+          {
+            "id": "pt-p",
+            "x": 570.2,
+            "y": 138.4,
+            "label": "P",
+            "locked": true
+          }
+        ],
+        "shapes": [],
+        "freehandPaths": []
+      }
+    }
+  ]
+}

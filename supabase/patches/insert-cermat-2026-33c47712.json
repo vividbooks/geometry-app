@@ -1,0 +1,54 @@
+{
+  "id": "33c47712-dbb7-4ebb-a43c-d1fcab735d1e",
+  "title": "2026 · 2. řádný termín · 10. Dva pravoúhlé trojúhelníky",
+  "instruction_text": "V rovině leží body A, B, D.\n\nBody A a B jsou vrcholy pravoúhlého trojúhelníku ABC s pravým úhlem při vrcholu C.\nBody B a D jsou vrcholy pravoúhlého trojúhelníku BCD s pravým úhlem při vrcholu C.\n(Vrcholy B a C jsou společnými vrcholy obou trojúhelníků.)\n\nSestrojte vrchol C, označte ho písmenem a narýsujte trojúhelníky ABC a BCD.",
+  "instruction_image": null,
+  "instruction_steps": [
+    {
+      "text": "V rovině leží body A, B, D.\n\nBody A a B jsou vrcholy pravoúhlého trojúhelníku ABC s pravým úhlem při vrcholu C.\nBody B a D jsou vrcholy pravoúhlého trojúhelníku BCD s pravým úhlem při vrcholu C.\n(Vrcholy B a C jsou společnými vrcholy obou trojúhelníků.)\n\nSestrojte vrchol C, označte ho písmenem a narýsujte trojúhelníky ABC a BCD.",
+      "canvas_snapshot": {
+        "points": [
+          {
+            "id": "pt-frame-tl",
+            "x": 0,
+            "y": 0,
+            "label": "",
+            "locked": true,
+            "hidden": true
+          },
+          {
+            "id": "pt-frame-br",
+            "x": 815,
+            "y": 546,
+            "label": "",
+            "locked": true,
+            "hidden": true
+          },
+          {
+            "id": "pt-a",
+            "x": 286.8,
+            "y": 231.6,
+            "label": "A",
+            "locked": true
+          },
+          {
+            "id": "pt-b",
+            "x": 587.2,
+            "y": 231.6,
+            "label": "B",
+            "locked": true
+          },
+          {
+            "id": "pt-d",
+            "x": 152,
+            "y": 477.9,
+            "label": "D",
+            "locked": true
+          }
+        ],
+        "shapes": [],
+        "freehandPaths": []
+      }
+    }
+  ]
+}
