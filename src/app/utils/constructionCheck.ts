@@ -2,7 +2,8 @@
  * Kontrola žákova rýsování proti výsledku vzorového řešení.
  *
  * Hodnotí se jen výsledek, ne postup: každý hledaný bod musí na plátně ležet
- * do 2 mm od správné polohy a strany útvaru musí být narýsované úsečkami.
+ * do 2 mm od správné polohy a strany útvaru musí být narýsované — úsečkou,
+ * nebo ležet na narýsované přímce či polopřímce.
  * Popisky bodů se nekontrolují, takže projde i jiné pojmenování nebo jiný
  * správný postup konstrukce.
  */
@@ -43,13 +44,17 @@ type PointMatch =
 
 const dist = (a: V, b: V) => Math.hypot(a.x - b.x, a.y - b.y);
 
-function distToSegment(p: V, a: V, b: V): number {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const l2 = dx * dx + dy * dy;
-  if (l2 === 0) return dist(p, a);
-  const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2));
-  return dist(p, { x: a.x + dx * t, y: a.y + dy * t });
+/** Čára, na které může ležet strana útvaru: úsečka, přímka nebo polopřímka. */
+type Carrier = { kind: 'segment' | 'line' | 'ray'; a: V; d: V };
+
+/** Vzdálenost bodu od čáry (u úsečky od koncových bodů, u polopřímky od počátku). */
+function distToCarrier(p: V, c: Carrier): number {
+  const l2 = c.d.x * c.d.x + c.d.y * c.d.y;
+  if (l2 === 0) return dist(p, c.a);
+  let t = ((p.x - c.a.x) * c.d.x + (p.y - c.a.y) * c.d.y) / l2;
+  if (c.kind !== 'line') t = Math.max(0, t);
+  if (c.kind === 'segment') t = Math.min(1, t);
+  return dist(p, { x: c.a.x + c.d.x * t, y: c.a.y + c.d.y * t });
 }
 
 function mm(px: number): string {
@@ -123,17 +128,24 @@ export function checkConstruction(
     return m.status === 'missing' ? null : m.at;
   };
 
-  const segments: Array<[V, V]> = [];
+  // Strana je narýsovaná, když leží na žákově úsečce, přímce nebo polopřímce (plné čáře;
+  // čárkované pomocné čáry se za stranu nepočítají).
+  const carriers: Carrier[] = [];
   for (const s of studentShapes) {
-    if (s.type !== 'segment') continue;
+    if (s.type !== 'segment' && s.type !== 'line' && s.type !== 'ray') continue;
     const a = studentById.get(s.definition.p1Id);
+    if (!a) continue;
     const b = s.definition.p2Id ? studentById.get(s.definition.p2Id) : undefined;
-    if (a && b) segments.push([a, b]);
+    let d: V | null = null;
+    if (b) d = { x: b.x - a.x, y: b.y - a.y };
+    else if (s.type !== 'segment' && s.definition.angle !== undefined) {
+      const rad = (-s.definition.angle * Math.PI) / 180;
+      d = { x: Math.cos(rad), y: Math.sin(rad) };
+    }
+    if (d) carriers.push({ kind: s.type, a: { x: a.x, y: a.y }, d });
   }
   const sideDrawn = (a: V, b: V) =>
-    segments.some(
-      ([p, q]) => distToSegment(a, p, q) <= CHECK_TOLERANCE_PX && distToSegment(b, p, q) <= CHECK_TOLERANCE_PX,
-    );
+    carriers.some(c => distToCarrier(a, c) <= CHECK_TOLERANCE_PX && distToCarrier(b, c) <= CHECK_TOLERANCE_PX);
 
   const figures: CheckFigureResult[] = check.figures.map(f => {
     const own = [...f.vertices, ...(f.extra ?? [])].filter(p => p.sought);
