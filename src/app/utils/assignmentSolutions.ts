@@ -7,10 +7,34 @@ export type AssignmentSolutionStep = {
   snapshot: GeometrySubmissionSnapshot;
 };
 
+/** Bod výsledného útvaru, na který se kontrola ptá (id odkazuje do `snapshot` řešení). */
+export type ConstructionCheckPoint = {
+  id: string;
+  name: string;
+  /** Hledaný bod (žák ho má sestrojit); ne-hledané body jsou dané zadáním. */
+  sought: boolean;
+};
+
+/** Co musí žákovo rýsování obsahovat, aby bylo řešení správně. */
+export type ConstructionCheck = {
+  /** Útvary k narýsování — u „najděte všechna řešení“ jeden za každé řešení. */
+  figures: Array<{
+    name: string;
+    /** Vrcholy v pořadí obvodu; strany jsou sousední dvojice. */
+    vertices: ConstructionCheckPoint[];
+    /** Další hledané body, které nejsou vrcholy (např. střed strany). */
+    extra?: ConstructionCheckPoint[];
+  }>;
+  /** Kružnice, které má zadání sestrojit (střed a bod na obvodu z `snapshot`). */
+  circles?: Array<{ name: string; centerId: string; rimId: string }>;
+};
+
 export type AssignmentModelSolution = {
   snapshot: GeometrySubmissionSnapshot;
   explanation: string;
   steps: AssignmentSolutionStep[];
+  /** Automatická kontrola žákova řešení (zatím úlohy CERMAT). */
+  check?: ConstructionCheck;
 };
 
 type SolPoint = GeometrySubmissionSnapshot['points'][number];
@@ -155,6 +179,7 @@ function rotatedSolution(
   const rotate = (snap: GeometrySubmissionSnapshot) =>
     rotateSnapshotForAssignment(assignmentId, snap);
   return {
+    ...solution,
     explanation: solution.explanation,
     snapshot: rotate(solution.snapshot),
     steps: solution.steps.map(step => ({ ...step, snapshot: rotate(step.snapshot) })),

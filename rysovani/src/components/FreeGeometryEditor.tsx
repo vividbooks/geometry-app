@@ -586,6 +586,10 @@ interface FreeGeometryEditorProps {
   autoDetectRequestId?: number;
   /** Vzorové řešení vykreslené přes plátno (úkol). */
   overlaySnapshot?: GeometrySubmissionSnapshot | null;
+  /** Výsledek kontroly řešení: kroužky u bodů (zelený = správně, červený = vedle). */
+  checkMarkers?: ReadonlyArray<{ x: number; y: number; ok: boolean }> | null;
+  /** Zavolá se po každé změně bodů, tvarů nebo kresby na plátně. */
+  onCanvasChange?: () => void;
 }
 
 interface RecordedStep {
@@ -1143,6 +1147,8 @@ export function FreeGeometryEditor({
   autoDetectImageSrc = null,
   autoDetectRequestId = 0,
   overlaySnapshot = null,
+  checkMarkers = null,
+  onCanvasChange,
 }: FreeGeometryEditorProps) {
   const isMobile = useIsMobile();
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -2163,6 +2169,12 @@ export function FreeGeometryEditor({
       submissionSnapshotRef.current = null;
     };
   }, [points, shapes, freehandPaths, submissionSnapshotRef]);
+
+  const onCanvasChangeRef = useRef(onCanvasChange);
+  onCanvasChangeRef.current = onCanvasChange;
+  useEffect(() => {
+    onCanvasChangeRef.current?.();
+  }, [points, shapes, freehandPaths]);
 
   useEffect(() => {
     if (!canvasExportRef) return;
@@ -6761,6 +6773,7 @@ export function FreeGeometryEditor({
     effectiveProjectionSrc,
     effectiveProjectionOpacity,
     overlaySnapshot,
+    checkMarkers,
   ]);
 
 
@@ -8530,6 +8543,19 @@ export function FreeGeometryEditor({
 
     if (overlaySnapshot) {
       drawSolutionOverlay(ctx, overlaySnapshot, scale, darkMode ? '#fbbf24' : '#c2410c');
+    }
+
+    if (checkMarkers?.length) {
+      ctx.save();
+      ctx.setLineDash([]);
+      ctx.lineWidth = 3 / scale;
+      for (const m of checkMarkers) {
+        ctx.strokeStyle = m.ok ? '#16a34a' : '#dc2626';
+        ctx.beginPath();
+        ctx.arc(m.x, m.y, 13 / scale, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.restore();
     }
 
     if (!hideToolOverlays) {

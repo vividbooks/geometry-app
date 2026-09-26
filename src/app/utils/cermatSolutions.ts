@@ -4,7 +4,12 @@
  * na plátně přesně sedí na daných bodech a přímkách.
  */
 import type { GeometrySubmissionSnapshot } from '../../../rysovani/src/components/FreeGeometryEditor';
-import type { AssignmentModelSolution, AssignmentSolutionStep } from './assignmentSolutions';
+import type {
+  AssignmentModelSolution,
+  AssignmentSolutionStep,
+  ConstructionCheck,
+  ConstructionCheckPoint,
+} from './assignmentSolutions';
 import { getCermatAssignment } from './cermatAssignments';
 
 type SolPoint = GeometrySubmissionSnapshot['points'][number];
@@ -55,15 +60,26 @@ function rotate(p: V, c: V, rad: number): V {
 class Board {
   private readonly points: SolPoint[] = [];
   private readonly shapes: SolShape[] = [];
+  private readonly names = new Map<string, { name: string; sought: boolean }>();
 
   point(id: string, p: V, label = '', hidden = false): string {
     this.points.push({ id, x: p.x, y: p.y, label, locked: true, ...(hidden ? { hidden: true } : {}) });
+    this.names.set(id, { name: label, sought: !hidden });
     return id;
   }
 
-  /** Skrytý bod (daný bod zadání nebo pomocný konec čáry). */
-  ref(id: string, p: V): string {
-    return this.point(id, p, '', true);
+  /** Skrytý bod (daný bod zadání nebo pomocný konec čáry); `name` je jeho písmeno v zadání. */
+  ref(id: string, p: V, name = ''): string {
+    this.point(id, p, '', true);
+    this.names.set(id, { name, sought: false });
+    return id;
+  }
+
+  /** Bod pro kontrolu řešení: jméno a jestli ho žák má sestrojit. */
+  checkPoint(id: string): ConstructionCheckPoint {
+    const info = this.names.get(id);
+    if (!info?.name) throw new Error(`Bod ${id} nemá jméno pro kontrolu řešení`);
+    return { id, name: info.name, sought: info.sought };
   }
 
   segment(id: string, p1: string, p2: string, thin = false): string {
@@ -143,11 +159,18 @@ class Board {
   }
 }
 
+/** Výsledek, který kontrola čeká: útvary (id vrcholů po obvodu) a sestrojené kružnice. */
+type CheckSpec = {
+  figures: Array<{ name: string; vertices: string[]; extra?: string[] }>;
+  circles?: ConstructionCheck['circles'];
+};
+
 /** Kroky se skládají narůstáním: každý krok přidá body a čáry k předchozím. */
 function cumulative(
   board: Board,
   explanation: string,
   steps: Array<{ text: string; points?: string[]; shapes?: string[] }>,
+  checkSpec?: CheckSpec,
 ): AssignmentModelSolution {
   const points: string[] = [];
   const shapes: string[] = [];
@@ -156,7 +179,27 @@ function cumulative(
     shapes.push(...(step.shapes ?? []));
     return { text: step.text, snapshot: board.snap([...points], [...shapes]) };
   });
-  return { explanation, steps: out, snapshot: out[out.length - 1]!.snapshot };
+  const snapshot = out[out.length - 1]!.snapshot;
+  const check: ConstructionCheck | undefined = checkSpec
+    ? {
+        figures: checkSpec.figures.map(f => ({
+          name: f.name,
+          vertices: f.vertices.map(id => board.checkPoint(id)),
+          ...(f.extra?.length ? { extra: f.extra.map(id => board.checkPoint(id)) } : {}),
+        })),
+        ...(checkSpec.circles?.length ? { circles: checkSpec.circles } : {}),
+      }
+    : undefined;
+  if (check) {
+    const inSnapshot = new Set(snapshot.points.map(p => p.id));
+    const ids = [
+      ...check.figures.flatMap(f => [...f.vertices, ...(f.extra ?? [])].map(p => p.id)),
+      ...(check.circles ?? []).flatMap(c => [c.centerId, c.rimId]),
+    ];
+    const missing = ids.find(id => !inSnapshot.has(id));
+    if (missing) throw new Error(`Bod ${missing} z kontroly chybí ve výsledném řešení`);
+  }
+  return { explanation, steps: out, snapshot, ...(check ? { check } : {}) };
 }
 
 function given(id: string) {
@@ -187,7 +230,7 @@ function triangleTwoLinesSolution(): AssignmentModelSolution {
   const [C1, C2] = lineCircle(c.a, c.d, B, r).sort((p, q) => p.x - q.x);
 
   const s = new Board();
-  s.ref('sol-a', A);
+  s.ref('sol-a', A, 'A');
   s.point('sol-b', B, 'B');
   s.ref('sol-x', X);
   s.point('sol-c1', C1!, 'C₁');
@@ -227,6 +270,12 @@ function triangleTwoLinesSolution(): AssignmentModelSolution {
         shapes: ['sol-ab', 'sol-bc1', 'sol-c1a', 'sol-bc2', 'sol-c2a'],
       },
     ],
+    {
+      figures: [
+        { name: 'trojúhelník ABC₁', vertices: ['sol-a', 'sol-b', 'sol-c1'] },
+        { name: 'trojúhelník ABC₂', vertices: ['sol-a', 'sol-b', 'sol-c2'] },
+      ],
+    },
   );
 }
 
@@ -243,7 +292,7 @@ function rhombusAxisSolution(): AssignmentModelSolution {
   const D = sub(S, mul(u, ac));
 
   const s = new Board();
-  s.ref('sol-a', A);
+  s.ref('sol-a', A, 'A');
   s.point('sol-s', S, 'S');
   s.point('sol-c', C, 'C');
   s.point('sol-b', B, 'B');
@@ -281,6 +330,9 @@ function rhombusAxisSolution(): AssignmentModelSolution {
         shapes: ['sol-ab', 'sol-bc', 'sol-cd', 'sol-da'],
       },
     ],
+    {
+      figures: [{ name: 'rovnoběžník ABCD', vertices: ['sol-a', 'sol-b', 'sol-c', 'sol-d'] }],
+    },
   );
 }
 
@@ -304,7 +356,7 @@ function regularHexagonSolution(): AssignmentModelSolution {
   const far = add(S, mul(unit(dir), dist(S, P) + 60));
 
   const s = new Board();
-  s.ref('sol-a', A);
+  s.ref('sol-a', A, 'A');
   s.ref('sol-o', O);
   s.ref('sol-far', far);
   s.point('sol-b', B, 'B');
@@ -348,6 +400,14 @@ function regularHexagonSolution(): AssignmentModelSolution {
         shapes: ['sol-ab', 'sol-bc', 'sol-cd', 'sol-de', 'sol-ef', 'sol-fa'],
       },
     ],
+    {
+      figures: [
+        {
+          name: 'šestiúhelník ABCDEF',
+          vertices: ['sol-a', 'sol-b', 'sol-c', 'sol-d', 'sol-e', 'sol-f'],
+        },
+      ],
+    },
   );
 }
 
@@ -363,9 +423,9 @@ function twoRightTrianglesSolution(): AssignmentModelSolution {
   const C = sub(mul(foot(B, S1, sub(S2, S1)), 2), B);
 
   const s = new Board();
-  s.ref('sol-a', A);
-  s.ref('sol-b', B);
-  s.ref('sol-d', D);
+  s.ref('sol-a', A, 'A');
+  s.ref('sol-b', B, 'B');
+  s.ref('sol-d', D, 'D');
   s.point('sol-s1', S1, 'S₁');
   s.point('sol-s2', S2, 'S₂');
   s.point('sol-c', C, 'C');
@@ -400,6 +460,12 @@ function twoRightTrianglesSolution(): AssignmentModelSolution {
         shapes: ['sol-ab', 'sol-bc', 'sol-ca', 'sol-cd', 'sol-db'],
       },
     ],
+    {
+      figures: [
+        { name: 'trojúhelník ABC', vertices: ['sol-a', 'sol-b', 'sol-c'] },
+        { name: 'trojúhelník BCD', vertices: ['sol-b', 'sol-c', 'sol-d'] },
+      ],
+    },
   );
 }
 
@@ -418,7 +484,7 @@ function isoscelesMidpointsSolution(): AssignmentModelSolution {
   const B2 = sub(mul(P2, 2), C);
 
   const s = new Board();
-  s.ref('sol-a', A);
+  s.ref('sol-a', A, 'A');
   s.ref('sol-s', S);
   s.point('sol-c', C, 'C');
   s.point('sol-p1', P1, 'P₁');
@@ -465,6 +531,12 @@ function isoscelesMidpointsSolution(): AssignmentModelSolution {
         shapes: ['sol-ab1', 'sol-b1c', 'sol-ca', 'sol-ab2', 'sol-b2c'],
       },
     ],
+    {
+      figures: [
+        { name: 'trojúhelník AB₁C', vertices: ['sol-a', 'sol-b1', 'sol-c'], extra: ['sol-p1'] },
+        { name: 'trojúhelník AB₂C', vertices: ['sol-a', 'sol-b2', 'sol-c'], extra: ['sol-p2'] },
+      ],
+    },
   );
 }
 
@@ -518,6 +590,9 @@ function rectangleCenterSolution(): AssignmentModelSolution {
         shapes: ['sol-kl', 'sol-lm', 'sol-mn', 'sol-nk'],
       },
     ],
+    {
+      figures: [{ name: 'obdélník KLMN', vertices: ['sol-k', 'sol-l', 'sol-m', 'sol-n'] }],
+    },
   );
 }
 
@@ -537,8 +612,8 @@ function trapezoidFromRightTriangleSolution(): AssignmentModelSolution {
   const A2 = lineLine(D, sub(C, B), p.a, p.d);
 
   const s = new Board();
-  s.ref('sol-d', D);
-  s.ref('sol-b', B);
+  s.ref('sol-d', D, 'D');
+  s.ref('sol-b', B, 'B');
   s.ref('sol-other', other);
   s.point('sol-m', M, 'S');
   s.point('sol-c', C, 'C');
@@ -585,6 +660,12 @@ function trapezoidFromRightTriangleSolution(): AssignmentModelSolution {
         shapes: ['sol-bc', 'sol-cd', 'sol-a1b', 'sol-da1', 'sol-a2b', 'sol-da2'],
       },
     ],
+    {
+      figures: [
+        { name: 'lichoběžník A₁BCD', vertices: ['sol-a1', 'sol-b', 'sol-c', 'sol-d'] },
+        { name: 'lichoběžník A₂BCD', vertices: ['sol-a2', 'sol-b', 'sol-c', 'sol-d'] },
+      ],
+    },
   );
 }
 
@@ -602,7 +683,7 @@ function rectangleInCircleSolution(): AssignmentModelSolution {
   const B = sub(mul(S, 2), D);
 
   const s = new Board();
-  s.ref('sol-d', D);
+  s.ref('sol-d', D, 'D');
   s.ref('sol-s', S);
   s.ref('sol-u', U);
   s.point('sol-a', A, 'A');
@@ -639,6 +720,10 @@ function rectangleInCircleSolution(): AssignmentModelSolution {
         shapes: ['sol-ab', 'sol-bc', 'sol-cd', 'sol-da'],
       },
     ],
+    {
+      figures: [{ name: 'obdélník ABCD', vertices: ['sol-a', 'sol-b', 'sol-c', 'sol-d'] }],
+      circles: [{ name: 'k', centerId: 'sol-s', rimId: 'sol-d' }],
+    },
   );
 }
 

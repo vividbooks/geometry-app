@@ -1,6 +1,17 @@
 import { Component, useMemo, useState, useRef, useCallback, useEffect, lazy, Suspense } from 'react';
 import { useParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Download, Eye, EyeOff, GripVertical, Image as ImageIcon } from 'lucide-react';
+import {
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  CircleAlert,
+  Download,
+  Eye,
+  EyeOff,
+  GripVertical,
+  Image as ImageIcon,
+  ListChecks,
+} from 'lucide-react';
 import { ShareModal } from '../components/ShareModal';
 import '../../../rysovani/src/index.css';
 import type { GeometrySubmissionSnapshot } from '../../../rysovani/src/components/FreeGeometryEditor';
@@ -23,6 +34,7 @@ import { normalizeInitialCanvasSnapshot } from '../utils/assignmentCanvasFixes';
 import { assignmentInstructionDisplay, assignmentUsesNewCanvasPerStep, parseCanvasSnapshot } from '../utils/instructionSteps';
 import { downloadAssignmentPdf } from '../utils/assignmentPdf';
 import { getAssignmentModelSolution } from '../utils/assignmentSolutions';
+import { checkConstruction, type ConstructionCheckResult } from '../utils/constructionCheck';
 import { toast } from 'sonner';
 
 const FreeGeometryEditor = lazy(() =>
@@ -158,6 +170,85 @@ function ModelSolutionPanel({
   );
 }
 
+/** Tlačítko „Zkontrolovat řešení“ a výpis, co sedí a co ještě chybí. */
+function ConstructionCheckPanel({
+  result,
+  stale,
+  className,
+  onCheck,
+}: {
+  result: ConstructionCheckResult | null;
+  stale: boolean;
+  className?: string;
+  onCheck: () => void;
+}) {
+  const multi = (result?.figures.length ?? 0) > 1;
+  return (
+    <div className={className}>
+      <button
+        type="button"
+        onClick={onCheck}
+        className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-900 shadow-sm transition-colors hover:bg-emerald-100"
+      >
+        <ListChecks className="size-4 opacity-80" aria-hidden />
+        {result ? 'Zkontrolovat znovu' : 'Zkontrolovat řešení'}
+      </button>
+      {result ? (
+        <div
+          role="status"
+          className={`rounded-lg border px-3 py-2.5 text-[13px] leading-relaxed ${
+            result.ok
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+              : 'border-amber-200 bg-amber-50 text-amber-950'
+          } ${stale ? 'opacity-60' : ''}`}
+        >
+          {result.ok ? (
+            <p className="flex items-start gap-2 font-semibold">
+              <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden />
+              Výborně, řešení je správně.
+            </p>
+          ) : result.empty ? (
+            <p className="flex items-start gap-2">
+              <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+              Na plátně zatím není nic narýsováno.
+            </p>
+          ) : (
+            <>
+              <p className="flex items-start gap-2 font-semibold">
+                <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+                Řešení zatím není úplné.
+              </p>
+              <ul className="mt-1.5 space-y-1 pl-6">
+                {result.figures.map(f => (
+                  <li key={f.name}>
+                    <span className="font-medium">{f.ok ? '✓' : '✗'} {f.name}</span>
+                    {f.issues.length ? <span>: {f.issues.join(', ')}</span> : null}
+                  </li>
+                ))}
+                {result.circleIssues.map(t => (
+                  <li key={t}>✗ {t}</li>
+                ))}
+              </ul>
+              {multi ? (
+                <p className="mt-1.5 pl-6 text-[12px] opacity-80">
+                  Úloha má {result.figures.length} {result.figures.length < 5 ? 'útvary' : 'útvarů'} — narýsujte všechny.
+                </p>
+              ) : null}
+            </>
+          )}
+          {stale ? (
+            <p className="mt-1.5 pl-6 text-[12px] opacity-80">Rýsování se od kontroly změnilo — zkontrolujte znovu.</p>
+          ) : !result.ok && !result.empty ? (
+            <p className="mt-1.5 pl-6 text-[12px] opacity-80">
+              Na plátně jsou zeleně body, které sedí, a červeně body mimo správnou polohu (tolerance 2 mm).
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 class StudentAssignmentErrorBoundary extends Component<
   { children: React.ReactNode },
   { error: Error | null }
@@ -220,6 +311,8 @@ export default function StudentAssignmentPage() {
   const [pdfBusy, setPdfBusy] = useState(false);
   const [showModelSolution, setShowModelSolution] = useState(false);
   const [solutionStepIndex, setSolutionStepIndex] = useState(0);
+  const [checkResult, setCheckResult] = useState<ConstructionCheckResult | null>(null);
+  const [checkStale, setCheckStale] = useState(false);
   const [autoDetectSrc, setAutoDetectSrc] = useState<string | null>(null);
   const [canvasSessionKey, setCanvasSessionKey] = useState(0);
   const [editorInitialSnapshot, setEditorInitialSnapshot] =
@@ -298,6 +391,8 @@ export default function StudentAssignmentPage() {
         setLoadState('ready');
         setShowModelSolution(false);
         setSolutionStepIndex(0);
+        setCheckResult(null);
+        setCheckStale(false);
       } catch (e) {
         if (!cancelled) {
           console.error('Načtení zadání (Supabase):', e);
@@ -362,6 +457,31 @@ export default function StudentAssignmentPage() {
     Math.max(0, modelSolutionSteps.length - 1),
   );
   const activeSolutionStep = showModelSolution ? modelSolutionSteps[clampedSolutionStep] ?? null : null;
+  const runConstructionCheck = () => {
+    const check = modelSolution?.check;
+    if (!modelSolution || !check) return;
+    const live = submissionSnapshotRef.current?.() ?? null;
+    const given = new Set((editorInitialSnapshot?.points ?? []).map(p => p.id));
+    try {
+      setCheckResult(checkConstruction(check, modelSolution.snapshot, live, given));
+      setCheckStale(false);
+    } catch (e) {
+      console.error('Kontrola řešení:', e);
+      toast.error('Řešení se nepodařilo zkontrolovat.');
+    }
+  };
+  const onCanvasChange = useCallback(() => {
+    setCheckStale(true);
+  }, []);
+  const checkPanel = (className: string) =>
+    modelSolution?.check ? (
+      <ConstructionCheckPanel
+        className={className}
+        result={checkResult}
+        stale={checkStale}
+        onCheck={runConstructionCheck}
+      />
+    ) : null;
   const toggleModelSolution = () => {
     setShowModelSolution(v => {
       if (!v) setSolutionStepIndex(0);
@@ -603,6 +723,8 @@ export default function StudentAssignmentPage() {
               autoDetectImageSrc={autoDetectSrc}
               autoDetectRequestId={autoDetectRequestId}
               overlaySnapshot={activeSolutionStep?.snapshot ?? null}
+              checkMarkers={checkResult && !checkStale ? checkResult.markers : null}
+              onCanvasChange={onCanvasChange}
               assignmentToolbarSlot={
                 openAssignmentButton ? (
                   <div className="flex items-center gap-2">
@@ -729,9 +851,10 @@ export default function StudentAssignmentPage() {
                           {activeStep.text}
                         </div>
                       ) : null}
+                      {checkPanel(activeStep.text.trim() ? 'mt-4 space-y-3' : 'space-y-3')}
                       {modelSolution ? (
                         <ModelSolutionPanel
-                          className={activeStep.text.trim() ? 'mt-4 space-y-3' : 'space-y-3'}
+                          className={activeStep.text.trim() || modelSolution.check ? 'mt-4 space-y-3' : 'space-y-3'}
                           visible={showModelSolution}
                           stepIndex={clampedSolutionStep}
                           stepCount={modelSolutionSteps.length}
@@ -814,6 +937,7 @@ export default function StudentAssignmentPage() {
                   <div className="text-[15px] leading-relaxed text-slate-800 whitespace-pre-wrap [font-family:'Fenomen_Sans',system-ui,sans-serif]">
                     {instructionView.text || '—'}
                   </div>
+                  {checkPanel('mt-4 space-y-3')}
                   {modelSolution ? (
                     <ModelSolutionPanel
                       className="mt-4 space-y-3"
