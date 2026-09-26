@@ -28,6 +28,8 @@ export type CheckMarker = V & { ok: boolean; warn?: boolean };
 
 export type CheckFigureResult = {
   name: string;
+  /** Útvar je mnohoúhelník (3 a víc vrcholů), ne jen bod nebo úsečka. */
+  polygon: boolean;
   ok: boolean;
   issues: string[];
 };
@@ -120,8 +122,9 @@ export function checkConstruction(
   // Písmena, která smí bod nést: jeho vlastní, u zaměnitelné skupiny kterékoli ze skupiny.
   const groupOf = new Map<string, string[]>();
   for (const group of check.interchangeable ?? []) for (const id of group) groupOf.set(id, group);
+  const alternatives = (id: string): string[] => (check.labelAlternatives?.[id] ?? []).map(labelBase);
   const allowedBases = (id: string): string[] =>
-    (groupOf.get(id) ?? [id]).flatMap(g => nameBases(sought.get(g)?.name ?? ''));
+    (groupOf.get(id) ?? [id]).flatMap(g => [...nameBases(sought.get(g)?.name ?? ''), ...alternatives(g)]);
 
   const pairs: Array<{ id: string; sp: V & { id: string; label: string }; d: number; named: boolean }> = [];
   for (const id of sought.keys()) {
@@ -129,7 +132,10 @@ export function checkConstruction(
     const bases = allowedBases(id);
     for (const sp of candidates) {
       const d = dist(target, sp);
-      if (d <= NEAR_PX) pairs.push({ id, sp, d, named: nameBases(sp.label ?? '').some(b => bases.includes(b)) });
+      const named = nameBases(sp.label ?? '').some(b => bases.includes(b));
+      // Mimo toleranci se bod přiřadí jen tehdy, když nese písmeno hledaného bodu — jinak by
+      // se za „vedle“ hlásil libovolný blízký pomocný bod (např. střed strany u těžiště).
+      if (d <= CHECK_TOLERANCE_PX || (d <= NEAR_PX && named)) pairs.push({ id, sp, d, named });
     }
   }
   // Nejdřív body v toleranci, mezi nimi ty se správným názvem (když žák má na místě
@@ -184,12 +190,14 @@ export function checkConstruction(
     const exclusive = own.filter(
       p => check.figures.filter(g => [...g.vertices, ...(g.extra ?? [])].some(q => q.id === p.id)).length === 1,
     );
+    // (Jen u mnohoúhelníků nebo víc bodů — u samotného bodu je jasnější hláška „bod … chybí“.)
     if (
       check.figures.length > 1 &&
       exclusive.length > 0 &&
+      (f.vertices.length >= 3 || exclusive.length > 1) &&
       exclusive.every(p => matchOf(p.id).status === 'missing')
     ) {
-      return { name: f.name, ok: false, issues: ['toto řešení zatím chybí'] };
+      return { name: f.name, polygon: f.vertices.length >= 3, ok: false, issues: ['toto řešení zatím chybí'] };
     }
 
     const polygon = f.vertices.length >= 3;
@@ -215,7 +223,7 @@ export function checkConstruction(
     else if (missingSides.length === 1) issues.push(`není narýsovaná strana ${missingSides[0]}`);
     else if (missingSides.length > 1) issues.push(`nejsou narýsované strany ${listCz(missingSides)}`);
 
-    return { name: f.name, ok: issues.length === 0, issues };
+    return { name: f.name, polygon, ok: issues.length === 0, issues };
   });
 
   const extraIssues: string[] = [];
@@ -293,7 +301,7 @@ export function checkConstruction(
     const free = [...pool];
     for (const x of members) {
       const given = nameBases(x.m.label);
-      const i = free.findIndex(p => nameBases(p.name).some(b => given.includes(b)));
+      const i = free.findIndex(p => [...nameBases(p.name), ...alternatives(p.id)].some(b => given.includes(b)));
       if (i >= 0) free.splice(i, 1);
       else wrong.push(x);
     }

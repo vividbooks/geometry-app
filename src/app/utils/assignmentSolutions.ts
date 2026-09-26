@@ -1,6 +1,7 @@
 import type { GeometrySubmissionSnapshot } from '../../../rysovani/src/components/FreeGeometryEditor';
 import { rotateSnapshotForAssignment } from './assignmentTransforms';
 import { CERMAT_SOLUTION_BUILDERS } from './cermatSolutions';
+import { GRADE9_CHECKS } from './grade9Checks';
 
 export type AssignmentSolutionStep = {
   text: string;
@@ -37,6 +38,11 @@ export type ConstructionCheck = {
    * pojmenovaný (např. B a D na ose kosočtverce).
    */
   interchangeable?: string[][];
+  /**
+   * Další písmena, která smí hledaný bod nést (např. když záměna A ↔ B dává jiné platné řešení):
+   * `{ 'sol-a1': ['B'] }`.
+   */
+  labelAlternatives?: Record<string, string[]>;
 };
 
 export type AssignmentModelSolution = {
@@ -1367,7 +1373,12 @@ const SOLUTION_BUILDERS: [string, () => AssignmentModelSolution][] = [
 ];
 
 const SOLUTIONS: Record<string, AssignmentModelSolution> = Object.fromEntries(
-  SOLUTION_BUILDERS.map(([id, build]) => [id, rotatedSolution(id, build())]),
+  SOLUTION_BUILDERS.map(([id, build]) => {
+    const solution = build();
+    // Úkoly 9. ročníku mají kontrolu řešení zapsanou zvlášť (`grade9Checks.ts`).
+    const check = solution.check ?? GRADE9_CHECKS[id];
+    return [id, rotatedSolution(id, check ? { ...solution, check } : solution)];
+  }),
 );
 
 export function getAssignmentModelSolution(

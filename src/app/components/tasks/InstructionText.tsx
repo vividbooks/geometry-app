@@ -1,12 +1,12 @@
 import { Fragment } from 'react';
-import { cermatInstructionSegments } from '../../utils/cermatAssignments';
+import { instructionMarkupSegments } from '../../utils/instructionMarkup';
 
 /**
- * Text zadání úkolu. U úloh CERMAT sází názvy bodů, přímek a útvarů kurzívou
+ * Text zadání úkolu. U úloh CERMAT a úkolů 9. ročníku sází názvy bodů, přímek a útvarů kurzívou
  * (podle značek v `cermatAssignments.ts`); ostatní zadání zobrazí beze změny.
  */
 export function InstructionText({ assignmentId, text }: { assignmentId: string | undefined; text: string }) {
-  const segments = cermatInstructionSegments(assignmentId, text);
+  const segments = instructionMarkupSegments(assignmentId, text);
   if (!segments) return <>{text}</>;
   return (
     <>

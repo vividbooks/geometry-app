@@ -3,7 +3,7 @@ import {
   assignmentInstructionDisplay,
   type InstructionStepContent,
 } from './instructionSteps';
-import { cermatInstructionSegments } from './cermatAssignments';
+import { instructionMarkupSegments } from './instructionMarkup';
 
 export type AssignmentPdfSource = {
   id?: string;
@@ -613,7 +613,7 @@ async function renderStepPage(opts: {
   if (body) {
     ctx.fillStyle = '#1e293b';
     ctx.font = '20px system-ui, sans-serif';
-    const segments = cermatInstructionSegments(opts.assignmentId, body);
+    const segments = instructionMarkupSegments(opts.assignmentId, body);
     if (segments) {
       y = drawRichText(ctx, segments, {
         x: MARGIN,

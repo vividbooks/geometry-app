@@ -197,7 +197,9 @@ function ConstructionCheckPanel({
   className?: string;
   onCheck: () => void;
 }) {
-  const multi = (result?.figures.length ?? 0) > 1;
+  // Nápověda „narýsujte všechny“ jen u víc mnohoúhelníků (víc řešení), ne u bodu nebo úsečky navíc.
+  const polygons = result?.figures.filter(f => f.polygon).length ?? 0;
+  const multi = polygons > 1;
   return (
     <div className={className}>
       <button
@@ -246,7 +248,7 @@ function ConstructionCheckPanel({
               </ul>
               {multi ? (
                 <p className="mt-1.5 pl-6 text-[12px] opacity-80">
-                  Úloha má {result.figures.length} {result.figures.length < 5 ? 'útvary' : 'útvarů'} — narýsujte všechny.
+                  Úloha má {polygons} {polygons < 5 ? 'útvary' : 'útvarů'} — narýsujte všechny.
                 </p>
               ) : null}
             </>
