@@ -23,6 +23,8 @@ import { PRIJIMACKY_TEST_SOLUTIONS_C } from './cermat/solutionsPrijimacky-c';
 import { PRIJIMACKY_TEST_SOLUTIONS_D } from './cermat/solutionsPrijimacky-d';
 import { PRIJIMACKY_TEST_SOLUTIONS_E } from './cermat/solutionsPrijimacky-e';
 import { PRIJIMACKY_TEST_SOLUTIONS_F } from './cermat/solutionsPrijimacky-f';
+import { PRIJIMACKY_TEST_SOLUTIONS_G } from './cermat/solutionsPrijimacky-g';
+import { PRIJIMACKY_TEST_SOLUTIONS_H } from './cermat/solutionsPrijimacky-h';
 
 export const CERMAT_SOLUTION_BUILDERS: [string, () => AssignmentModelSolution][] = [
   ...CERMAT_SOLUTIONS_2026,
@@ -45,4 +47,6 @@ export const CERMAT_SOLUTION_BUILDERS: [string, () => AssignmentModelSolution][]
   ...PRIJIMACKY_TEST_SOLUTIONS_D,
   ...PRIJIMACKY_TEST_SOLUTIONS_E,
   ...PRIJIMACKY_TEST_SOLUTIONS_F,
+  ...PRIJIMACKY_TEST_SOLUTIONS_G,
+  ...PRIJIMACKY_TEST_SOLUTIONS_H,
 ];

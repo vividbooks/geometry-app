@@ -28,6 +28,8 @@ import { PRIJIMACKY_TEST_C } from './cermat/dataPrijimacky-c';
 import { PRIJIMACKY_TEST_D } from './cermat/dataPrijimacky-d';
 import { PRIJIMACKY_TEST_E } from './cermat/dataPrijimacky-e';
 import { PRIJIMACKY_TEST_F } from './cermat/dataPrijimacky-f';
+import { PRIJIMACKY_TEST_G } from './cermat/dataPrijimacky-g';
+import { PRIJIMACKY_TEST_H } from './cermat/dataPrijimacky-h';
 
 export type CermatVec = { x: number; y: number };
 
@@ -149,6 +151,8 @@ export const PRIJIMACKY_TEST_ASSIGNMENTS: CermatAssignment[] = [
   ...PRIJIMACKY_TEST_D,
   ...PRIJIMACKY_TEST_E,
   ...PRIJIMACKY_TEST_F,
+  ...PRIJIMACKY_TEST_G,
+  ...PRIJIMACKY_TEST_H,
 ].map(item => ({
   ...item,
   instructionText: stripCermatMarkup(item.instructionMarkup),
