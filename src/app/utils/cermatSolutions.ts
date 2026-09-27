@@ -17,6 +17,9 @@ import { GRADE9_STYLE_SOLUTIONS_A } from './cermat/solutions9-a';
 import { GRADE9_STYLE_SOLUTIONS_B } from './cermat/solutions9-b';
 import { GRADE9_STYLE_SOLUTIONS_C } from './cermat/solutions9-c';
 import { GRADE9_STYLE_SOLUTIONS_D } from './cermat/solutions9-d';
+import { PRIJIMACKY_TEST_SOLUTIONS_A } from './cermat/solutionsPrijimacky-a';
+import { PRIJIMACKY_TEST_SOLUTIONS_B } from './cermat/solutionsPrijimacky-b';
+import { PRIJIMACKY_TEST_SOLUTIONS_C } from './cermat/solutionsPrijimacky-c';
 
 export const CERMAT_SOLUTION_BUILDERS: [string, () => AssignmentModelSolution][] = [
   ...CERMAT_SOLUTIONS_2026,
@@ -32,4 +35,8 @@ export const CERMAT_SOLUTION_BUILDERS: [string, () => AssignmentModelSolution][]
   ...GRADE9_STYLE_SOLUTIONS_B,
   ...GRADE9_STYLE_SOLUTIONS_C,
   ...GRADE9_STYLE_SOLUTIONS_D,
+  // Rýsovací úlohy vlastních testů aplikace Přijímací zkoušky (v knihovně úkolů nejsou).
+  ...PRIJIMACKY_TEST_SOLUTIONS_A,
+  ...PRIJIMACKY_TEST_SOLUTIONS_B,
+  ...PRIJIMACKY_TEST_SOLUTIONS_C,
 ];

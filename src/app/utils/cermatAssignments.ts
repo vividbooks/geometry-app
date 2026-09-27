@@ -22,6 +22,9 @@ import { GRADE9_STYLE_A } from './cermat/data9-a';
 import { GRADE9_STYLE_B } from './cermat/data9-b';
 import { GRADE9_STYLE_C } from './cermat/data9-c';
 import { GRADE9_STYLE_D } from './cermat/data9-d';
+import { PRIJIMACKY_TEST_A } from './cermat/dataPrijimacky-a';
+import { PRIJIMACKY_TEST_B } from './cermat/dataPrijimacky-b';
+import { PRIJIMACKY_TEST_C } from './cermat/dataPrijimacky-c';
 
 export type CermatVec = { x: number; y: number };
 
@@ -132,8 +135,25 @@ export const GRADE9_STYLE_ASSIGNMENTS: CermatAssignment[] = [
   instructionText: stripCermatMarkup(item.instructionMarkup),
 }));
 
-/** Všechny konstrukční úlohy s daty v kódu (CERMAT i úkoly 9. ročníku ve stylu CERMAT). */
-export const CONSTRUCTION_ASSIGNMENTS: CermatAssignment[] = [...CERMAT_ASSIGNMENTS, ...GRADE9_STYLE_ASSIGNMENTS];
+/**
+ * Rýsovací úlohy vlastních testů aplikace Přijímací zkoušky (Test – Test 6, úlohy 9 a 10).
+ * V knihovně úkolů nejsou: otevírají se jen odkazem z testu v aplikaci Přijímací zkoušky.
+ */
+export const PRIJIMACKY_TEST_ASSIGNMENTS: CermatAssignment[] = [
+  ...PRIJIMACKY_TEST_A,
+  ...PRIJIMACKY_TEST_B,
+  ...PRIJIMACKY_TEST_C,
+].map(item => ({
+  ...item,
+  instructionText: stripCermatMarkup(item.instructionMarkup),
+}));
+
+/** Všechny konstrukční úlohy s daty v kódu (CERMAT, úkoly 9. ročníku a úlohy vlastních přijímačkových testů). */
+export const CONSTRUCTION_ASSIGNMENTS: CermatAssignment[] = [
+  ...CERMAT_ASSIGNMENTS,
+  ...GRADE9_STYLE_ASSIGNMENTS,
+  ...PRIJIMACKY_TEST_ASSIGNMENTS,
+];
 
 export function getCermatAssignment(id: string | undefined): CermatAssignment | null {
   if (!id) return null;

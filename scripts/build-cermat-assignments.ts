@@ -8,7 +8,7 @@
  *
  * Úloha má jediný krok, sloupec new_canvas_per_step proto není potřeba (v produkční DB ani není).
  * Výstup: supabase/patches/insert-cermat.sql (sekce CERMAT) a insert-grade9-cermat-style.sql
- * (úkoly 9. ročníku ve stylu CERMAT), každý v jedné transakci, insert … on conflict do update.
+ * (úkoly 9. ročníku ve stylu CERMAT) a insert-prijimacky-testy.sql (úlohy vlastních testů přijímaček), každý v jedné transakci, insert … on conflict do update.
  * Volitelný argument uloží všechny řádky i jako JSON (pro vložení přes REST).
  */
 import { writeFileSync } from 'node:fs';
@@ -16,6 +16,7 @@ import {
   type CermatAssignment,
   CERMAT_ASSIGNMENTS,
   GRADE9_STYLE_ASSIGNMENTS,
+  PRIJIMACKY_TEST_ASSIGNMENTS,
   cermatInstructionSnapshot,
 } from '../src/app/utils/cermatAssignments';
 
@@ -60,6 +61,7 @@ function sqlFor(heading: string, rows: Row[]): string {
 
 const cermat = CERMAT_ASSIGNMENTS.map(toRow);
 const grade9 = GRADE9_STYLE_ASSIGNMENTS.map(toRow);
+const prijimacky = PRIJIMACKY_TEST_ASSIGNMENTS.map(toRow);
 writeFileSync(
   'supabase/patches/insert-cermat.sql',
   sqlFor('Sekce CERMAT: konstrukční úlohy 9 a 10 z jednotné přijímací zkoušky (čtyřleté obory).', cermat),
@@ -68,6 +70,10 @@ writeFileSync(
   'supabase/patches/insert-grade9-cermat-style.sql',
   sqlFor('9. ročník: konstrukční úkoly ve stylu úloh CERMAT.', grade9),
 );
+writeFileSync(
+  'supabase/patches/insert-prijimacky-testy.sql',
+  sqlFor('Rýsovací úlohy vlastních testů aplikace Přijímací zkoušky (v knihovně úkolů nejsou).', prijimacky),
+);
 const rowsOut = process.argv[2];
-if (rowsOut) writeFileSync(rowsOut, `${JSON.stringify([...cermat, ...grade9])}\n`);
-console.log(`Zapsáno ${cermat.length} úloh CERMAT a ${grade9.length} úkolů 9. ročníku.`);
+if (rowsOut) writeFileSync(rowsOut, `${JSON.stringify([...cermat, ...grade9, ...prijimacky])}\n`);
+console.log(`Zapsáno ${cermat.length} úloh CERMAT, ${grade9.length} úkolů 9. ročníku a ${prijimacky.length} úloh vlastních přijímačkových testů.`);
