@@ -231,4 +231,118 @@ on conflict (id) do update set
   instruction_image = excluded.instruction_image,
   instruction_steps = excluded.instruction_steps;
 
+-- Vlastní test A5 · 9. Kružnice dotýkající se přímky v daném bodě
+insert into public.geometry_circuit_assignments (
+  id, title, instruction_text, instruction_image, instruction_steps
+) values (
+  '027f44c0-e12f-477d-9ea8-624dda6064e7'::uuid,
+  $txt$Vlastní test A5 · 9. Kružnice dotýkající se přímky v daném bodě$txt$,
+  $txt$V rovině leží přímka p s bodem T a bod M, který na přímce p neleží.
+
+Sestrojte kružnici k, která se dotýká přímky p v bodě T a prochází bodem M.
+Střed kružnice označte S a kružnici narýsujte.$txt$,
+  null,
+  $json$[{"text":"V rovině leží přímka p s bodem T a bod M, který na přímce p neleží.\n\nSestrojte kružnici k, která se dotýká přímky p v bodě T a prochází bodem M.\nStřed kružnice označte S a kružnici narýsujte.","canvas_snapshot":{"points":[{"id":"pt-frame-tl","x":0,"y":0,"label":"","locked":true,"hidden":true},{"id":"pt-frame-br","x":815,"y":480,"label":"","locked":true,"hidden":true},{"id":"pt-p1","x":40,"y":436.4,"label":"","locked":true,"hidden":true},{"id":"pt-p2","x":703.6,"y":319.4,"label":"","locked":true,"hidden":true},{"id":"pt-t","x":360,"y":380,"label":"T","locked":true},{"id":"pt-m","x":450.4,"y":201.6,"label":"M","locked":true}],"shapes":[{"id":"line-p","type":"line","label":"p","points":["pt-p1","pt-p2"],"locked":true,"definition":{"p1Id":"pt-p1","p2Id":"pt-p2"}}],"freehandPaths":[]}}]$json$::jsonb
+)
+on conflict (id) do update set
+  title = excluded.title,
+  instruction_text = excluded.instruction_text,
+  instruction_image = excluded.instruction_image,
+  instruction_steps = excluded.instruction_steps;
+
+-- Vlastní test A5 · 10. Pravoúhlý trojúhelník s vrcholem na přímce
+insert into public.geometry_circuit_assignments (
+  id, title, instruction_text, instruction_image, instruction_steps
+) values (
+  'ce35b9bc-885e-4c96-9e42-fc36ddfb7a69'::uuid,
+  $txt$Vlastní test A5 · 10. Pravoúhlý trojúhelník s vrcholem na přímce$txt$,
+  $txt$V rovině leží úsečka AB a přímka p.
+
+Sestrojte trojúhelník ABC s pravým úhlem při vrcholu B, jehož vrchol C leží na přímce p.
+Vrchol C označte písmenem a trojúhelník narýsujte.$txt$,
+  null,
+  $json$[{"text":"V rovině leží úsečka AB a přímka p.\n\nSestrojte trojúhelník ABC s pravým úhlem při vrcholu B, jehož vrchol C leží na přímce p.\nVrchol C označte písmenem a trojúhelník narýsujte.","canvas_snapshot":{"points":[{"id":"pt-frame-tl","x":0,"y":0,"label":"","locked":true,"hidden":true},{"id":"pt-frame-br","x":815,"y":470,"label":"","locked":true,"hidden":true},{"id":"pt-p1","x":40,"y":376.9,"label":"","locked":true,"hidden":true},{"id":"pt-p2","x":703.6,"y":135.4,"label":"","locked":true,"hidden":true},{"id":"pt-a","x":180,"y":410,"label":"A","locked":true},{"id":"pt-b","x":430,"y":410,"label":"B","locked":true}],"shapes":[{"id":"line-p","type":"line","label":"p","points":["pt-p1","pt-p2"],"locked":true,"definition":{"p1Id":"pt-p1","p2Id":"pt-p2"}},{"id":"shape-ab","type":"segment","label":"","points":["pt-a","pt-b"],"locked":true,"definition":{"p1Id":"pt-a","p2Id":"pt-b"}}],"freehandPaths":[]}}]$json$::jsonb
+)
+on conflict (id) do update set
+  title = excluded.title,
+  instruction_text = excluded.instruction_text,
+  instruction_image = excluded.instruction_image,
+  instruction_steps = excluded.instruction_steps;
+
+-- Vlastní test A6 · 9. Body v dané vzdálenosti od bodu a od přímky
+insert into public.geometry_circuit_assignments (
+  id, title, instruction_text, instruction_image, instruction_steps
+) values (
+  '674995d6-a63c-494b-9a86-4dae91f5a9d7'::uuid,
+  $txt$Vlastní test A6 · 9. Body v dané vzdálenosti od bodu a od přímky$txt$,
+  $txt$V rovině leží přímka p a bod S, který na přímce p neleží.
+
+Sestrojte všechny body X, které mají od bodu S vzdálenost 3 cm a od přímky p vzdálenost 1 cm.
+Body označte X₁, X₂, …$txt$,
+  null,
+  $json$[{"text":"V rovině leží přímka p a bod S, který na přímce p neleží.\n\nSestrojte všechny body X, které mají od bodu S vzdálenost 3 cm a od přímky p vzdálenost 1 cm.\nBody označte X₁, X₂, …","canvas_snapshot":{"points":[{"id":"pt-frame-tl","x":0,"y":0,"label":"","locked":true,"hidden":true},{"id":"pt-frame-br","x":815,"y":420,"label":"","locked":true,"hidden":true},{"id":"pt-p1","x":40,"y":295,"label":"","locked":true,"hidden":true},{"id":"pt-p2","x":703.6,"y":295,"label":"","locked":true,"hidden":true},{"id":"pt-s","x":410,"y":220,"label":"S","locked":true}],"shapes":[{"id":"line-p","type":"line","label":"p","points":["pt-p1","pt-p2"],"locked":true,"definition":{"p1Id":"pt-p1","p2Id":"pt-p2"}}],"freehandPaths":[]}}]$json$::jsonb
+)
+on conflict (id) do update set
+  title = excluded.title,
+  instruction_text = excluded.instruction_text,
+  instruction_image = excluded.instruction_image,
+  instruction_steps = excluded.instruction_steps;
+
+-- Vlastní test A6 · 10. Trojúhelník s vrcholem na přímce
+insert into public.geometry_circuit_assignments (
+  id, title, instruction_text, instruction_image, instruction_steps
+) values (
+  'ed349788-10f5-4e92-bf6a-939a7dbbf2b2'::uuid,
+  $txt$Vlastní test A6 · 10. Trojúhelník s vrcholem na přímce$txt$,
+  $txt$V rovině leží úsečka AB a přímka p.
+
+Sestrojte všechny trojúhelníky ABC, pro které platí |AC| = 5 cm a vrchol C leží na přímce p.
+Trojúhelníky narýsujte a jejich vrcholy označte.$txt$,
+  null,
+  $json$[{"text":"V rovině leží úsečka AB a přímka p.\n\nSestrojte všechny trojúhelníky ABC, pro které platí |AC| = 5 cm a vrchol C leží na přímce p.\nTrojúhelníky narýsujte a jejich vrcholy označte.","canvas_snapshot":{"points":[{"id":"pt-frame-tl","x":0,"y":0,"label":"","locked":true,"hidden":true},{"id":"pt-frame-br","x":815,"y":400,"label":"","locked":true,"hidden":true},{"id":"pt-p1","x":47,"y":284,"label":"","locked":true,"hidden":true},{"id":"pt-p2","x":695,"y":95,"label":"","locked":true,"hidden":true},{"id":"pt-a","x":425,"y":330,"label":"A","locked":true},{"id":"pt-b","x":625,"y":330,"label":"B","locked":true}],"shapes":[{"id":"line-p","type":"line","label":"p","points":["pt-p1","pt-p2"],"locked":true,"definition":{"p1Id":"pt-p1","p2Id":"pt-p2"}},{"id":"shape-ab","type":"segment","label":"","points":["pt-a","pt-b"],"locked":true,"definition":{"p1Id":"pt-a","p2Id":"pt-b"}}],"freehandPaths":[]}}]$json$::jsonb
+)
+on conflict (id) do update set
+  title = excluded.title,
+  instruction_text = excluded.instruction_text,
+  instruction_image = excluded.instruction_image,
+  instruction_steps = excluded.instruction_steps;
+
+-- Vlastní test A7 · 9. Kružnice vepsaná do úhlu
+insert into public.geometry_circuit_assignments (
+  id, title, instruction_text, instruction_image, instruction_steps
+) values (
+  '6cf98d8f-9775-49de-8203-24dc967f3f0e'::uuid,
+  $txt$Vlastní test A7 · 9. Kružnice vepsaná do úhlu$txt$,
+  $txt$V rovině leží úhel AVB (polopřímky VA a VB) a na jeho rameni VA bod T.
+
+Sestrojte kružnici k, která se dotýká obou ramen úhlu, přičemž ramene VA se dotýká v bodě T.
+Střed kružnice označte S a kružnici narýsujte.$txt$,
+  null,
+  $json$[{"text":"V rovině leží úhel AVB (polopřímky VA a VB) a na jeho rameni VA bod T.\n\nSestrojte kružnici k, která se dotýká obou ramen úhlu, přičemž ramene VA se dotýká v bodě T.\nStřed kružnice označte S a kružnici narýsujte.","canvas_snapshot":{"points":[{"id":"pt-frame-tl","x":0,"y":0,"label":"","locked":true,"hidden":true},{"id":"pt-frame-br","x":815,"y":480,"label":"","locked":true,"hidden":true},{"id":"pt-v","x":200,"y":420,"label":"V","locked":true},{"id":"pt-a","x":575,"y":420,"label":"A","locked":true},{"id":"pt-b","x":350,"y":160.19,"label":"B","locked":true},{"id":"pt-t","x":400,"y":420,"label":"T","locked":true}],"shapes":[{"id":"shape-va","type":"ray","label":"","points":["pt-v","pt-a"],"locked":true,"definition":{"p1Id":"pt-v","p2Id":"pt-a"}},{"id":"shape-vb","type":"ray","label":"","points":["pt-v","pt-b"],"locked":true,"definition":{"p1Id":"pt-v","p2Id":"pt-b"}}],"freehandPaths":[]}}]$json$::jsonb
+)
+on conflict (id) do update set
+  title = excluded.title,
+  instruction_text = excluded.instruction_text,
+  instruction_image = excluded.instruction_image,
+  instruction_steps = excluded.instruction_steps;
+
+-- Vlastní test A7 · 10. Lichoběžník ze tří vrcholů
+insert into public.geometry_circuit_assignments (
+  id, title, instruction_text, instruction_image, instruction_steps
+) values (
+  '7dc9ef65-bfe5-44a8-8518-22ff5823d375'::uuid,
+  $txt$Vlastní test A7 · 10. Lichoběžník ze tří vrcholů$txt$,
+  $txt$V rovině leží body A, B a D, které neleží na jedné přímce.
+
+Sestrojte lichoběžník ABCD se základnami AB a CD, jehož základna CD měří 3 cm.
+Vrchol C označte a lichoběžník narýsujte.$txt$,
+  null,
+  $json$[{"text":"V rovině leží body A, B a D, které neleží na jedné přímce.\n\nSestrojte lichoběžník ABCD se základnami AB a CD, jehož základna CD měří 3 cm.\nVrchol C označte a lichoběžník narýsujte.","canvas_snapshot":{"points":[{"id":"pt-frame-tl","x":0,"y":0,"label":"","locked":true,"hidden":true},{"id":"pt-frame-br","x":815,"y":400,"label":"","locked":true,"hidden":true},{"id":"pt-a","x":270,"y":330,"label":"A","locked":true},{"id":"pt-b","x":567.08,"y":288.25,"label":"B","locked":true},{"id":"pt-d","x":300.39,"y":157.66,"label":"D","locked":true}],"shapes":[],"freehandPaths":[]}}]$json$::jsonb
+)
+on conflict (id) do update set
+  title = excluded.title,
+  instruction_text = excluded.instruction_text,
+  instruction_image = excluded.instruction_image,
+  instruction_steps = excluded.instruction_steps;
+
 commit;
