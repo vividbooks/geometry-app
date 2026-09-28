@@ -419,4 +419,40 @@ on conflict (id) do update set
   instruction_image = excluded.instruction_image,
   instruction_steps = excluded.instruction_steps;
 
+-- Vlastní test B5 · 9. Osa souměrnosti daným bodem
+insert into public.geometry_circuit_assignments (
+  id, title, instruction_text, instruction_image, instruction_steps
+) values (
+  '76b5bc23-ee12-4efd-97b5-c037a1ed04e0'::uuid,
+  $txt$Vlastní test B5 · 9. Osa souměrnosti daným bodem$txt$,
+  $txt$V rovině leží úsečka AB, bod M a přímka p. Úsečka A′B′ je obrazem úsečky AB v osové souměrnosti s osou o. Osa o prochází bodem M a bod A′ leží na přímce p.
+
+Sestrojte všechny takové osy o a pro každou z nich úsečku A′B′. Osy i krajní body úseček označte. Najděte všechna řešení.$txt$,
+  null,
+  $json$[{"text":"V rovině leží úsečka AB, bod M a přímka p. Úsečka A′B′ je obrazem úsečky AB v osové souměrnosti s osou o. Osa o prochází bodem M a bod A′ leží na přímce p.\n\nSestrojte všechny takové osy o a pro každou z nich úsečku A′B′. Osy i krajní body úseček označte. Najděte všechna řešení.","canvas_snapshot":{"points":[{"id":"pt-frame-tl","x":0,"y":0,"label":"","locked":true,"hidden":true},{"id":"pt-frame-br","x":730,"y":530,"label":"","locked":true,"hidden":true},{"id":"pt-p1","x":40,"y":330,"label":"","locked":true,"hidden":true},{"id":"pt-p2","x":620,"y":330,"label":"","locked":true,"hidden":true},{"id":"pt-a","x":215,"y":240,"label":"A","locked":true},{"id":"pt-b","x":265,"y":90,"label":"B","locked":true},{"id":"pt-m","x":365,"y":240,"label":"M","locked":true}],"shapes":[{"id":"line-p","type":"line","label":"p","points":["pt-p1","pt-p2"],"locked":true,"definition":{"p1Id":"pt-p1","p2Id":"pt-p2"}},{"id":"shape-ab","type":"segment","label":"","points":["pt-a","pt-b"],"locked":true,"definition":{"p1Id":"pt-a","p2Id":"pt-b"}}],"freehandPaths":[]}}]$json$::jsonb
+)
+on conflict (id) do update set
+  title = excluded.title,
+  instruction_text = excluded.instruction_text,
+  instruction_image = excluded.instruction_image,
+  instruction_steps = excluded.instruction_steps;
+
+-- Vlastní test B5 · 10. Lichoběžník ze středu ramene
+insert into public.geometry_circuit_assignments (
+  id, title, instruction_text, instruction_image, instruction_steps
+) values (
+  '18a46298-7db2-48e7-8fa4-7b6d1da090f6'::uuid,
+  $txt$Vlastní test B5 · 10. Lichoběžník ze středu ramene$txt$,
+  $txt$V rovině leží body A, D a S. Body A, D jsou vrcholy lichoběžníku ABCD se základnami AB a CD. Bod S je střed ramene BC a základna CD měří 3 cm.
+
+Sestrojte vrcholy B, C lichoběžníku ABCD, označte je a lichoběžník narýsujte.$txt$,
+  null,
+  $json$[{"text":"V rovině leží body A, D a S. Body A, D jsou vrcholy lichoběžníku ABCD se základnami AB a CD. Bod S je střed ramene BC a základna CD měří 3 cm.\n\nSestrojte vrcholy B, C lichoběžníku ABCD, označte je a lichoběžník narýsujte.","canvas_snapshot":{"points":[{"id":"pt-frame-tl","x":0,"y":0,"label":"","locked":true,"hidden":true},{"id":"pt-frame-br","x":730,"y":530,"label":"","locked":true,"hidden":true},{"id":"pt-a","x":90,"y":415,"label":"A","locked":true},{"id":"pt-d","x":140,"y":165,"label":"D","locked":true},{"id":"pt-s","x":365,"y":290,"label":"S","locked":true}],"shapes":[],"freehandPaths":[]}}]$json$::jsonb
+)
+on conflict (id) do update set
+  title = excluded.title,
+  instruction_text = excluded.instruction_text,
+  instruction_image = excluded.instruction_image,
+  instruction_steps = excluded.instruction_steps;
+
 commit;
