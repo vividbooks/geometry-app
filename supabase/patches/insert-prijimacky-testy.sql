@@ -455,4 +455,40 @@ on conflict (id) do update set
   instruction_image = excluded.instruction_image,
   instruction_steps = excluded.instruction_steps;
 
+-- Vlastní test B6 · 9. Rovnoběžníky ze tří vrcholů
+insert into public.geometry_circuit_assignments (
+  id, title, instruction_text, instruction_image, instruction_steps
+) values (
+  '8682943e-b3ac-457a-89b9-fe05aa306ee2'::uuid,
+  $txt$Vlastní test B6 · 9. Rovnoběžníky ze tří vrcholů$txt$,
+  $txt$V rovině leží body K, L a M, které neleží na jedné přímce.
+
+Sestrojte všechny rovnoběžníky, jejichž tři vrcholy jsou body K, L a M. Čtvrtý vrchol každého rovnoběžníku označte (N₁, N₂, …) a rovnoběžníky narýsujte. Najděte všechna řešení.$txt$,
+  null,
+  $json$[{"text":"V rovině leží body K, L a M, které neleží na jedné přímce.\n\nSestrojte všechny rovnoběžníky, jejichž tři vrcholy jsou body K, L a M. Čtvrtý vrchol každého rovnoběžníku označte (N₁, N₂, …) a rovnoběžníky narýsujte. Najděte všechna řešení.","canvas_snapshot":{"points":[{"id":"pt-frame-tl","x":0,"y":0,"label":"","locked":true,"hidden":true},{"id":"pt-frame-br","x":730,"y":530,"label":"","locked":true,"hidden":true},{"id":"pt-k","x":290,"y":315,"label":"K","locked":true},{"id":"pt-l","x":440,"y":340,"label":"L","locked":true},{"id":"pt-m","x":365,"y":215,"label":"M","locked":true}],"shapes":[],"freehandPaths":[]}}]$json$::jsonb
+)
+on conflict (id) do update set
+  title = excluded.title,
+  instruction_text = excluded.instruction_text,
+  instruction_image = excluded.instruction_image,
+  instruction_steps = excluded.instruction_steps;
+
+-- Vlastní test B6 · 10. Pětiúhelník souměrný podle osy
+insert into public.geometry_circuit_assignments (
+  id, title, instruction_text, instruction_image, instruction_steps
+) values (
+  '1a92910c-b5d6-4e4c-8018-c26ebf461395'::uuid,
+  $txt$Vlastní test B6 · 10. Pětiúhelník souměrný podle osy$txt$,
+  $txt$V rovině leží přímka o a body A, C. Pětiúhelník ABCDE je souměrný podle přímky o a jeho vrchol D leží na přímce o. Strana CD měří 3 cm a vrchol D má od přímky AB větší vzdálenost než vrchol C.
+
+Sestrojte vrcholy B, D, E, označte je a pětiúhelník narýsujte.$txt$,
+  null,
+  $json$[{"text":"V rovině leží přímka o a body A, C. Pětiúhelník ABCDE je souměrný podle přímky o a jeho vrchol D leží na přímce o. Strana CD měří 3 cm a vrchol D má od přímky AB větší vzdálenost než vrchol C.\n\nSestrojte vrcholy B, D, E, označte je a pětiúhelník narýsujte.","canvas_snapshot":{"points":[{"id":"pt-frame-tl","x":0,"y":0,"label":"","locked":true,"hidden":true},{"id":"pt-frame-br","x":730,"y":530,"label":"","locked":true,"hidden":true},{"id":"pt-o1","x":365,"y":480,"label":"","locked":true,"hidden":true},{"id":"pt-o2","x":365,"y":90,"label":"","locked":true,"hidden":true},{"id":"pt-a","x":215,"y":415,"label":"A","locked":true},{"id":"pt-c","x":485,"y":270,"label":"C","locked":true}],"shapes":[{"id":"line-o","type":"line","label":"o","points":["pt-o1","pt-o2"],"locked":true,"definition":{"p1Id":"pt-o1","p2Id":"pt-o2"}}],"freehandPaths":[]}}]$json$::jsonb
+)
+on conflict (id) do update set
+  title = excluded.title,
+  instruction_text = excluded.instruction_text,
+  instruction_image = excluded.instruction_image,
+  instruction_steps = excluded.instruction_steps;
+
 commit;
