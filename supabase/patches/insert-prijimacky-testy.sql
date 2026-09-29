@@ -527,4 +527,40 @@ on conflict (id) do update set
   instruction_image = excluded.instruction_image,
   instruction_steps = excluded.instruction_steps;
 
+-- Vlastní test B8 · 9. Rovnoramenný lichoběžník s vrcholem na přímce
+insert into public.geometry_circuit_assignments (
+  id, title, instruction_text, instruction_image, instruction_steps
+) values (
+  'a51c637a-b205-4830-8c79-815ea8df4351'::uuid,
+  $txt$Vlastní test B8 · 9. Rovnoramenný lichoběžník s vrcholem na přímce$txt$,
+  $txt$V rovině leží úsečka AB a přímka p. Úsečka AB je základna rovnoramenného lichoběžníku ABCD. Vrchol D leží na přímce p a rameno AD měří 3 cm.
+
+Sestrojte všechny takové lichoběžníky, vrcholy označte (C₁, D₁, …) a lichoběžníky narýsujte.$txt$,
+  null,
+  $json$[{"text":"V rovině leží úsečka AB a přímka p. Úsečka AB je základna rovnoramenného lichoběžníku ABCD. Vrchol D leží na přímce p a rameno AD měří 3 cm.\n\nSestrojte všechny takové lichoběžníky, vrcholy označte (C₁, D₁, …) a lichoběžníky narýsujte.","canvas_snapshot":{"points":[{"id":"pt-frame-tl","x":0,"y":0,"label":"","locked":true,"hidden":true},{"id":"pt-frame-br","x":730,"y":530,"label":"","locked":true,"hidden":true},{"id":"pt-p1","x":65,"y":205.909,"label":"","locked":true,"hidden":true},{"id":"pt-p2","x":615,"y":305.909,"label":"","locked":true,"hidden":true},{"id":"pt-a","x":190,"y":365,"label":"A","locked":true},{"id":"pt-b","x":540,"y":365,"label":"B","locked":true}],"shapes":[{"id":"line-p","type":"line","label":"p","points":["pt-p1","pt-p2"],"locked":true,"definition":{"p1Id":"pt-p1","p2Id":"pt-p2"}},{"id":"shape-ab","type":"segment","label":"","points":["pt-a","pt-b"],"locked":true,"definition":{"p1Id":"pt-a","p2Id":"pt-b"}}],"freehandPaths":[]}}]$json$::jsonb
+)
+on conflict (id) do update set
+  title = excluded.title,
+  instruction_text = excluded.instruction_text,
+  instruction_image = excluded.instruction_image,
+  instruction_steps = excluded.instruction_steps;
+
+-- Vlastní test B8 · 10. Pravoúhlý rovnoramenný trojúhelník s přeponou na přímce
+insert into public.geometry_circuit_assignments (
+  id, title, instruction_text, instruction_image, instruction_steps
+) values (
+  '01be6bbb-1410-4a7d-8960-3ccdd1c42848'::uuid,
+  $txt$Vlastní test B8 · 10. Pravoúhlý rovnoramenný trojúhelník s přeponou na přímce$txt$,
+  $txt$V rovině leží bod C a přímka p. Bod C je vrchol pravoúhlého rovnoramenného trojúhelníku ABC s pravým úhlem při vrcholu C. Přepona AB leží na přímce p.
+
+Sestrojte vrcholy A, B, označte je a trojúhelník narýsujte.$txt$,
+  null,
+  $json$[{"text":"V rovině leží bod C a přímka p. Bod C je vrchol pravoúhlého rovnoramenného trojúhelníku ABC s pravým úhlem při vrcholu C. Přepona AB leží na přímce p.\n\nSestrojte vrcholy A, B, označte je a trojúhelník narýsujte.","canvas_snapshot":{"points":[{"id":"pt-frame-tl","x":0,"y":0,"label":"","locked":true,"hidden":true},{"id":"pt-frame-br","x":730,"y":530,"label":"","locked":true,"hidden":true},{"id":"pt-p1","x":90,"y":108.75,"label":"","locked":true,"hidden":true},{"id":"pt-p2","x":490,"y":408.75,"label":"","locked":true,"hidden":true},{"id":"pt-c","x":455,"y":195,"label":"C","locked":true}],"shapes":[{"id":"line-p","type":"line","label":"p","points":["pt-p1","pt-p2"],"locked":true,"definition":{"p1Id":"pt-p1","p2Id":"pt-p2"}}],"freehandPaths":[]}}]$json$::jsonb
+)
+on conflict (id) do update set
+  title = excluded.title,
+  instruction_text = excluded.instruction_text,
+  instruction_image = excluded.instruction_image,
+  instruction_steps = excluded.instruction_steps;
+
 commit;
