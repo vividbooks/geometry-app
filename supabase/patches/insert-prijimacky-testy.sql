@@ -473,17 +473,17 @@ on conflict (id) do update set
   instruction_image = excluded.instruction_image,
   instruction_steps = excluded.instruction_steps;
 
--- Vlastní test B6 · 10. Pětiúhelník souměrný podle osy
+-- Vlastní test B6 · 10. Rovnoramenný trojúhelník z osy a bodu na rameni
 insert into public.geometry_circuit_assignments (
   id, title, instruction_text, instruction_image, instruction_steps
 ) values (
-  '1a92910c-b5d6-4e4c-8018-c26ebf461395'::uuid,
-  $txt$Vlastní test B6 · 10. Pětiúhelník souměrný podle osy$txt$,
-  $txt$V rovině leží přímka o a body A, C. Pětiúhelník ABCDE je souměrný podle přímky o a jeho vrchol D leží na přímce o. Strana CD měří 3 cm a vrchol D má od přímky AB větší vzdálenost než vrchol C.
+  'd4ee7c4c-695c-4b92-9c9c-6d2f406b55ce'::uuid,
+  $txt$Vlastní test B6 · 10. Rovnoramenný trojúhelník z osy a bodu na rameni$txt$,
+  $txt$V rovině leží přímka o a body A, M. Přímka o je osou souměrnosti rovnoramenného trojúhelníku ABC se základnou AB. Bod M leží na rameni BC tohoto trojúhelníku.
 
-Sestrojte vrcholy B, D, E, označte je a pětiúhelník narýsujte.$txt$,
+Sestrojte vrcholy B, C trojúhelníku ABC, označte je písmeny a trojúhelník narýsujte.$txt$,
   null,
-  $json$[{"text":"V rovině leží přímka o a body A, C. Pětiúhelník ABCDE je souměrný podle přímky o a jeho vrchol D leží na přímce o. Strana CD měří 3 cm a vrchol D má od přímky AB větší vzdálenost než vrchol C.\n\nSestrojte vrcholy B, D, E, označte je a pětiúhelník narýsujte.","canvas_snapshot":{"points":[{"id":"pt-frame-tl","x":0,"y":0,"label":"","locked":true,"hidden":true},{"id":"pt-frame-br","x":730,"y":530,"label":"","locked":true,"hidden":true},{"id":"pt-o1","x":365,"y":480,"label":"","locked":true,"hidden":true},{"id":"pt-o2","x":365,"y":90,"label":"","locked":true,"hidden":true},{"id":"pt-a","x":215,"y":415,"label":"A","locked":true},{"id":"pt-c","x":485,"y":270,"label":"C","locked":true}],"shapes":[{"id":"line-o","type":"line","label":"o","points":["pt-o1","pt-o2"],"locked":true,"definition":{"p1Id":"pt-o1","p2Id":"pt-o2"}}],"freehandPaths":[]}}]$json$::jsonb
+  $json$[{"text":"V rovině leží přímka o a body A, M. Přímka o je osou souměrnosti rovnoramenného trojúhelníku ABC se základnou AB. Bod M leží na rameni BC tohoto trojúhelníku.\n\nSestrojte vrcholy B, C trojúhelníku ABC, označte je písmeny a trojúhelník narýsujte.","canvas_snapshot":{"points":[{"id":"pt-frame-tl","x":0,"y":0,"label":"","locked":true,"hidden":true},{"id":"pt-frame-br","x":730,"y":530,"label":"","locked":true,"hidden":true},{"id":"pt-o1","x":502.5,"y":490,"label":"","locked":true,"hidden":true},{"id":"pt-o2","x":202.5,"y":90,"label":"","locked":true,"hidden":true},{"id":"pt-a","x":290,"y":415,"label":"A","locked":true},{"id":"pt-m","x":378,"y":199,"label":"M","locked":true}],"shapes":[{"id":"line-o","type":"line","label":"o","points":["pt-o1","pt-o2"],"locked":true,"definition":{"p1Id":"pt-o1","p2Id":"pt-o2"}}],"freehandPaths":[]}}]$json$::jsonb
 )
 on conflict (id) do update set
   title = excluded.title,

@@ -1,6 +1,6 @@
 /** Vzorová řešení rýsovacích úloh vlastních přijímačkových testů, balík J — vlastní test B6 (viz dataPrijimacky-j.ts). */
 import type { AssignmentModelSolution } from '../assignmentSolutions';
-import { add, Board, cumulative, dist, foot, given, lineCircle, mid, mul, sub, unit } from './board';
+import { add, Board, cumulative, dist, foot, given, lineLine, mid, mul, sub, unit } from './board';
 
 /** Vlastní test B6, úloha 9: rovnoběžníky ze tří vrcholů — čtvrtý vrchol je obraz podle středu úhlopříčky. */
 function parallelogramsFromThreePointsSolution(): AssignmentModelSolution {
@@ -67,76 +67,60 @@ function parallelogramsFromThreePointsSolution(): AssignmentModelSolution {
   );
 }
 
-/** Vlastní test B6, úloha 10: pětiúhelník ABCDE souměrný podle osy o, vrchol D na ose, |CD| = 3 cm. */
-function symmetricPentagonSolution(): AssignmentModelSolution {
-  const g = given('1a92910c-b5d6-4e4c-8018-c26ebf461395');
+/** Vlastní test B6, úloha 10: rovnoramenný trojúhelník ABC, osa o daná, M na rameni BC — B = obraz A, C = BM ∩ o. */
+function isoscelesFromAxisSolution(): AssignmentModelSolution {
+  const g = given('d4ee7c4c-695c-4b92-9c9c-6d2f406b55ce');
   const A = g.point('a');
-  const C = g.point('c');
+  const M = g.point('m');
   const o = g.line('o');
   const P = foot(A, o.a, o.d);
-  const Q = foot(C, o.a, o.d);
   const B = add(P, sub(P, A));
-  const E = add(Q, sub(Q, C));
-  const [D1, D2] = lineCircle(o.a, o.d, C, 150).sort((u, v) => u.y - v.y);
-  if (!D1 || !D2) throw new Error('Kružnice k(C; 3 cm) má protnout osu o ve dvou bodech');
-  const D = D1; // výš (menší y) — dál od přímky AB než C
-  if (dist(D, { x: 365, y: 180 }) > 0.5) throw new Error('Vrchol D nesedí s generátorem');
+  const C = lineLine(B, sub(M, B), o.a, o.d);
+  if (dist(B, { x: 490, y: 265 }) > 0.6 || dist(C, { x: 210, y: 100 }) > 0.6) throw new Error('Vrcholy B, C nesedí s generátorem');
 
   const s = new Board();
   s.ref('sol-a', A, 'A');
-  s.ref('sol-c', C, 'C');
+  s.ref('sol-m', M, 'M');
   s.ref('sol-be', add(B, mul(unit(sub(B, A)), 35)));
-  s.helperLine('sol-ab-h', 'sol-a', 'sol-be');
-  s.point('sol-p', P, '', true);
+  s.helperLine('sol-kolmice', 'sol-a', 'sol-be');
+  s.point('sol-p', P, 'P');
   s.ref('sol-b0', B);
-  s.arc('sol-arc-b', 'sol-p', 'sol-b0', 0.25);
+  s.arc('sol-arc-b', 'sol-p', 'sol-b0', 0.3);
   s.point('sol-b', B, 'B');
-  s.ref('sol-ee', add(E, mul(unit(sub(E, C)), 35)));
-  s.helperLine('sol-ce-h', 'sol-c', 'sol-ee');
-  s.point('sol-q', Q, '', true);
-  s.ref('sol-e0', E);
-  s.arc('sol-arc-e', 'sol-q', 'sol-e0', 0.25);
-  s.point('sol-e', E, 'E');
-  s.ref('sol-d0', D);
-  s.ref('sol-d20', D2);
-  s.arc('sol-arc-d', 'sol-c', 'sol-d0', 0.35);
-  s.arc('sol-arc-d2', 'sol-c', 'sol-d20', 0.35);
-  s.point('sol-d', D, 'D');
-  s.segment('sol-s1', 'sol-a', 'sol-b');
-  s.segment('sol-s2', 'sol-b', 'sol-c');
-  s.segment('sol-s3', 'sol-c', 'sol-d');
-  s.segment('sol-s4', 'sol-d', 'sol-e');
-  s.segment('sol-s5', 'sol-e', 'sol-a');
+  s.ref('sol-ce', add(C, mul(unit(sub(C, B)), 35)));
+  s.helperLine('sol-bm', 'sol-b', 'sol-ce');
+  s.point('sol-c', C, 'C');
+  s.segment('sol-ab', 'sol-a', 'sol-b');
+  s.segment('sol-bc', 'sol-b', 'sol-c');
+  s.segment('sol-ca', 'sol-c', 'sol-a');
 
   return cumulative(
     s,
-    'Osová souměrnost s osou o zobrazí pětiúhelník sám na sebe. Vrchol D leží na ose, vrchol B je obrazem bodu A a vrchol E obrazem bodu C. Vrchol D leží na ose o a na kružnici se středem C a poloměrem 3 cm; ze dvou průsečíků vyhovuje ten, který je od přímky AB dál než C. Úloha má jedno řešení.',
+    'Osa souměrnosti rovnoramenného trojúhelníku se základnou AB prochází hlavním vrcholem C a je kolmá k základně. Osová souměrnost s osou o proto zobrazí vrchol A na vrchol B. Bod M leží na rameni BC, vrchol C je tedy průsečík přímky BM s osou o. Úloha má jedno řešení.',
     [
       {
-        text: 'Vrchol B je obrazem bodu A v osové souměrnosti s osou o: veďte bodem A kolmici k ose o a vzdálenost bodu A od osy naneste kružítkem na druhou stranu.',
-        points: ['sol-b'],
-        shapes: ['sol-ab-h', 'sol-arc-b'],
+        text: 'Vrchol B je obrazem bodu A v osové souměrnosti s osou o: veďte bodem A kolmici k ose o (pata P) a vzdálenost |AP| naneste kružítkem za bod P.',
+        points: ['sol-p', 'sol-b'],
+        shapes: ['sol-kolmice', 'sol-arc-b'],
       },
       {
-        text: 'Stejně sestrojte vrchol E jako obraz bodu C.',
-        points: ['sol-e'],
-        shapes: ['sol-ce-h', 'sol-arc-e'],
+        text: 'Bod M leží na rameni BC, vrchol C proto leží na přímce BM. Narýsujte přímku BM.',
+        shapes: ['sol-bm'],
       },
       {
-        text: 'Vrchol D leží na ose o a má od C vzdálenost 3 cm. Kružítkem s poloměrem 3 cm a středem C protněte osu o — vzniknou dva body. Vrchol D je ten, který je od přímky AB dál než C (horní průsečík).',
-        points: ['sol-d'],
-        shapes: ['sol-arc-d', 'sol-arc-d2'],
+        text: 'Vrchol C leží i na ose o: je to průsečík přímky BM s osou o. Označte ho.',
+        points: ['sol-c'],
       },
       {
-        text: 'Narýsujte pětiúhelník ABCDE a vrcholy B, D, E označte. Kontrola: |DE| = |CD| = 3 cm, |AE| = |BC|. Úloha má jedno řešení.',
-        shapes: ['sol-s1', 'sol-s2', 'sol-s3', 'sol-s4', 'sol-s5'],
+        text: 'Narýsujte trojúhelník ABC a vrcholy B, C označte. Kontrola: |AC| = |BC|, bod M leží mezi B a C. Úloha má jedno řešení.',
+        shapes: ['sol-ab', 'sol-bc', 'sol-ca'],
       },
     ],
-    { figures: [{ name: 'pětiúhelník ABCDE', vertices: ['sol-a', 'sol-b', 'sol-c', 'sol-d', 'sol-e'] }] },
+    { figures: [{ name: 'trojúhelník ABC', vertices: ['sol-a', 'sol-b', 'sol-c'] }] },
   );
 }
 
 export const PRIJIMACKY_TEST_SOLUTIONS_J: [string, () => AssignmentModelSolution][] = [
   ['8682943e-b3ac-457a-89b9-fe05aa306ee2', parallelogramsFromThreePointsSolution],
-  ['1a92910c-b5d6-4e4c-8018-c26ebf461395', symmetricPentagonSolution],
+  ['d4ee7c4c-695c-4b92-9c9c-6d2f406b55ce', isoscelesFromAxisSolution],
 ];

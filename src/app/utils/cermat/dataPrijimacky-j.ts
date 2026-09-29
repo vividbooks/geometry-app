@@ -32,21 +32,21 @@ export const PRIJIMACKY_TEST_J: CermatAssignmentInput[] = [
     frame: { width: 730, height: 530 },
   },
   {
-    // ptest13-10-soumerny-petiuhelnik — osa o: x = 6,5 cm (svislá), A (3,5; 7,5), C (8,9; 4,6) cm, |CD| = 3 cm.
-    // B = obraz A (9,5; 7,5), E = obraz C (4,1; 4,6); k(C; 3 cm) ∩ o = D (6,5; 2,8) a D′ (6,5; 6,4) cm — vyhovuje D,
-    // které je od přímky AB dál než C. Rámeček 13 × 9 cm.
-    id: '1a92910c-b5d6-4e4c-8018-c26ebf461395',
-    title: 'Vlastní test B6 · 10. Pětiúhelník souměrný podle osy',
+    // ptest13-10-rovnoramenny-osa-bod-na-rameni — osa o bodem (2,5; 0) ve směru (3; 4)/5, A (5; 7,5), M (6,76; 3,18) cm.
+    // B = obraz A podle o (9; 4,5), pata kolmice P (7; 6); C = BM ∩ o (3,4; 1,2) cm. |AB| = 5 cm, ramena 6,5 cm.
+    // Rámeček 13 × 9 cm.
+    id: 'd4ee7c4c-695c-4b92-9c9c-6d2f406b55ce',
+    title: 'Vlastní test B6 · 10. Rovnoramenný trojúhelník z osy a bodu na rameni',
     source: 'Vividbooks, Přijímací zkoušky – vlastní test B6, úloha 10',
     instructionMarkup:
-      'V rovině leží přímka *o* a body *A*, *C*. Pětiúhelník *ABCDE* je souměrný podle přímky *o* a jeho vrchol *D* '
-      + 'leží na přímce *o*. Strana *CD* měří 3 cm a vrchol *D* má od přímky *AB* větší vzdálenost než vrchol *C*.\n\n'
-      + 'Sestrojte vrcholy *B*, *D*, *E*, označte je a pětiúhelník narýsujte.',
+      'V rovině leží přímka *o* a body *A*, *M*. Přímka *o* je osou souměrnosti rovnoramenného trojúhelníku *ABC* '
+      + 'se základnou *AB*. Bod *M* leží na rameni *BC* tohoto trojúhelníku.\n\n'
+      + 'Sestrojte vrcholy *B*, *C* trojúhelníku *ABC*, označte je písmeny a trojúhelník narýsujte.',
     points: [
-      { id: 'a', x: 215.0, y: 415.0, label: 'A' },
-      { id: 'c', x: 485.0, y: 270.0, label: 'C' },
+      { id: 'a', x: 290.0, y: 415.0, label: 'A' },
+      { id: 'm', x: 378.0, y: 199.0, label: 'M' },
     ],
-    lines: [{ label: 'o', from: { x: 365.0, y: 480.0 }, to: { x: 365.0, y: 90.0 } }],
+    lines: [{ label: 'o', from: { x: 502.5, y: 490.0 }, to: { x: 202.5, y: 90.0 } }],
     frame: { width: 730, height: 530 },
   },
 ];
