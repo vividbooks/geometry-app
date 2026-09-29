@@ -491,4 +491,40 @@ on conflict (id) do update set
   instruction_image = excluded.instruction_image,
   instruction_steps = excluded.instruction_steps;
 
+-- Vlastní test B7 · 9. Trojúhelník s osou úhlu a vrcholem na kružnici
+insert into public.geometry_circuit_assignments (
+  id, title, instruction_text, instruction_image, instruction_steps
+) values (
+  '4560a048-0cb0-44bb-977d-ac45711ff4a1'::uuid,
+  $txt$Vlastní test B7 · 9. Trojúhelník s osou úhlu a vrcholem na kružnici$txt$,
+  $txt$V rovině leží úsečka AB, přímka o a kružnice k se středem K. Přímka o prochází bodem A a je osou vnitřního úhlu BAC trojúhelníku ABC. Vrchol C leží na kružnici k.
+
+Sestrojte všechny takové trojúhelníky ABC, vrcholy C označte (C₁, C₂, …) a trojúhelníky narýsujte.$txt$,
+  null,
+  $json$[{"text":"V rovině leží úsečka AB, přímka o a kružnice k se středem K. Přímka o prochází bodem A a je osou vnitřního úhlu BAC trojúhelníku ABC. Vrchol C leží na kružnici k.\n\nSestrojte všechny takové trojúhelníky ABC, vrcholy C označte (C₁, C₂, …) a trojúhelníky narýsujte.","canvas_snapshot":{"points":[{"id":"pt-frame-tl","x":0,"y":0,"label":"","locked":true,"hidden":true},{"id":"pt-frame-br","x":730,"y":530,"label":"","locked":true,"hidden":true},{"id":"pt-o1","x":115,"y":465,"label":"","locked":true,"hidden":true},{"id":"pt-o2","x":615,"y":215,"label":"","locked":true,"hidden":true},{"id":"pt-a","x":165,"y":440,"label":"A","locked":true},{"id":"pt-b","x":515,"y":440,"label":"B","locked":true},{"id":"pt-k","x":220,"y":200,"label":"K","locked":true},{"id":"pt-kk-rim","x":345,"y":200,"label":"","locked":true,"hidden":true}],"shapes":[{"id":"line-o","type":"line","label":"o","points":["pt-o1","pt-o2"],"locked":true,"definition":{"p1Id":"pt-o1","p2Id":"pt-o2"}},{"id":"shape-ab","type":"segment","label":"","points":["pt-a","pt-b"],"locked":true,"definition":{"p1Id":"pt-a","p2Id":"pt-b"}},{"id":"shape-kk","type":"circle","label":"k","points":["pt-k","pt-kk-rim"],"locked":true,"definition":{"p1Id":"pt-k","p2Id":"pt-kk-rim"}}],"freehandPaths":[]}}]$json$::jsonb
+)
+on conflict (id) do update set
+  title = excluded.title,
+  instruction_text = excluded.instruction_text,
+  instruction_image = excluded.instruction_image,
+  instruction_steps = excluded.instruction_steps;
+
+-- Vlastní test B7 · 10. Obdélník se středem na přímce
+insert into public.geometry_circuit_assignments (
+  id, title, instruction_text, instruction_image, instruction_steps
+) values (
+  'e4bd0630-04f3-48cf-9a7f-591dbb7c927e'::uuid,
+  $txt$Vlastní test B7 · 10. Obdélník se středem na přímce$txt$,
+  $txt$V rovině leží úsečka AB a přímka p. Úsečka AB je strana obdélníku ABCD. Střed S obdélníku ABCD (průsečík jeho úhlopříček) leží na přímce p.
+
+Sestrojte střed S a vrcholy C, D, označte je a obdélník narýsujte.$txt$,
+  null,
+  $json$[{"text":"V rovině leží úsečka AB a přímka p. Úsečka AB je strana obdélníku ABCD. Střed S obdélníku ABCD (průsečík jeho úhlopříček) leží na přímce p.\n\nSestrojte střed S a vrcholy C, D, označte je a obdélník narýsujte.","canvas_snapshot":{"points":[{"id":"pt-frame-tl","x":0,"y":0,"label":"","locked":true,"hidden":true},{"id":"pt-frame-br","x":730,"y":530,"label":"","locked":true,"hidden":true},{"id":"pt-p1","x":165,"y":315,"label":"","locked":true,"hidden":true},{"id":"pt-p2","x":615,"y":165,"label":"","locked":true,"hidden":true},{"id":"pt-a","x":190,"y":365,"label":"A","locked":true},{"id":"pt-b","x":440,"y":365,"label":"B","locked":true}],"shapes":[{"id":"line-p","type":"line","label":"p","points":["pt-p1","pt-p2"],"locked":true,"definition":{"p1Id":"pt-p1","p2Id":"pt-p2"}},{"id":"shape-ab","type":"segment","label":"","points":["pt-a","pt-b"],"locked":true,"definition":{"p1Id":"pt-a","p2Id":"pt-b"}}],"freehandPaths":[]}}]$json$::jsonb
+)
+on conflict (id) do update set
+  title = excluded.title,
+  instruction_text = excluded.instruction_text,
+  instruction_image = excluded.instruction_image,
+  instruction_steps = excluded.instruction_steps;
+
 commit;
