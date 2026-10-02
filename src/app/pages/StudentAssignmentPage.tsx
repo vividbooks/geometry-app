@@ -1,5 +1,5 @@
 import { Component, useMemo, useState, useRef, useCallback, useEffect, lazy, Suspense } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import {
   CheckCircle2,
   ChevronLeft,
@@ -110,11 +110,14 @@ function ModelSolutionPanel({
   stepCount,
   stepText,
   className,
+  locked = false,
   onToggle,
   onPrev,
   onNext,
 }: {
   visible: boolean;
+  /** Úkol otevřený z celého přijímačkového testu: řešení se zobrazit nedá. */
+  locked?: boolean;
   stepIndex: number;
   stepCount: number;
   stepText: string;
@@ -128,7 +131,9 @@ function ModelSolutionPanel({
       <button
         type="button"
         onClick={onToggle}
-        className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm transition-colors hover:bg-slate-50"
+        disabled={locked}
+        title={locked ? 'V přijímačkovém testu se řešení nezobrazuje.' : undefined}
+        className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-white"
         aria-pressed={visible}
       >
         {visible ? (
@@ -138,7 +143,7 @@ function ModelSolutionPanel({
         )}
         {visible ? 'Skrýt řešení' : 'Zobrazit řešení'}
       </button>
-      {visible ? (
+      {visible && !locked ? (
         <div className="space-y-3">
           {stepCount > 1 ? (
             <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5">
@@ -306,6 +311,10 @@ class StudentAssignmentErrorBoundary extends Component<
 
 export default function StudentAssignmentPage() {
   const { assignmentId } = useParams<{ assignmentId: string }>();
+  // Odkaz z celého přijímačkového testu (?bezReseni=1): žák si řešení ověří kontrolou,
+  // vzorové řešení ale neuvidí.
+  const [searchParams] = useSearchParams();
+  const solutionLocked = searchParams.get('bezReseni') === '1';
   const submissionSnapshotRef = useRef<(() => GeometrySubmissionSnapshot | null) | null>(null);
 
   const [loadState, setLoadState] = useState<'loading' | 'error' | 'ready'>('loading');
@@ -482,7 +491,7 @@ export default function StudentAssignmentPage() {
     Math.max(0, solutionStepIndex),
     Math.max(0, modelSolutionSteps.length - 1),
   );
-  const activeSolutionStep = showModelSolution ? modelSolutionSteps[clampedSolutionStep] ?? null : null;
+  const activeSolutionStep = showModelSolution && !solutionLocked ? modelSolutionSteps[clampedSolutionStep] ?? null : null;
   const runConstructionCheck = () => {
     const check = modelSolution?.check;
     if (!modelSolution || !check) return;
@@ -511,6 +520,7 @@ export default function StudentAssignmentPage() {
       />
     ) : null;
   const toggleModelSolution = () => {
+    if (solutionLocked) return;
     setShowModelSolution(v => {
       if (!v) setSolutionStepIndex(0);
       return !v;
@@ -892,6 +902,7 @@ export default function StudentAssignmentPage() {
                         <ModelSolutionPanel
                           className={activeStep.text.trim() || modelSolution.check ? 'mt-4 space-y-3' : 'space-y-3'}
                           visible={showModelSolution}
+                          locked={solutionLocked}
                           stepIndex={clampedSolutionStep}
                           stepCount={modelSolutionSteps.length}
                           stepText={activeSolutionStep?.text || modelSolution.explanation}
@@ -982,6 +993,7 @@ export default function StudentAssignmentPage() {
                     <ModelSolutionPanel
                       className="mt-4 space-y-3"
                       visible={showModelSolution}
+                      locked={solutionLocked}
                       stepIndex={clampedSolutionStep}
                       stepCount={modelSolutionSteps.length}
                       stepText={activeSolutionStep?.text || modelSolution.explanation}
