@@ -563,17 +563,17 @@ on conflict (id) do update set
   instruction_image = excluded.instruction_image,
   instruction_steps = excluded.instruction_steps;
 
--- Vlastní test A8 · 9. Trojúhelník s úhlem 60° sestrojeným kružítkem
+-- Vlastní test A8 · 9. Trojúhelník ze dvou stran a úhlu 60° mezi nimi
 insert into public.geometry_circuit_assignments (
   id, title, instruction_text, instruction_image, instruction_steps
 ) values (
   '999e71a2-cd4a-4166-bb43-387ab4cea9e7'::uuid,
-  $txt$Vlastní test A8 · 9. Trojúhelník s úhlem 60° sestrojeným kružítkem$txt$,
+  $txt$Vlastní test A8 · 9. Trojúhelník ze dvou stran a úhlu 60° mezi nimi$txt$,
   $txt$Úsečka AB je strana trojúhelníku ABC.
 
-Sestrojte vrchol C trojúhelníku ABC, pro který platí |∢BAC| = 60° a |AC| = 4 cm. Vrchol C leží nad přímkou AB. Úhel 60° sestrojte kružítkem, ne úhloměrem. Trojúhelník narýsujte.$txt$,
+Sestrojte všechny trojúhelníky ABC, pro které platí |∢BAC| = 60° a |AC| = 4 cm. Vrcholy C označte C₁, C₂, … a trojúhelníky narýsujte.$txt$,
   null,
-  $json$[{"text":"Úsečka AB je strana trojúhelníku ABC.\n\nSestrojte vrchol C trojúhelníku ABC, pro který platí |∢BAC| = 60° a |AC| = 4 cm. Vrchol C leží nad přímkou AB. Úhel 60° sestrojte kružítkem, ne úhloměrem. Trojúhelník narýsujte.","canvas_snapshot":{"points":[{"id":"pt-frame-tl","x":0,"y":0,"label":"","locked":true,"hidden":true},{"id":"pt-frame-br","x":530,"y":450,"label":"","locked":true,"hidden":true},{"id":"pt-a","x":140,"y":390,"label":"A","locked":true},{"id":"pt-b","x":440,"y":390,"label":"B","locked":true}],"shapes":[{"id":"shape-ab","type":"segment","label":"","points":["pt-a","pt-b"],"locked":true,"definition":{"p1Id":"pt-a","p2Id":"pt-b"}}],"freehandPaths":[]}}]$json$::jsonb
+  $json$[{"text":"Úsečka AB je strana trojúhelníku ABC.\n\nSestrojte všechny trojúhelníky ABC, pro které platí |∢BAC| = 60° a |AC| = 4 cm. Vrcholy C označte C₁, C₂, … a trojúhelníky narýsujte.","canvas_snapshot":{"points":[{"id":"pt-frame-tl","x":0,"y":0,"label":"","locked":true,"hidden":true},{"id":"pt-frame-br","x":530,"y":530,"label":"","locked":true,"hidden":true},{"id":"pt-a","x":140,"y":265,"label":"A","locked":true},{"id":"pt-b","x":440,"y":265,"label":"B","locked":true}],"shapes":[{"id":"shape-ab","type":"segment","label":"","points":["pt-a","pt-b"],"locked":true,"definition":{"p1Id":"pt-a","p2Id":"pt-b"}}],"freehandPaths":[]}}]$json$::jsonb
 )
 on conflict (id) do update set
   title = excluded.title,

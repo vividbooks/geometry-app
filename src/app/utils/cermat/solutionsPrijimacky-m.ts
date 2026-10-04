@@ -2,7 +2,7 @@
 import type { AssignmentModelSolution } from '../assignmentSolutions';
 import { add, Board, cumulative, dist, given, lineLine, mul, perp, rotate, sub, unit } from './board';
 
-/** Vlastní test A8, úloha 9: úhel 60° kružítkem (rovnostranný trojúhelník APQ), na rameni AQ bod C ve vzdálenosti 4 cm. */
+/** Vlastní test A8, úloha 9: úhel 60° na obě strany přímky AB (kružítkem přes rovnostranné trojúhelníky), na ramenech C₁, C₂ ve vzdálenosti 4 cm. */
 function angle60Solution(): AssignmentModelSolution {
   const g = given('999e71a2-cd4a-4166-bb43-387ab4cea9e7');
   const A = g.point('a');
@@ -10,58 +10,73 @@ function angle60Solution(): AssignmentModelSolution {
   const e = unit(sub(B, A));
   const r = 100;
   const P = add(A, mul(e, r));
-  // Úhel 60° nad přímkou AB: v souřadnicích plátna (osa y dolů) je to otočení o −60°.
-  const Q = rotate(P, A, -Math.PI / 3);
-  const f = unit(sub(Q, A));
-  const C = add(A, mul(f, 200));
-  if (dist(C, { x: 240, y: 216.795 }) > 0.6 || Math.abs(dist(P, Q) - r) > 1e-6) {
-    throw new Error('Vrchol C nesedí s generátorem');
+  const Q1 = rotate(P, A, -Math.PI / 3);
+  const Q2 = rotate(P, A, Math.PI / 3);
+  const f1 = unit(sub(Q1, A));
+  const f2 = unit(sub(Q2, A));
+  const C1 = add(A, mul(f1, 200));
+  const C2 = add(A, mul(f2, 200));
+  if (dist(C1, { x: 240, y: 91.795 }) > 0.6 || dist(C2, { x: 240, y: 438.205 }) > 0.6) {
+    throw new Error('Vrcholy C nesedí s generátorem');
   }
 
   const s = new Board();
   s.ref('sol-a', A, 'A');
   s.ref('sol-b', B, 'B');
-  s.ref('sol-r30', rotate(P, A, -Math.PI / 6));
-  s.ref('sol-q0', Q);
-  s.ref('sol-c0', C);
-  s.ref('sol-ray', add(A, mul(f, 260)));
+  s.ref('sol-q10', Q1);
+  s.ref('sol-q20', Q2);
+  s.ref('sol-c10', C1);
+  s.ref('sol-c20', C2);
+  s.ref('sol-ray1', add(A, mul(f1, 260)));
+  s.ref('sol-ray2', add(A, mul(f2, 260)));
   s.point('sol-p', P, 'P');
-  s.arc('sol-arc-a', 'sol-a', 'sol-r30', 1.5);
-  s.arc('sol-arc-p', 'sol-p', 'sol-q0', 0.5);
-  s.point('sol-q', Q, 'Q');
-  s.helperLine('sol-aq', 'sol-a', 'sol-ray');
-  s.arc('sol-arc-c', 'sol-a', 'sol-c0', 0.35);
-  s.point('sol-c', C, 'C');
+  s.arc('sol-arc-a', 'sol-a', 'sol-p', 2.6);
+  s.arc('sol-arc-p1', 'sol-p', 'sol-q10', 0.5);
+  s.arc('sol-arc-p2', 'sol-p', 'sol-q20', 0.5);
+  s.point('sol-q1', Q1, 'Q₁');
+  s.point('sol-q2', Q2, 'Q₂');
+  s.helperLine('sol-aq1', 'sol-a', 'sol-ray1');
+  s.helperLine('sol-aq2', 'sol-a', 'sol-ray2');
+  s.arc('sol-arc-c1', 'sol-a', 'sol-c10', 0.35);
+  s.arc('sol-arc-c2', 'sol-a', 'sol-c20', 0.35);
+  s.point('sol-c1', C1, 'C₁');
+  s.point('sol-c2', C2, 'C₂');
   s.segment('sol-ab', 'sol-a', 'sol-b');
-  s.segment('sol-bc', 'sol-b', 'sol-c');
-  s.segment('sol-ca', 'sol-c', 'sol-a');
+  s.segment('sol-bc1', 'sol-b', 'sol-c1');
+  s.segment('sol-c1a', 'sol-c1', 'sol-a');
+  s.segment('sol-bc2', 'sol-b', 'sol-c2');
+  s.segment('sol-c2a', 'sol-c2', 'sol-a');
 
   return cumulative(
     s,
-    'Úhel 60° je vnitřní úhel rovnostranného trojúhelníku, sestrojí se proto kružítkem jedním poloměrem. Vrchol C leží na rameni tohoto úhlu a od bodu A je vzdálený 4 cm. Nad přímkou AB má úloha jedno řešení.',
+    'Vrchol C leží na rameni úhlu 60° s vrcholem A a ramenem AB a od bodu A je vzdálený 4 cm. Úhel 60° jde přenést na obě strany přímky AB, úloha má proto dvě řešení souměrná podle AB. Úhel 60° je vnitřní úhel rovnostranného trojúhelníku, dá se tedy sestrojit i kružítkem jedním poloměrem.',
     [
       {
-        text: 'Z bodu A opište oblouk libovolným poloměrem (třeba 2 cm). Průsečík s úsečkou AB označte P.',
+        text: 'Úhel 60° můžete sestrojit úhloměrem, nebo kružítkem: z bodu A opište oblouk (třeba poloměrem 2 cm), který protne úsečku AB v bodě P.',
         points: ['sol-p'],
         shapes: ['sol-arc-a'],
       },
       {
-        text: 'Stejným poloměrem opište oblouk z bodu P. Průsečík obou oblouků nad AB označte Q. Trojúhelník APQ je rovnostranný, |∢PAQ| = 60°.',
-        points: ['sol-q'],
-        shapes: ['sol-arc-p'],
+        text: 'Stejným poloměrem opište oblouky z bodu P. Protnou první oblouk v bodech Q₁ a Q₂ na obou stranách přímky AB. Trojúhelníky APQ₁ a APQ₂ jsou rovnostranné, úhly při vrcholu A mají 60°.',
+        points: ['sol-q1', 'sol-q2'],
+        shapes: ['sol-arc-p1', 'sol-arc-p2'],
       },
       {
-        text: 'Narýsujte polopřímku AQ a kružítkem na ni naneste od bodu A vzdálenost 4 cm. Tak dostanete vrchol C.',
-        points: ['sol-c'],
-        shapes: ['sol-aq', 'sol-arc-c'],
+        text: 'Narýsujte polopřímky AQ₁ a AQ₂ a na každou kružítkem naneste od bodu A vzdálenost 4 cm. Tak dostanete vrcholy C₁ a C₂.',
+        points: ['sol-c1', 'sol-c2'],
+        shapes: ['sol-aq1', 'sol-aq2', 'sol-arc-c1', 'sol-arc-c2'],
       },
       {
-        text: 'Narýsujte trojúhelník ABC. Kontrola: |AC| = 4 cm a úhel BAC má 60°.',
-        shapes: ['sol-ab', 'sol-bc', 'sol-ca'],
+        text: 'Narýsujte trojúhelníky ABC₁ a ABC₂. Kontrola: |AC| = 4 cm a úhel BAC má 60°. Úloha má dvě řešení.',
+        shapes: ['sol-ab', 'sol-bc1', 'sol-c1a', 'sol-bc2', 'sol-c2a'],
       },
     ],
     {
-      figures: [{ name: 'trojúhelník ABC', vertices: ['sol-a', 'sol-b', 'sol-c'] }],
+      figures: [
+        { name: 'trojúhelník ABC₁', vertices: ['sol-a', 'sol-b', 'sol-c1'] },
+        { name: 'trojúhelník ABC₂', vertices: ['sol-a', 'sol-b', 'sol-c2'] },
+      ],
+      interchangeable: [['sol-c1', 'sol-c2']],
     },
   );
 }

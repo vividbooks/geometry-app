@@ -11,22 +11,22 @@ import type { CermatAssignmentInput } from '../cermatAssignments';
 
 export const PRIJIMACKY_TEST_M: CermatAssignmentInput[] = [
   {
-    // ptest16-09-uhel-60 — A (2; 7), B (8; 7) cm, |AB| = 6 cm. C leží na rameni úhlu 60° nad AB, |AC| = 4 cm:
-    // C (4; 3,536) cm. Jedno řešení. Rámeček 10,6 × 9 cm.
+    // ptest16-09-uhel-60 — A (2; 4,5), B (8; 4,5) cm, |AB| = 6 cm. C leží na rameni úhlu 60° při vrcholu A, |AC| = 4 cm:
+    // C₁ (4; 1,036), C₂ (4; 7,964) cm. Dvě řešení souměrná podle AB. Rámeček 10,6 × 10,6 cm.
     id: '999e71a2-cd4a-4166-bb43-387ab4cea9e7',
-    title: 'Vlastní test A8 · 9. Trojúhelník s úhlem 60° sestrojeným kružítkem',
+    title: 'Vlastní test A8 · 9. Trojúhelník ze dvou stran a úhlu 60° mezi nimi',
     source: 'Vividbooks, Přijímací zkoušky – vlastní test A8, úloha 9',
     instructionMarkup:
       'Úsečka *AB* je strana trojúhelníku *ABC*.\n\n'
-      + 'Sestrojte vrchol *C* trojúhelníku *ABC*, pro který platí |∢*BAC*| = 60° a |*AC*| = 4 cm. '
-      + 'Vrchol *C* leží nad přímkou *AB*. Úhel 60° sestrojte kružítkem, ne úhloměrem. Trojúhelník narýsujte.',
+      + 'Sestrojte všechny trojúhelníky *ABC*, pro které platí |∢*BAC*| = 60° a |*AC*| = 4 cm. '
+      + 'Vrcholy *C* označte *C*₁, *C*₂, … a trojúhelníky narýsujte.',
     points: [
-      { id: 'a', x: 140.0, y: 390.0, label: 'A' },
-      { id: 'b', x: 440.0, y: 390.0, label: 'B' },
+      { id: 'a', x: 140.0, y: 265.0, label: 'A' },
+      { id: 'b', x: 440.0, y: 265.0, label: 'B' },
     ],
     lines: [],
     shapes: [{ kind: 'segment', id: 'ab', from: 'a', to: 'b' }],
-    frame: { width: 530, height: 450 },
+    frame: { width: 530, height: 530 },
   },
   {
     // ptest16-10-obdelnik-bod — A (2; 7) cm, AB 5 cm ve směru −6° (nahoru doprava), výška obdélníku 3 cm,
