@@ -236,74 +236,58 @@ function inscribedCircleSolution(): AssignmentModelSolution {
   );
 }
 
-/** Vlastní test 2, úloha 10: tečny z vnějšího bodu M ke kružnici k (body dotyku na Thaletově kružnici). */
-function tangentsFromPointSolution(): AssignmentModelSolution {
-  const g = given('41edeb22-c521-4909-a2fd-1b2c1fbc0dbc');
-  const k = g.circle('k');
-  const S = k.c;
-  const M = g.point('m');
-  const d = dist(S, M);
-  const u = unit(sub(M, S));
-  const n = perp(u); // míří dolů: T₁ je dolní bod dotyku, T₂ horní (jako v přijímačkách)
-  const base = add(S, mul(u, (k.r * k.r) / d));
-  const off = (k.r * Math.sqrt(d * d - k.r * k.r)) / d;
-  const T1 = add(base, mul(n, off));
-  const T2 = sub(base, mul(n, off));
-  const O = mid(S, M);
-  const [P1, P2] = axisPoints(S, M, 150, 150);
+/** Vlastní test 2, úloha 10: kosočtverec z úhlopříčky AC a strany 4 cm (B, D jako průsečíky kružnic). */
+function rhombusFromDiagonalSolution(): AssignmentModelSolution {
+  const g = given('4f2ac3f0-bc59-4c7f-84c4-ce1d671c5a9a');
+  const A = g.point('a');
+  const C = g.point('c');
+  const side = 200; // 4 cm
+  const half = dist(A, C) / 2;
+  const off = Math.sqrt(side * side - half * half);
+  const n = unit(perp(sub(C, A))); // míří dolů: B pod úhlopříčkou, D nad ní
+  const M = mid(A, C);
+  const B = add(M, mul(n, off));
+  const D = sub(M, mul(n, off));
 
   const s = new Board();
-  s.ref('sol-s', S, 'S');
-  s.ref('sol-m', M, 'M');
-  s.ref('sol-p1', P1);
-  s.ref('sol-p2', P2);
-  s.point('sol-o', O, 'O');
-  s.point('sol-t1', T1, 'T₁');
-  s.point('sol-t2', T2, 'T₂');
-  s.segment('sol-sm', 'sol-s', 'sol-m', true);
-  s.arc('sol-arc-p1s', 'sol-s', 'sol-p1', 0.22);
-  s.arc('sol-arc-p1m', 'sol-m', 'sol-p1', 0.22);
-  s.arc('sol-arc-p2s', 'sol-s', 'sol-p2', 0.22);
-  s.arc('sol-arc-p2m', 'sol-m', 'sol-p2', 0.22);
-  s.segment('sol-osa', 'sol-p1', 'sol-p2', true);
-  s.circle('sol-thalet', 'sol-o', 'sol-s');
-  s.segment('sol-st1', 'sol-s', 'sol-t1', true);
-  s.segment('sol-st2', 'sol-s', 'sol-t2', true);
-  s.line('sol-mt1', 'sol-m', 'sol-t1');
-  s.line('sol-mt2', 'sol-m', 'sol-t2');
+  s.ref('sol-a', A, 'A');
+  s.ref('sol-c', C, 'C');
+  s.point('sol-b', B, 'B');
+  s.point('sol-d', D, 'D');
+  // Oblouky vedené skrytými body, aby se vrcholy B a D neukázaly dřív, než je žák sestrojí.
+  s.ref('sol-pb', B);
+  s.ref('sol-pd', D);
+  s.segment('sol-ac', 'sol-a', 'sol-c', true);
+  s.arc('sol-arc-ba', 'sol-a', 'sol-pb', 0.35);
+  s.arc('sol-arc-da', 'sol-a', 'sol-pd', 0.35);
+  s.arc('sol-arc-bc', 'sol-c', 'sol-pb', 0.35);
+  s.arc('sol-arc-dc', 'sol-c', 'sol-pd', 0.35);
+  s.segment('sol-sab', 'sol-a', 'sol-b');
+  s.segment('sol-sbc', 'sol-b', 'sol-c');
+  s.segment('sol-scd', 'sol-c', 'sol-d');
+  s.segment('sol-sda', 'sol-d', 'sol-a');
 
   return cumulative(
     s,
-    'Tečna je v bodě dotyku kolmá na poloměr, úhel STM je proto pravý. Body, ze kterých je úsečka SM vidět pod pravým úhlem, leží na Thaletově kružnici nad úsečkou SM. Její průsečíky s kružnicí k jsou body dotyku T₁, T₂ a přímky MT₁, MT₂ jsou hledané tečny.',
+    'V kosočtverci jsou všechny strany stejně dlouhé. Vrcholy B a D mají od bodu A i od bodu C vzdálenost 4 cm, leží proto na kružnicích se středy A a C a poloměrem 4 cm. Kružnice se protínají ve dvou bodech — po jednom na každé straně úhlopříčky AC.',
     [
       {
-        text: 'Tečna je v bodě dotyku T kolmá na poloměr ST, úhel STM je tedy pravý. Bod T proto leží na Thaletově kružnici nad úsečkou SM. Narýsujte úsečku SM a najděte její střed: z bodů S a M opište oblouky se stejným poloměrem a průsečíky oblouků spojte — tato osa protne úsečku SM v jejím středu O.',
-        points: ['sol-o'],
-        shapes: ['sol-sm', 'sol-arc-p1s', 'sol-arc-p1m', 'sol-arc-p2s', 'sol-arc-p2m', 'sol-osa'],
+        text: 'V kosočtverci jsou všechny strany stejně dlouhé. Vrchol B má od bodu A vzdálenost 4 cm, stejně tak vrchol D. Kružítkem roztaženým na 4 cm opište z bodu A oblouky nad úsečkou AC i pod ní.',
+        shapes: ['sol-ac', 'sol-arc-ba', 'sol-arc-da'],
       },
       {
-        text: 'Ze středu O opište Thaletovu kružnici s poloměrem |OS| = |SM| : 2. Prochází body S i M.',
-        shapes: ['sol-thalet'],
+        text: 'Vrcholy B a D mají vzdálenost 4 cm také od bodu C. Se stejným poloměrem opište oblouky z bodu C. Průsečíky oblouků jsou vrcholy B a D — označte je tak, aby písmena A, B, C, D šla po obvodu za sebou.',
+        points: ['sol-b', 'sol-d'],
+        shapes: ['sol-arc-bc', 'sol-arc-dc'],
       },
       {
-        text: 'Thaletova kružnice protne kružnici k ve dvou bodech. To jsou body dotyku — označte je T₁ a T₂.',
-        points: ['sol-t1', 'sol-t2'],
-      },
-      {
-        text: 'Narýsujte přímky MT₁ a MT₂ — to jsou hledané tečny. Úsečky ST₁ a ST₂ jsou na ně kolmé. Z bodu M vedou ke kružnici k dvě tečny.',
-        shapes: ['sol-st1', 'sol-st2', 'sol-mt1', 'sol-mt2'],
+        text: 'Spojte body A, B, C, D v tomto pořadí a narýsujte kosočtverec ABCD. Úloha má jediné řešení.',
+        shapes: ['sol-sab', 'sol-sbc', 'sol-scd', 'sol-sda'],
       },
     ],
     {
-      figures: [
-        { name: 'bod dotyku T₁', vertices: ['sol-t1'] },
-        { name: 'bod dotyku T₂', vertices: ['sol-t2'] },
-      ],
-      lines: [
-        { name: 'MT₁', p1Id: 'sol-m', p2Id: 'sol-t1' },
-        { name: 'MT₂', p1Id: 'sol-m', p2Id: 'sol-t2' },
-      ],
-      interchangeable: [['sol-t1', 'sol-t2']],
+      figures: [{ name: 'kosočtverec ABCD', vertices: ['sol-a', 'sol-b', 'sol-c', 'sol-d'] }],
+      interchangeable: [['sol-b', 'sol-d']],
     },
   );
 }
@@ -312,5 +296,5 @@ export const PRIJIMACKY_TEST_SOLUTIONS_A: [string, () => AssignmentModelSolution
   ['f6383b17-cbf5-452d-8789-2927973cd8bc', circumcircleSolution],
   ['5fea3f29-3f2d-4a0f-905a-78c875ef01c7', squareFromCentreSolution],
   ['ce4125e5-3b95-49dd-a7a3-4d08d0dc5a94', inscribedCircleSolution],
-  ['41edeb22-c521-4909-a2fd-1b2c1fbc0dbc', tangentsFromPointSolution],
+  ['4f2ac3f0-bc59-4c7f-84c4-ce1d671c5a9a', rhombusFromDiagonalSolution],
 ];

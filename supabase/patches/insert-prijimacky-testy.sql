@@ -58,17 +58,17 @@ on conflict (id) do update set
   instruction_image = excluded.instruction_image,
   instruction_steps = excluded.instruction_steps;
 
--- Vlastní test 2 · 10. Tečny z vnějšího bodu
+-- Vlastní test 2 · 10. Kosočtverec z úhlopříčky a strany
 insert into public.geometry_circuit_assignments (
   id, title, instruction_text, instruction_image, instruction_steps
 ) values (
-  '41edeb22-c521-4909-a2fd-1b2c1fbc0dbc'::uuid,
-  $txt$Vlastní test 2 · 10. Tečny z vnějšího bodu$txt$,
-  $txt$V rovině leží kružnice k se středem S a bod M, který leží vně kružnice.
+  '4f2ac3f0-bc59-4c7f-84c4-ce1d671c5a9a'::uuid,
+  $txt$Vlastní test 2 · 10. Kosočtverec z úhlopříčky a strany$txt$,
+  $txt$V rovině leží body A a C. Úsečka AC je úhlopříčka kosočtverce ABCD, jehož strana měří 4 cm.
 
-Sestrojte obě tečny z bodu M ke kružnici k a body dotyku označte T₁ a T₂.$txt$,
+Sestrojte vrcholy B a D, označte je písmeny a kosočtverec narýsujte.$txt$,
   null,
-  $json$[{"text":"V rovině leží kružnice k se středem S a bod M, který leží vně kružnice.\n\nSestrojte obě tečny z bodu M ke kružnici k a body dotyku označte T₁ a T₂.","canvas_snapshot":{"points":[{"id":"pt-frame-tl","x":0,"y":0,"label":"","locked":true,"hidden":true},{"id":"pt-frame-br","x":815,"y":500,"label":"","locked":true,"hidden":true},{"id":"pt-s","x":294.5,"y":318.3,"label":"S","locked":true},{"id":"pt-m","x":640.7,"y":231.7,"label":"M","locked":true},{"id":"pt-k-rim","x":419.5,"y":318.3,"label":"","locked":true,"hidden":true}],"shapes":[{"id":"shape-k","type":"circle","label":"k","points":["pt-s","pt-k-rim"],"locked":true,"definition":{"p1Id":"pt-s","p2Id":"pt-k-rim"}}],"freehandPaths":[]}}]$json$::jsonb
+  $json$[{"text":"V rovině leží body A a C. Úsečka AC je úhlopříčka kosočtverce ABCD, jehož strana měří 4 cm.\n\nSestrojte vrcholy B a D, označte je písmeny a kosočtverec narýsujte.","canvas_snapshot":{"points":[{"id":"pt-frame-tl","x":0,"y":0,"label":"","locked":true,"hidden":true},{"id":"pt-frame-br","x":815,"y":500,"label":"","locked":true,"hidden":true},{"id":"pt-a","x":266.05,"y":301.3,"label":"A","locked":true},{"id":"pt-c","x":547.95,"y":198.7,"label":"C","locked":true}],"shapes":[],"freehandPaths":[]}}]$json$::jsonb
 )
 on conflict (id) do update set
   title = excluded.title,

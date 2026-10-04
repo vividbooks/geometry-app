@@ -63,20 +63,19 @@ export const PRIJIMACKY_TEST_A: CermatAssignmentInput[] = [
     ],
     frame: { width: 815, height: 500 },
   },
-  // Test 2 (vlastní test 2), úloha 10 — ptest2-10-tecna
+  // Test 2 (vlastní test 2), úloha 10 — ptest2-10-kosoctverec
   {
-    id: '41edeb22-c521-4909-a2fd-1b2c1fbc0dbc',
-    title: 'Vlastní test 2 · 10. Tečny z vnějšího bodu',
+    id: '4f2ac3f0-bc59-4c7f-84c4-ce1d671c5a9a',
+    title: 'Vlastní test 2 · 10. Kosočtverec z úhlopříčky a strany',
     source: 'Vividbooks, Přijímací zkoušky – vlastní test 2, úloha 10',
     instructionMarkup:
-      'V rovině leží kružnice *k* se středem *S* a bod *M*, který leží vně kružnice.\n\n'
-      + 'Sestrojte obě tečny z bodu *M* ke kružnici *k* a body dotyku označte *T*₁ a *T*₂.',
+      'V rovině leží body *A* a *C*. Úsečka *AC* je úhlopříčka kosočtverce *ABCD*, jehož strana měří 4 cm.\n\n'
+      + 'Sestrojte vrcholy *B* a *D*, označte je písmeny a kosočtverec narýsujte.',
     points: [
-      { id: 's', x: 294.5, y: 318.3, label: 'S' },
-      { id: 'm', x: 640.7, y: 231.7, label: 'M' },
+      { id: 'a', x: 266.05, y: 301.3, label: 'A' },
+      { id: 'c', x: 547.95, y: 198.7, label: 'C' },
     ],
     lines: [],
-    shapes: [{ kind: 'circle', id: 'k', center: 's', radius: 125, label: 'k' }],
     frame: { width: 815, height: 500 },
   },
 ];
