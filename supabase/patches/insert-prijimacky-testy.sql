@@ -571,9 +571,9 @@ insert into public.geometry_circuit_assignments (
   $txt$Vlastní test A8 · 9. Trojúhelník ze dvou stran a úhlu 60° mezi nimi$txt$,
   $txt$Úsečka AB je strana trojúhelníku ABC.
 
-Sestrojte všechny trojúhelníky ABC, pro které platí |∢BAC| = 60° a |AC| = 4 cm. Vrcholy C označte C₁, C₂, … a trojúhelníky narýsujte.$txt$,
+Sestrojte jeden trojúhelník ABC, pro který platí |∢BAC| = 60° a |AC| = 4 cm. Vrchol C označte a trojúhelník narýsujte.$txt$,
   null,
-  $json$[{"text":"Úsečka AB je strana trojúhelníku ABC.\n\nSestrojte všechny trojúhelníky ABC, pro které platí |∢BAC| = 60° a |AC| = 4 cm. Vrcholy C označte C₁, C₂, … a trojúhelníky narýsujte.","canvas_snapshot":{"points":[{"id":"pt-frame-tl","x":0,"y":0,"label":"","locked":true,"hidden":true},{"id":"pt-frame-br","x":530,"y":530,"label":"","locked":true,"hidden":true},{"id":"pt-a","x":140,"y":265,"label":"A","locked":true},{"id":"pt-b","x":440,"y":265,"label":"B","locked":true}],"shapes":[{"id":"shape-ab","type":"segment","label":"","points":["pt-a","pt-b"],"locked":true,"definition":{"p1Id":"pt-a","p2Id":"pt-b"}}],"freehandPaths":[]}}]$json$::jsonb
+  $json$[{"text":"Úsečka AB je strana trojúhelníku ABC.\n\nSestrojte jeden trojúhelník ABC, pro který platí |∢BAC| = 60° a |AC| = 4 cm. Vrchol C označte a trojúhelník narýsujte.","canvas_snapshot":{"points":[{"id":"pt-frame-tl","x":0,"y":0,"label":"","locked":true,"hidden":true},{"id":"pt-frame-br","x":530,"y":450,"label":"","locked":true,"hidden":true},{"id":"pt-a","x":140,"y":390,"label":"A","locked":true},{"id":"pt-b","x":440,"y":390,"label":"B","locked":true}],"shapes":[{"id":"shape-ab","type":"segment","label":"","points":["pt-a","pt-b"],"locked":true,"definition":{"p1Id":"pt-a","p2Id":"pt-b"}}],"freehandPaths":[]}}]$json$::jsonb
 )
 on conflict (id) do update set
   title = excluded.title,
