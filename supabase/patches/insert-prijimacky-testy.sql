@@ -563,4 +563,40 @@ on conflict (id) do update set
   instruction_image = excluded.instruction_image,
   instruction_steps = excluded.instruction_steps;
 
+-- Vlastní test A8 · 9. Trojúhelník s úhlem 60° sestrojeným kružítkem
+insert into public.geometry_circuit_assignments (
+  id, title, instruction_text, instruction_image, instruction_steps
+) values (
+  '999e71a2-cd4a-4166-bb43-387ab4cea9e7'::uuid,
+  $txt$Vlastní test A8 · 9. Trojúhelník s úhlem 60° sestrojeným kružítkem$txt$,
+  $txt$Úsečka AB je strana trojúhelníku ABC.
+
+Sestrojte vrchol C trojúhelníku ABC, pro který platí |∢BAC| = 60° a |AC| = 4 cm. Vrchol C leží nad přímkou AB. Úhel 60° sestrojte kružítkem, ne úhloměrem. Trojúhelník narýsujte.$txt$,
+  null,
+  $json$[{"text":"Úsečka AB je strana trojúhelníku ABC.\n\nSestrojte vrchol C trojúhelníku ABC, pro který platí |∢BAC| = 60° a |AC| = 4 cm. Vrchol C leží nad přímkou AB. Úhel 60° sestrojte kružítkem, ne úhloměrem. Trojúhelník narýsujte.","canvas_snapshot":{"points":[{"id":"pt-frame-tl","x":0,"y":0,"label":"","locked":true,"hidden":true},{"id":"pt-frame-br","x":530,"y":450,"label":"","locked":true,"hidden":true},{"id":"pt-a","x":140,"y":390,"label":"A","locked":true},{"id":"pt-b","x":440,"y":390,"label":"B","locked":true}],"shapes":[{"id":"shape-ab","type":"segment","label":"","points":["pt-a","pt-b"],"locked":true,"definition":{"p1Id":"pt-a","p2Id":"pt-b"}}],"freehandPaths":[]}}]$json$::jsonb
+)
+on conflict (id) do update set
+  title = excluded.title,
+  instruction_text = excluded.instruction_text,
+  instruction_image = excluded.instruction_image,
+  instruction_steps = excluded.instruction_steps;
+
+-- Vlastní test A8 · 10. Obdélník ze strany a bodu na protější straně
+insert into public.geometry_circuit_assignments (
+  id, title, instruction_text, instruction_image, instruction_steps
+) values (
+  'da74199d-f437-4340-8260-b70780498b52'::uuid,
+  $txt$Vlastní test A8 · 10. Obdélník ze strany a bodu na protější straně$txt$,
+  $txt$Body A a B jsou sousední vrcholy obdélníku ABCD. Bod M leží na jeho straně CD.
+
+Sestrojte vrcholy C a D, označte je a obdélník narýsujte.$txt$,
+  null,
+  $json$[{"text":"Body A a B jsou sousední vrcholy obdélníku ABCD. Bod M leží na jeho straně CD.\n\nSestrojte vrcholy C a D, označte je a obdélník narýsujte.","canvas_snapshot":{"points":[{"id":"pt-frame-tl","x":0,"y":0,"label":"","locked":true,"hidden":true},{"id":"pt-frame-br","x":530,"y":450,"label":"","locked":true,"hidden":true},{"id":"pt-a","x":140,"y":390,"label":"A","locked":true},{"id":"pt-b","x":388.63,"y":363.868,"label":"B","locked":true},{"id":"pt-m","x":213.828,"y":231.414,"label":"M","locked":true}],"shapes":[{"id":"shape-ab","type":"segment","label":"","points":["pt-a","pt-b"],"locked":true,"definition":{"p1Id":"pt-a","p2Id":"pt-b"}}],"freehandPaths":[]}}]$json$::jsonb
+)
+on conflict (id) do update set
+  title = excluded.title,
+  instruction_text = excluded.instruction_text,
+  instruction_image = excluded.instruction_image,
+  instruction_steps = excluded.instruction_steps;
+
 commit;
