@@ -26,6 +26,8 @@ import {
   ArrowUp,
   ZoomIn,
   ZoomOut,
+  Maximize,
+  ListOrdered,
   ArrowUpDown,
   Hand,
   FlipVertical,
@@ -53,6 +55,13 @@ import { useIsMobile } from './ui/use-mobile';
 import { Slider } from './ui/slider';
 import protractorAsset from "figma:asset/7cb6453b8f9704d306161a4002715da792974ba7.png";
 import { handleToolMenuClick } from './toolMenuHandler';
+import {
+  RecordingProtocolPanel,
+  RECORDING_PROTOCOL_PANEL_WIDTH,
+  RECORDING_PROTOCOL_SHEET_BELOW,
+  recordingProtocolSheetHeight,
+} from './RecordingProtocolPanel';
+import { buildRecordingProtocol } from './recordingProtocol';
 import { ConstructionProtocol, ConstructionStep, Latex } from './ConstructionProtocol';
 import { projectId, publicAnonKey } from '../utils/supabase/info';
 import { rafThrottle, detectDevicePerformance } from '../utils/performance';
@@ -673,17 +682,22 @@ function fitViewportToRecordingBounds(
   bounds: { minX: number; minY: number; maxX: number; maxY: number },
   canvasW: number,
   canvasH: number,
+  /** Plocha zakrytá zápisem konstrukce: boční panel vpravo / spodní list (karta kroku je pak skrytá). */
+  inset: { right?: number; bottom?: number; hideStepCard?: boolean } = {},
 ): { scale: number; offset: { x: number; y: number } } {
   // Karta kroku: top-8 (32 px) + výška karty; lišta přehrávače: bottom 32 px + výška lišty.
   // Na úzkém displeji se karta zalamuje do více řádků a lišta má vyšší tlačítka.
-  const phone = canvasW < 500;
-  const compact = canvasW < 900 || canvasH < 560;
-  const topReserve = phone ? 280 : compact ? 180 : 160;
-  const bottomReserve = phone ? 140 : 135;
-  const areaTop = Math.min(topReserve, canvasH * 0.3);
-  const areaBottom = canvasH - Math.min(bottomReserve, canvasH * 0.25);
+  const visW = Math.max(canvasW - (inset.right ?? 0), 40);
+  const visH = Math.max(canvasH - (inset.bottom ?? 0), 40);
+  const phone = visW < 500;
+  const compact = visW < 900 || visH < 560;
+  const topReserve = inset.hideStepCard ? 16 : phone ? 280 : compact ? 180 : 160;
+  // Lišta je vždy nad spodním okrajem viditelné plochy (nad listem se zápisem).
+  const bottomReserve = phone ? 100 : 135;
+  const areaTop = Math.min(topReserve, visH * 0.3);
+  const areaBottom = visH - Math.min(bottomReserve, visH * 0.25);
   const areaH = Math.max(areaBottom - areaTop, 40);
-  const areaW = Math.max(canvasW, 40);
+  const areaW = visW;
   const padX = areaW * 0.05;
   const padY = areaH * 0.05;
   const availW = Math.max(areaW - padX * 2, 1);
@@ -3562,13 +3576,37 @@ export function FreeGeometryEditor({
    * pohled obálce všech kroků. Mezi kroky se nepřepočítává, ruční posun/zoom zůstává.
    */
   const recordingFitLayoutKeyRef = useRef<string | null>(null);
+  /** Časovač konce animace pomůcky v přehrávači (nový krok ruší starý). */
+  const recordingAnimTimeoutRef = useRef<number | null>(null);
+  /** Zápis konstrukce v přehrávači: boční panel (desktop) / spodní list (mobil). */
+  const [showRecordingProtocol, setShowRecordingProtocol] = useState(false);
+  const recordingProtocolOpen = recordingState.showPlayer && showRecordingProtocol;
+  const recordingProtocolAsSheet = canvasSize.width < RECORDING_PROTOCOL_SHEET_BELOW;
+  const recordingProtocolSheetH = recordingProtocolSheetHeight(canvasSize.height);
+  const recordingFitInset = recordingProtocolOpen
+    ? recordingProtocolAsSheet
+      ? { bottom: recordingProtocolSheetH, hideStepCard: true }
+      : { right: RECORDING_PROTOCOL_PANEL_WIDTH }
+    : {};
+  const recordingProtocolRows = useMemo(
+    () =>
+      recordingState.showPlayer
+        ? buildRecordingProtocol(recordingState.steps as unknown as Parameters<typeof buildRecordingProtocol>[0], PIXELS_PER_CM)
+        : [],
+    [recordingState.showPlayer, recordingState.steps],
+  );
   useEffect(() => {
     if (!sharedRecording || sharedRecording.steps.length === 0) {
       recordingFitLayoutKeyRef.current = null;
       return;
     }
     if (canvasSize.width < 8 || canvasSize.height < 8) return;
-    const layoutKey = [sharedRecording.steps.length, canvasSize.width, canvasSize.height].join('|');
+    const layoutKey = [
+      sharedRecording.steps.length,
+      canvasSize.width,
+      canvasSize.height,
+      recordingProtocolOpen ? 'zapis' : '',
+    ].join('|');
     if (recordingFitLayoutKeyRef.current === layoutKey) return;
     const bounds = computeRecordingWorldBounds(sharedRecording.steps as RecordedStep[]);
     if (!bounds) return;
@@ -3576,11 +3614,30 @@ export function FreeGeometryEditor({
       bounds,
       canvasSize.width,
       canvasSize.height,
+      recordingFitInset,
     );
     setScale(nextScale);
     setOffset(nextOffset);
     recordingFitLayoutKeyRef.current = layoutKey;
-  }, [sharedRecording, canvasSize.width, canvasSize.height]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sharedRecording, canvasSize.width, canvasSize.height, recordingProtocolOpen]);
+
+  /** Tlačítko „přizpůsobit“ v přehrávači: vrátí automatický pohled na obálku všech kroků. */
+  const fitRecordingView = () => {
+    const steps = (sharedRecording?.steps ?? recordingState.steps) as RecordedStep[];
+    if (!steps || steps.length === 0) return;
+    if (canvasSize.width < 8 || canvasSize.height < 8) return;
+    const bounds = computeRecordingWorldBounds(steps);
+    if (!bounds) return;
+    const { scale: nextScale, offset: nextOffset } = fitViewportToRecordingBounds(
+      bounds,
+      canvasSize.width,
+      canvasSize.height,
+      recordingFitInset,
+    );
+    setScale(nextScale);
+    setOffset(nextOffset);
+  };
 
   // Cleanup pending circle center when tool changes or circle creation is cancelled
   useEffect(() => {
@@ -4518,7 +4575,9 @@ export function FreeGeometryEditor({
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (animState.isActive) return;
+    // Přehrávač záznamu: plátno jen posouvat (i během animace pomůcky).
+    const panOnlyCanvas = readOnlyCanvas || recordingState.showPlayer;
+    if (animState.isActive && !panOnlyCanvas) return;
     
     // Zavřít otevřené submenu při kliknutí na canvas
     setActiveGroup(null);
@@ -4533,7 +4592,7 @@ export function FreeGeometryEditor({
       }
     }
 
-    if (readOnlyCanvas) {
+    if (panOnlyCanvas) {
       isPanning.current = true;
       lastPanPos.current = { x: e.clientX, y: e.clientY };
       return;
@@ -5701,13 +5760,14 @@ export function FreeGeometryEditor({
 
   const handleMouseMove = (e: React.MouseEvent) => {
     // Panning logic
-    if ((readOnlyCanvas || activeTool === 'pan') && isPanning.current) {
+    if ((readOnlyCanvas || recordingState.showPlayer || activeTool === 'pan') && isPanning.current) {
         const dx = e.clientX - lastPanPos.current.x;
         const dy = e.clientY - lastPanPos.current.y;
         setOffset(prev => ({ x: prev.x + dx, y: prev.y + dy }));
         lastPanPos.current = { x: e.clientX, y: e.clientY };
         return;
     }
+    if (recordingState.showPlayer) return;
 
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
@@ -6161,6 +6221,11 @@ export function FreeGeometryEditor({
   };
 
   const handleMouseUp = () => {
+    // Přehrávač záznamu: jen konec posunu plátna, žádné úpravy konstrukce.
+    if (recordingState.showPlayer) {
+      isPanning.current = false;
+      return;
+    }
     // Group drag — ukončit (historie se uloží automaticky přes useEffect)
     if (groupDragRef.current) {
       groupDragRef.current = null;
@@ -10533,7 +10598,7 @@ export function FreeGeometryEditor({
   }, [activeTool]);
 
   const getContainerCursor = (): string => {
-    if (readOnlyCanvas) return 'grab';
+    if (readOnlyCanvas || recordingState.showPlayer) return 'grab';
     if (activeTool === 'pan') return 'grab';
     if (activeTool === 'move') {
       if (hoveredShapeForMove) return selectedShapeIds.includes(hoveredShapeForMove) ? 'move' : 'pointer';
@@ -10637,6 +10702,107 @@ export function FreeGeometryEditor({
      if (progress < pIn) return 0;
      if (progress > pDrawEnd) return 1;
      return (progress - pIn) / (pDrawEnd - pIn);
+  };
+
+  /** Přehrávač záznamu: přejít na krok `nextIndex` (stav před krokem + animace pomůcky). Pohled se nemění. */
+  const playRecordingStep = (nextIndex: number) => {
+    if (nextIndex < 0 || nextIndex >= recordingState.steps.length) return;
+    if (recordingAnimTimeoutRef.current !== null) {
+      window.clearTimeout(recordingAnimTimeoutRef.current);
+      recordingAnimTimeoutRef.current = null;
+    }
+    setRecordingState(prev => ({ ...prev, currentStepIndex: nextIndex }));
+    const step = recordingState.steps[nextIndex];
+    
+    // Nejdřív nastavit stav PŘED krokem (předchozí snapshot)
+    const prevStep = nextIndex > 0 ? recordingState.steps[nextIndex - 1] : null;
+    if (prevStep) {
+      setPoints(prevStep.snapshot.points);
+      setShapes(prevStep.snapshot.shapes);
+      setFreehandPaths(prevStep.snapshot.freehandPaths);
+    } else {
+      setPoints([]);
+      setShapes([]);
+      setFreehandPaths([]);
+    }
+    
+    // Pokud má krok vizualizaci nástroje, spustit animaci
+    console.log('🔍 DEBUG PŘEHRÁVAČ: step.actionType:', step.actionType, 'toolVisualization:', step.toolVisualization);
+    if (step.toolVisualization && step.toolVisualization.p1 && step.toolVisualization.p2) {
+      const viz = step.toolVisualization;
+      console.log('🔍 DEBUG: viz.type:', viz.type, 'viz.p1:', viz.p1, 'viz.p2:', viz.p2);
+      let animType: 'segment' | 'line' | 'lineDashed' | 'ray' | 'circle' | 'angle' | null = null;
+      
+      if (viz.type === 'ruler') {
+        if (step.actionType === 'create-segment') animType = 'segment';
+        else if (step.actionType === 'create-line') animType = 'line';
+        else if (step.actionType === 'create-line-dashed') animType = 'lineDashed';
+        else if (step.actionType === 'create-ray') animType = 'ray';
+        else if (step.actionType === 'create-point') {
+          // Pokud je ruler u create-point, je to pravděpodobně vytváření úsečky
+          // (body se vytváří jako vedlejší efekt)
+          animType = 'segment';
+        }
+        console.log('🔍 DEBUG: Detekován RULER, animType:', animType);
+      } else if (viz.type === 'compass') {
+        animType = 'circle';
+        console.log('🔍 DEBUG: Detekován COMPASS');
+      } else if (viz.type === 'protractor') {
+        animType = 'angle';
+        console.log('🔍 DEBUG: Detekován PROTRACTOR');
+      }
+      
+      if (animType) {
+        // Nastavit finální snapshot okamžitě (tvary jsou viditelné)
+        setPoints(step.snapshot.points);
+        setShapes(step.snapshot.shapes);
+        setFreehandPaths(step.snapshot.freehandPaths);
+        
+        // Spustit animaci nástroje (pravítko/kružítko overlay)
+        setAnimState({
+          isActive: true,
+          type: animType,
+          startTime: performance.now(),
+          p1: viz.p1,
+          p2: viz.p2,
+          angle: step.actionType === 'create-angle' ? 45 : undefined,
+          baseAngle: viz.angle,
+          progress: 0
+        });
+        
+        // Po 2 sekundách zrušit animaci (tvary zůstanou ze snapshot); starší časovač nesmí useknout novou animaci
+        if (recordingAnimTimeoutRef.current !== null) window.clearTimeout(recordingAnimTimeoutRef.current);
+        recordingAnimTimeoutRef.current = window.setTimeout(() => {
+          recordingAnimTimeoutRef.current = null;
+          setAnimState({
+            isActive: false,
+            type: null,
+            startTime: 0,
+            p1: null,
+            p2: null,
+            progress: 0
+          });
+        }, constructionAnimMs.total);
+      } else {
+        console.log('⚠️ DEBUG: animType je NULL! Nebudu animovat.');
+        // Bez animace - rovnou nastavit snapshot
+        setPoints(step.snapshot.points);
+        setShapes(step.snapshot.shapes);
+        setFreehandPaths(step.snapshot.freehandPaths);
+      }
+    } else {
+      console.log('⚠️ DEBUG: Krok nemá toolVisualization nebo chybí p1/p2!');
+      // Bez vizualizace - rovnou nastavit snapshot
+      setPoints(step.snapshot.points);
+      setShapes(step.snapshot.shapes);
+      setFreehandPaths(step.snapshot.freehandPaths);
+    }
+  };
+
+  /** Klik na řádek zápisu: skok na krok (s animací pomůcky jako u „Další“). */
+  const jumpToRecordingStep = (index: number) => {
+    setAnimState({ isActive: false, type: null, startTime: 0, p1: null, p2: null, progress: 0 });
+    playRecordingStep(index);
   };
 
   const topZoomCluster = (
@@ -12581,9 +12747,29 @@ export function FreeGeometryEditor({
       )}
 
       {/* PŘEHRÁVAČ KROKŮ */}
+      {recordingState.showPlayer && recordingProtocolOpen && (
+        <RecordingProtocolPanel
+          rows={recordingProtocolRows}
+          currentStepIndex={recordingState.currentStepIndex}
+          onSelectStep={jumpToRecordingStep}
+          onClose={() => setShowRecordingProtocol(false)}
+          darkMode={darkMode}
+          sheet={recordingProtocolAsSheet}
+          sheetHeight={recordingProtocolSheetH}
+        />
+      )}
       {recordingState.showPlayer && (
-        <div className="absolute inset-0 z-50 flex flex-col">
-          {/* Canvas pro přehrávání */}
+        <div
+          className="absolute inset-0 z-50 flex flex-col pointer-events-none"
+          style={
+            recordingProtocolOpen
+              ? recordingProtocolAsSheet
+                ? { bottom: recordingProtocolSheetH }
+                : { right: RECORDING_PROTOCOL_PANEL_WIDTH }
+              : undefined
+          }
+        >
+          {/* Canvas pro přehrávání — vrstva propouští tah/kolečko na plátno (posun a zoom) */}
           <div className="flex-1" />
           
           {/* INTRO OBRAZOVKA - Před spuštěním kroků */}
@@ -12681,9 +12867,13 @@ export function FreeGeometryEditor({
           )}
 
           {/* Ovladaci panel prehravace */}
-          <div className={`absolute left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl ${
+          <div className={`pointer-events-auto absolute left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 sm:gap-3 px-2 sm:px-6 py-2 sm:py-4 rounded-2xl shadow-2xl max-w-[calc(100vw-16px)] ${
             darkMode ? 'bg-gray-900 border border-gray-800' : 'bg-white'
-          }`} style={{ bottom: 'calc(32px + env(safe-area-inset-bottom, 0px))' }}>
+          }`} style={{
+            bottom: recordingProtocolOpen && recordingProtocolAsSheet
+              ? '12px'
+              : 'calc(32px + env(safe-area-inset-bottom, 0px))',
+          }}>
             {/* Reset */}
             <button
               onClick={() => {
@@ -12706,12 +12896,12 @@ export function FreeGeometryEditor({
                   progress: 0
                 });
               }}
-              className={`p-3 rounded-full transition-all ${
+              className={`p-2 sm:p-3 rounded-full transition-all ${
                 darkMode ? 'hover:bg-gray-800' : 'hover:bg-gray-100'
               }`}
               title="Reset"
             >
-              <RotateCw className="size-6" />
+              <RotateCw className="size-5 sm:size-6" />
             </button>
 
             {/* Zpět */}
@@ -12741,128 +12931,105 @@ export function FreeGeometryEditor({
                 }
               }}
               disabled={recordingState.currentStepIndex < 0}
-              className={`px-5 py-2.5 rounded-xl font-bold transition-all ${
+              className={`px-3 sm:px-5 py-2 sm:py-2.5 rounded-xl font-bold whitespace-nowrap transition-all ${
                 recordingState.currentStepIndex < 0
                   ? darkMode ? 'bg-gray-800 text-gray-600 cursor-not-allowed' : 'bg-gray-200 text-gray-400 cursor-not-allowed'
                   : 'bg-blue-500 hover:bg-blue-400 text-white'
               }`}
             >
-              <ArrowLeft className="size-5 inline mr-2" />
+              <ArrowLeft className="size-5 hidden sm:inline mr-2" />
               Zpět
             </button>
 
             {/* Další */}
             <button
-              onClick={() => {
-                const nextIndex = Math.min(recordingState.steps.length - 1, recordingState.currentStepIndex + 1);
-                setRecordingState(prev => ({ ...prev, currentStepIndex: nextIndex }));
-                const step = recordingState.steps[nextIndex];
-                
-                // Nejdřív nastavit stav PŘED krokem (předchozí snapshot)
-                const prevStep = nextIndex > 0 ? recordingState.steps[nextIndex - 1] : null;
-                if (prevStep) {
-                  setPoints(prevStep.snapshot.points);
-                  setShapes(prevStep.snapshot.shapes);
-                  setFreehandPaths(prevStep.snapshot.freehandPaths);
-                } else {
-                  setPoints([]);
-                  setShapes([]);
-                  setFreehandPaths([]);
-                }
-                
-                // Pokud má krok vizualizaci nástroje, spustit animaci
-                console.log('🔍 DEBUG PŘEHRÁVAČ: step.actionType:', step.actionType, 'toolVisualization:', step.toolVisualization);
-                if (step.toolVisualization && step.toolVisualization.p1 && step.toolVisualization.p2) {
-                  const viz = step.toolVisualization;
-                  console.log('🔍 DEBUG: viz.type:', viz.type, 'viz.p1:', viz.p1, 'viz.p2:', viz.p2);
-                  let animType: 'segment' | 'line' | 'lineDashed' | 'ray' | 'circle' | 'angle' | null = null;
-                  
-                  if (viz.type === 'ruler') {
-                    if (step.actionType === 'create-segment') animType = 'segment';
-                    else if (step.actionType === 'create-line') animType = 'line';
-                    else if (step.actionType === 'create-line-dashed') animType = 'lineDashed';
-                    else if (step.actionType === 'create-ray') animType = 'ray';
-                    else if (step.actionType === 'create-point') {
-                      // Pokud je ruler u create-point, je to pravděpodobně vytváření úsečky
-                      // (body se vytváří jako vedlejší efekt)
-                      animType = 'segment';
-                    }
-                    console.log('🔍 DEBUG: Detekován RULER, animType:', animType);
-                  } else if (viz.type === 'compass') {
-                    animType = 'circle';
-                    console.log('🔍 DEBUG: Detekován COMPASS');
-                  } else if (viz.type === 'protractor') {
-                    animType = 'angle';
-                    console.log('🔍 DEBUG: Detekován PROTRACTOR');
-                  }
-                  
-                  if (animType) {
-                    // Nastavit finální snapshot okamžitě (tvary jsou viditelné)
-                    setPoints(step.snapshot.points);
-                    setShapes(step.snapshot.shapes);
-                    setFreehandPaths(step.snapshot.freehandPaths);
-                    
-                    // Spustit animaci nástroje (pravítko/kružítko overlay)
-                    setAnimState({
-                      isActive: true,
-                      type: animType,
-                      startTime: performance.now(),
-                      p1: viz.p1,
-                      p2: viz.p2,
-                      angle: step.actionType === 'create-angle' ? 45 : undefined,
-                      baseAngle: viz.angle,
-                      progress: 0
-                    });
-                    
-                    // Po 2 sekundách zrušit animaci (tvary zůstanou ze snapshot)
-                    setTimeout(() => {
-                      setAnimState({
-                        isActive: false,
-                        type: null,
-                        startTime: 0,
-                        p1: null,
-                        p2: null,
-                        progress: 0
-                      });
-                    }, constructionAnimMs.total);
-                  } else {
-                    console.log('⚠️ DEBUG: animType je NULL! Nebudu animovat.');
-                    // Bez animace - rovnou nastavit snapshot
-                    setPoints(step.snapshot.points);
-                    setShapes(step.snapshot.shapes);
-                    setFreehandPaths(step.snapshot.freehandPaths);
-                  }
-                } else {
-                  console.log('⚠️ DEBUG: Krok nemá toolVisualization nebo chybí p1/p2!');
-                  // Bez vizualizace - rovnou nastavit snapshot
-                  setPoints(step.snapshot.points);
-                  setShapes(step.snapshot.shapes);
-                  setFreehandPaths(step.snapshot.freehandPaths);
-                }
-              }}
+              onClick={() =>
+                playRecordingStep(Math.min(recordingState.steps.length - 1, recordingState.currentStepIndex + 1))
+              }
               disabled={recordingState.currentStepIndex >= recordingState.steps.length - 1}
-              className={`px-5 py-2.5 rounded-xl font-bold transition-all ${
+              className={`px-3 sm:px-5 py-2 sm:py-2.5 rounded-xl font-bold whitespace-nowrap transition-all ${
                 recordingState.currentStepIndex >= recordingState.steps.length - 1
                   ? darkMode ? 'bg-gray-800 text-gray-600 cursor-not-allowed' : 'bg-gray-200 text-gray-400 cursor-not-allowed'
                   : 'bg-blue-600 hover:bg-blue-500 text-white'
               }`}
             >
               Další
-              <ArrowRight className="size-5 inline ml-2" />
+              <ArrowRight className="size-5 hidden sm:inline ml-2" />
             </button>
 
             {/* Separator - jen vizualni oddelovac */}
-            <div className={`w-px h-8 ${darkMode ? 'bg-gray-700' : 'bg-gray-300'}`} />
+            <div className={`w-px h-8 shrink-0 ${darkMode ? 'bg-gray-700' : 'bg-gray-300'}`} />
 
-            {/* Dark mode toggle */}
+            {/* Zoom — stejné ikony jako v editoru; posun tažením, kolečko/pinch na plátně */}
+            <button
+              type="button"
+              onClick={() => zoomToCenter(scale - 0.1)}
+              className={`p-2 sm:p-3 rounded-full transition-all ${
+                darkMode ? 'hover:bg-gray-800' : 'hover:bg-gray-100'
+              }`}
+              title="Oddálit"
+              aria-label="Oddálit"
+            >
+              <ZoomOut className="size-5 sm:size-6" />
+            </button>
+            <span
+              className={`hidden sm:inline-block w-12 text-center text-sm font-medium tabular-nums ${
+                darkMode ? 'text-gray-400' : 'text-gray-600'
+              }`}
+            >
+              {Math.round(scale * 100)} %
+            </span>
+            <button
+              type="button"
+              onClick={() => zoomToCenter(scale + 0.1)}
+              className={`p-2 sm:p-3 rounded-full transition-all ${
+                darkMode ? 'hover:bg-gray-800' : 'hover:bg-gray-100'
+              }`}
+              title="Přiblížit"
+              aria-label="Přiblížit"
+            >
+              <ZoomIn className="size-5 sm:size-6" />
+            </button>
+            <button
+              type="button"
+              onClick={fitRecordingView}
+              className={`p-2 sm:p-3 rounded-full transition-all ${
+                darkMode ? 'hover:bg-gray-800' : 'hover:bg-gray-100'
+              }`}
+              title="Přizpůsobit pohled celé konstrukci"
+              aria-label="Přizpůsobit"
+            >
+              <Maximize className="size-5 sm:size-6" />
+            </button>
+
+            {/* Separator - jen vizualni oddelovac */}
+            <div className={`w-px h-8 shrink-0 ${darkMode ? 'bg-gray-700' : 'bg-gray-300'}`} />
+
+            {/* Zápis konstrukce */}
+            <button
+              type="button"
+              onClick={() => setShowRecordingProtocol((v) => !v)}
+              className={`p-2 sm:p-3 rounded-full transition-all ${
+                showRecordingProtocol
+                  ? darkMode ? 'bg-[#7aa2f7]/20 text-[#7aa2f7]' : 'bg-blue-50 text-blue-600'
+                  : darkMode ? 'hover:bg-gray-800' : 'hover:bg-gray-100'
+              }`}
+              title="Zápis konstrukce"
+              aria-label="Zápis konstrukce"
+              aria-pressed={showRecordingProtocol}
+            >
+              <ListOrdered className="size-5 sm:size-6" />
+            </button>
+
+            {/* Dark mode toggle (na telefonu se do lišty nevejde) */}
             <button
               onClick={() => onDarkModeChange(!darkMode)}
-              className={`p-3 rounded-full transition-all ${
+              className={`hidden sm:block p-2 sm:p-3 rounded-full transition-all ${
                 darkMode ? 'hover:bg-gray-800' : 'hover:bg-gray-100'
               }`}
               title={darkMode ? 'Svetly rezim' : 'Tmavy rezim'}
             >
-              {darkMode ? <Sun className="size-6" /> : <Moon className="size-6" />}
+              {darkMode ? <Sun className="size-5 sm:size-6" /> : <Moon className="size-5 sm:size-6" />}
             </button>
 
             {/* Upravit - jen pro lokalni (ne sdilene) zaznamy a pred sdilenim */}
@@ -12876,7 +13043,7 @@ export function FreeGeometryEditor({
                     showPlayer: false
                   }));
                 }}
-                className={`p-3 rounded-full transition-all ${
+                className={`p-2 sm:p-3 rounded-full transition-all ${
                   darkMode ? 'hover:bg-gray-800 text-[#bb9af7]' : 'hover:bg-gray-100 text-purple-600'
                 }`}
                 title="Upravit kroky a nazev"
@@ -12889,7 +13056,7 @@ export function FreeGeometryEditor({
             {!sharedRecording && !shareLink && (
               <button
                 onClick={handlePrint}
-                className={`p-3 rounded-full transition-all ${
+                className={`p-2 sm:p-3 rounded-full transition-all ${
                   darkMode ? 'hover:bg-gray-800 text-[#9ece6a]' : 'hover:bg-gray-100 text-green-600'
                 }`}
                 title="Tisk konstrukce"
@@ -12906,7 +13073,7 @@ export function FreeGeometryEditor({
                   await saveRecordingToServer(name, recordingState.steps);
                 }}
                 disabled={isSavingRecording}
-                className={`p-3 rounded-full transition-all ${
+                className={`p-2 sm:p-3 rounded-full transition-all ${
                   isSavingRecording
                     ? 'text-gray-500 cursor-not-allowed'
                     : darkMode ? 'hover:bg-gray-800 text-[#7dcfff]' : 'hover:bg-gray-100 text-teal-600'
@@ -12920,18 +13087,18 @@ export function FreeGeometryEditor({
             {/* Close/Exit player */}
             <button
               onClick={() => setShowCloseConfirm(true)}
-              className={`p-3 rounded-full transition-all ${
+              className={`p-2 sm:p-3 rounded-full transition-all ${
                 darkMode ? 'hover:bg-gray-800 text-red-400' : 'hover:bg-gray-100 text-red-500'
               }`}
               title="Zavřít přehrávač"
             >
-              <X className="size-6" />
+              <X className="size-5 sm:size-6" />
             </button>
           </div>
 
           {/* Share link display - po sdílení (viditelné i mimo intro) */}
           {shareLink && recordingState.currentStepIndex !== -1 && (
-            <div className={`absolute left-1/2 -translate-x-1/2 z-50 px-5 py-4 rounded-2xl shadow-2xl ${
+            <div className={`pointer-events-auto absolute left-1/2 -translate-x-1/2 z-50 px-5 py-4 rounded-2xl shadow-2xl ${
               darkMode ? 'bg-gray-900 border border-gray-800' : 'bg-white border border-gray-200'
             }`} style={{ bottom: 'calc(100px + env(safe-area-inset-bottom, 0px))' }}>
               <div className="flex items-center gap-2 mb-2">
@@ -12972,10 +13139,10 @@ export function FreeGeometryEditor({
           )}
 
           {/* Název aktuálního kroku — zápis konstrukce + popis */}
-          {recordingState.currentStepIndex >= 0 && recordingState.currentStepIndex < recordingState.steps.length && (() => {
+          {recordingState.currentStepIndex >= 0 && recordingState.currentStepIndex < recordingState.steps.length && !(recordingProtocolOpen && recordingProtocolAsSheet) && (() => {
             const recStep = recordingState.steps[recordingState.currentStepIndex];
             return (
-              <div className={`absolute top-8 left-1/2 -translate-x-1/2 px-6 py-3 rounded-xl shadow-lg max-w-lg ${
+              <div className={`absolute top-8 left-1/2 -translate-x-1/2 px-6 py-3 rounded-xl shadow-lg w-max max-w-[calc(100%-32px)] sm:max-w-lg ${
                 darkMode ? 'bg-[#24283b] text-[#c0caf5] border border-[#565f89]' : 'bg-white text-gray-900'
               }`}>
                 <div className={`text-sm mb-1 ${darkMode ? 'text-[#9aa5ce]' : 'text-gray-500'}`}>
