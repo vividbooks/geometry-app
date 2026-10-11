@@ -369,7 +369,7 @@ function drawSolutionOverlay(
 }
 
 /** Ohraničení všech objektů ve světových souřadnicích — pro vycentrování a „fit“ při otevření úkolu. */
-function computeGeometryWorldBounds(snap: GeometrySubmissionSnapshot): {
+function computeGeometryWorldBounds(snap: GeometrySubmissionSnapshot, padded = true): {
   minX: number;
   minY: number;
   maxX: number;
@@ -421,6 +421,7 @@ function computeGeometryWorldBounds(snap: GeometrySubmissionSnapshot): {
   }
 
   if (!any) return null;
+  if (!padded) return { minX, minY, maxX, maxY };
   const bw = maxX - minX;
   const bh = maxY - minY;
   const pad = Math.max(48, 0.06 * Math.max(bw, bh));
@@ -495,6 +496,78 @@ function fitViewportToAssignmentBounds(
     offset: {
       x: cxScreen - worldCx * clampedScale,
       y: cyScreen - worldCy * clampedScale,
+    },
+  };
+}
+
+/**
+ * Obálka všech snapshotů nahrané konstrukce (bez okraje). Přímky a polopřímky jsou
+ * nekonečné — berou se jen jejich definiční body, kružnice/oblouky celým poloměrem.
+ */
+function computeRecordingWorldBounds(
+  steps: ReadonlyArray<{ snapshot?: Partial<GeometrySubmissionSnapshot> | null }>,
+): { minX: number; minY: number; maxX: number; maxY: number } | null {
+  let acc: { minX: number; minY: number; maxX: number; maxY: number } | null = null;
+  for (const step of steps) {
+    const snap = step?.snapshot;
+    if (!snap) continue;
+    const b = computeGeometryWorldBounds(
+      {
+        points: snap.points ?? [],
+        shapes: snap.shapes ?? [],
+        freehandPaths: snap.freehandPaths ?? [],
+      },
+      false,
+    );
+    if (!b) continue;
+    acc = acc
+      ? {
+          minX: Math.min(acc.minX, b.minX),
+          minY: Math.min(acc.minY, b.minY),
+          maxX: Math.max(acc.maxX, b.maxX),
+          maxY: Math.max(acc.maxY, b.maxY),
+        }
+      : b;
+  }
+  return acc;
+}
+
+/**
+ * Přizpůsobení pohledu přehrávači záznamu: obálka se vejde do volné plochy mezi
+ * kartou kroku nahoře a ovládací lištou dole, s okrajem ~5 %, vycentrovaně.
+ */
+function fitViewportToRecordingBounds(
+  bounds: { minX: number; minY: number; maxX: number; maxY: number },
+  canvasW: number,
+  canvasH: number,
+): { scale: number; offset: { x: number; y: number } } {
+  // Karta kroku: top-8 (32 px) + výška karty; lišta přehrávače: bottom 32 px + výška lišty.
+  // Na úzkém displeji se karta zalamuje do více řádků a lišta má vyšší tlačítka.
+  const phone = canvasW < 500;
+  const compact = canvasW < 900 || canvasH < 560;
+  const topReserve = phone ? 280 : compact ? 180 : 160;
+  const bottomReserve = phone ? 140 : 135;
+  const areaTop = Math.min(topReserve, canvasH * 0.3);
+  const areaBottom = canvasH - Math.min(bottomReserve, canvasH * 0.25);
+  const areaH = Math.max(areaBottom - areaTop, 40);
+  const areaW = Math.max(canvasW, 40);
+  const padX = areaW * 0.05;
+  const padY = areaH * 0.05;
+  const availW = Math.max(areaW - padX * 2, 1);
+  const availH = Math.max(areaH - padY * 2, 1);
+
+  const bw = Math.max(bounds.maxX - bounds.minX, 1);
+  const bh = Math.max(bounds.maxY - bounds.minY, 1);
+  const raw = Math.min(availW / bw, availH / bh);
+  const scale = Math.max(0.4, Math.min(3, raw));
+
+  const worldCx = (bounds.minX + bounds.maxX) / 2;
+  const worldCy = (bounds.minY + bounds.maxY) / 2;
+  return {
+    scale,
+    offset: {
+      x: areaW / 2 - worldCx * scale,
+      y: (areaTop + areaBottom) / 2 - worldCy * scale,
     },
   };
 }
@@ -3349,6 +3422,31 @@ export function FreeGeometryEditor({
     canvasSize.height,
     assignmentToolbarRightOffsetPx,
   ]);
+
+  /**
+   * Sdílený záznam (?recording=…): po načtení a při změně velikosti plátna přizpůsobit
+   * pohled obálce všech kroků. Mezi kroky se nepřepočítává, ruční posun/zoom zůstává.
+   */
+  const recordingFitLayoutKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!sharedRecording || sharedRecording.steps.length === 0) {
+      recordingFitLayoutKeyRef.current = null;
+      return;
+    }
+    if (canvasSize.width < 8 || canvasSize.height < 8) return;
+    const layoutKey = [sharedRecording.steps.length, canvasSize.width, canvasSize.height].join('|');
+    if (recordingFitLayoutKeyRef.current === layoutKey) return;
+    const bounds = computeRecordingWorldBounds(sharedRecording.steps as RecordedStep[]);
+    if (!bounds) return;
+    const { scale: nextScale, offset: nextOffset } = fitViewportToRecordingBounds(
+      bounds,
+      canvasSize.width,
+      canvasSize.height,
+    );
+    setScale(nextScale);
+    setOffset(nextOffset);
+    recordingFitLayoutKeyRef.current = layoutKey;
+  }, [sharedRecording, canvasSize.width, canvasSize.height]);
 
   // Cleanup pending circle center when tool changes or circle creation is cancelled
   useEffect(() => {
