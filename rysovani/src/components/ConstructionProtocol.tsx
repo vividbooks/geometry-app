@@ -33,7 +33,7 @@ const CZ = {
 };
 
 // --- KaTeX CSS loader ---
-function useKatexCSS() {
+export function useKatexCSS() {
   useEffect(() => {
     const id = 'katex-css-link';
     if (!document.getElementById(id)) {
@@ -73,6 +73,38 @@ export function Latex({ math, className }: { math: string; className?: string })
     />
   );
 }
+
+/** Symbol a barva typu kroku (sdílené se zápisem v přehrávači záznamu). */
+export const getTypeSymbol = (type: ConstructionStep['type']) => {
+  switch (type) {
+    case 'point': return '\\bullet';
+    case 'segment': return '\\text{\\textemdash}';
+    case 'line': return '\\leftrightarrow';
+    case 'lineDashed': return '\\leftrightarrow';
+    case 'ray': return '\\rightarrow';
+    case 'circle': return '\\circ';
+    case 'perpendicular': return '\\perp';
+    case 'angle': return '\\angle';
+    case 'freehand': return '\\sim';
+    default: return '\\cdot';
+  }
+};
+
+export const getTypeColor = (type: ConstructionStep['type']) => {
+  switch (type) {
+    case 'point': return '#3b82f6';
+    case 'segment': return '#10b981';
+    case 'line': return '#8b5cf6';
+    case 'lineDashed': return '#a78bfa';
+    case 'ray': return '#f59e0b';
+    case 'circle': return '#f43f5e';
+    case 'perpendicular': return '#06b6d4';
+    case 'angle': return '#f97316';
+    case 'freehand': return '#9ca3af';
+    default: return '#6b7280';
+  }
+};
+
 
 interface GeoPointLike {
   id: string;
@@ -190,36 +222,6 @@ export function ConstructionProtocol({ steps, visible, onClose, onClear, darkMod
     if (copyToClipboard(text)) {
       setCopied('latex');
       setTimeout(() => setCopied('none'), 2000);
-    }
-  };
-
-  const getTypeSymbol = (type: ConstructionStep['type']) => {
-    switch (type) {
-      case 'point': return '\\bullet';
-      case 'segment': return '\\text{\\textemdash}';
-      case 'line': return '\\leftrightarrow';
-      case 'lineDashed': return '\\leftrightarrow';
-      case 'ray': return '\\rightarrow';
-      case 'circle': return '\\circ';
-      case 'perpendicular': return '\\perp';
-      case 'angle': return '\\angle';
-      case 'freehand': return '\\sim';
-      default: return '\\cdot';
-    }
-  };
-
-  const getTypeColor = (type: ConstructionStep['type']) => {
-    switch (type) {
-      case 'point': return '#3b82f6';
-      case 'segment': return '#10b981';
-      case 'line': return '#8b5cf6';
-      case 'lineDashed': return '#a78bfa';
-      case 'ray': return '#f59e0b';
-      case 'circle': return '#f43f5e';
-      case 'perpendicular': return '#06b6d4';
-      case 'angle': return '#f97316';
-      case 'freehand': return '#9ca3af';
-      default: return '#6b7280';
     }
   };
 

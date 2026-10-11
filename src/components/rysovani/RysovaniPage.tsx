@@ -1,4 +1,4 @@
-import { useState, useEffect, lazy, Suspense } from 'react';
+import { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { CanvasErrorBoundary } from '../../../rysovani/src/components/CanvasErrorBoundary';
 
@@ -69,6 +69,38 @@ const VALID_VIEWS: RysovaniView[] = [
   'free-editor-computer',
 ];
 
+/** `?set=A:id1,B:id2,…` → podúlohy přehrávače záznamu (pořadí z URL). */
+function parseRecordingSet(raw: string | null): Array<{ key: string; id: string }> {
+  if (!raw) return [];
+  const out: Array<{ key: string; id: string }> = [];
+  for (const part of raw.split(',')) {
+    const idx = part.indexOf(':');
+    if (idx <= 0) continue;
+    const key = part.slice(0, idx).trim();
+    const id = part.slice(idx + 1).trim();
+    if (key && /^[A-Za-z0-9_-]+$/.test(id)) out.push({ key, id });
+  }
+  return out;
+}
+
+async function fetchRecording(id: string): Promise<SharedRecording> {
+  const res = await fetch(
+    `https://${projectId}.supabase.co/functions/v1/make-server-b149bbbb/recordings/${id}`,
+    { headers: { Authorization: `Bearer ${publicAnonKey}` } }
+  );
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.error || `Recording not found (${res.status})`);
+  }
+  const data = await res.json();
+  return {
+    id: data.id ?? id,
+    name: data.name,
+    deviceType: data.deviceType || 'computer',
+    steps: data.steps,
+  };
+}
+
 export function RysovaniPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -101,31 +133,47 @@ export function RysovaniPage() {
     }
   }, []);
 
+  const recordingSet = useMemo(() => parseRecordingSet(searchParams.get('set')), [searchParams]);
+  /** Načtené záznamy podúloh (přepínání bez opětovného stahování). */
+  const recordingCacheRef = useRef(new Map<string, Promise<SharedRecording>>());
+  const getRecording = (id: string) => {
+    const cache = recordingCacheRef.current;
+    let p = cache.get(id);
+    if (!p) {
+      p = fetchRecording(id);
+      p.catch(() => cache.delete(id));
+      cache.set(id, p);
+    }
+    return p;
+  };
+
   const loadSharedRecording = async (id: string) => {
     setLoadingRecording(true);
     setLoadError(null);
     try {
-      const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-b149bbbb/recordings/${id}`,
-        { headers: { Authorization: `Bearer ${publicAnonKey}` } }
-      );
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || `Recording not found (${res.status})`);
-      }
-      const data = await res.json();
-      setSharedRecording({
-        id: data.id,
-        name: data.name,
-        deviceType: data.deviceType || 'computer',
-        steps: data.steps,
-      });
+      const rec = await getRecording(id);
+      setSharedRecording(rec);
       setView('shared-recording');
+      // Ostatní podúlohy načíst dopředu, ať je přepnutí okamžité.
+      for (const t of recordingSet) if (t.id !== id) getRecording(t.id).catch(() => {});
     } catch (e: any) {
       console.error('Failed to load shared recording:', e);
       setLoadError(e.message || 'Failed to load recording');
     } finally {
       setLoadingRecording(false);
+    }
+  };
+
+  /** Přepnutí podúlohy: jiný záznam bez reloadu, URL se jen nahradí. */
+  const switchRecordingSubtask = async (id: string) => {
+    try {
+      const rec = await getRecording(id);
+      setSharedRecording(rec);
+      const url = new URL(window.location.href);
+      url.searchParams.set('recording', id);
+      window.history.replaceState(window.history.state, '', url.toString());
+    } catch (e: any) {
+      console.error('Failed to switch recording:', e);
     }
   };
 
@@ -256,10 +304,9 @@ export function RysovaniPage() {
               darkMode={darkMode}
               onDarkModeChange={setDarkMode}
               deviceType={sharedRecording.deviceType}
-              sharedRecording={{
-                name: sharedRecording.name,
-                steps: sharedRecording.steps,
-              }}
+              sharedRecording={sharedRecording}
+              recordingSubtasks={recordingSet.length > 1 ? recordingSet : undefined}
+              onSelectRecordingSubtask={switchRecordingSubtask}
             />
           </Suspense>
         ) : null;
