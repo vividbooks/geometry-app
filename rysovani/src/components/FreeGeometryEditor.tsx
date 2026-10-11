@@ -243,7 +243,7 @@ export interface GeoShape {
 
 interface AnimationState {
   isActive: boolean;
-  type: 'segment' | 'line' | 'lineDashed' | 'lineDashDot' | 'ray' | 'circle' | 'circleArc' | 'angle' | null;
+  type: 'segment' | 'line' | 'lineDashed' | 'lineDashDot' | 'ray' | 'circle' | 'circleArc' | 'angle' | 'protractorReplay' | null;
   startTime: number;
   p1: { x: number, y: number } | null;
   p2: { x: number, y: number } | null;
@@ -252,6 +252,16 @@ interface AnimationState {
   /** Výsek kružnice (circleArc) — celkový úhel v rad */
   arcSpan?: number;
   progress: number;
+  /** Délka animace v ms (jinak constructionAnimMs.total). */
+  durationMs?: number;
+  /** Přehrávač: úhloměr ve fázích (přiložit → hodnota → značka → pravítko → rameno). */
+  replay?: {
+    value: number;
+    mirrored: boolean;
+    strokeType: ReplayStrokeType;
+    strokeP1: { x: number; y: number };
+    strokeP2: { x: number; y: number };
+  };
 }
 
 interface AngleInputState {
@@ -591,20 +601,95 @@ function recordingStepToolWorldPoints(step: RecordingStepForBounds): Array<{ x: 
     const reach = r * 1.12;
     out.push({ x: p1.x - reach, y: p1.y - reach }, { x: p1.x + reach, y: p1.y + reach });
   } else if (viz.type === 'protractor') {
-    const R = PROTRACTOR_PLACED_RADIUS;
-    const baseAngle =
-      viz.angle ?? Math.atan2(p2.y - p1.y, p2.x - p1.x) - (45 * Math.PI) / 180;
-    // Půlkruh úhloměru (horní polovina v lokálu = úhly baseAngle − π … baseAngle).
-    for (let i = 0; i <= 16; i++) {
-      const t = baseAngle - (Math.PI * i) / 16;
-      out.push({ x: p1.x + Math.cos(t) * R, y: p1.y + Math.sin(t) * R });
-    }
-    out.push({ x: p1.x, y: p1.y });
+    out.push(...protractorReplayWorldPoints(step));
     // Druhá fáze: pravítko podél ramene.
     if (Math.hypot(p2.x - p1.x, p2.y - p1.y) > 1e-6) out.push(...animRulerWorldOutline(p1, p2));
   }
   return out;
 }
+
+/**
+ * Úhloměr v kroku záznamu: natočení nuly (baseAngle), hodnota na stupnici (0–180)
+ * a strana, na kterou se úhel nanáší (mirrored = po směru hodinových ručiček na obrazovce).
+ */
+function protractorReplayGeometry(viz: {
+  p1: { x: number; y: number };
+  p2: { x: number; y: number };
+  angle?: number;
+}): { baseAngle: number; value: number; mirrored: boolean } {
+  const armDir = Math.atan2(viz.p2.y - viz.p1.y, viz.p2.x - viz.p1.x);
+  const baseAngle = viz.angle ?? armDir + (45 * Math.PI) / 180;
+  let d = armDir - baseAngle;
+  d = Math.atan2(Math.sin(d), Math.cos(d));
+  // Nezrcadlený úhloměr nanáší úhel „nahoru“ (záporný směr v canvasu); 180° patří sem taky.
+  if (d <= 1e-6 || Math.abs(Math.abs(d) - Math.PI) < 1e-3) {
+    return { baseAngle, value: Math.min(180, Math.abs(d) * 180 / Math.PI), mirrored: false };
+  }
+  return { baseAngle, value: Math.min(180, (d * 180) / Math.PI), mirrored: true };
+}
+
+/** Půlkruh úhloměru (+ okraj na popisek hodnoty) a vrchol — pro fit pohledu přehrávače. */
+function protractorReplayWorldPoints(step: RecordingStepForBounds): Array<{ x: number; y: number }> {
+  const viz = step.toolVisualization;
+  if (!viz || !viz.p1 || !viz.p2) return [];
+  const { baseAngle, mirrored } = protractorReplayGeometry({ p1: viz.p1, p2: viz.p2, angle: viz.angle });
+  const R = PROTRACTOR_PLACED_RADIUS + 45; // + štítek s hodnotou
+  const sign = mirrored ? 1 : -1;
+  const out: Array<{ x: number; y: number }> = [];
+  for (let i = 0; i <= 16; i++) {
+    const t = baseAngle + (sign * Math.PI * i) / 16;
+    out.push({ x: viz.p1.x + Math.cos(t) * R, y: viz.p1.y + Math.sin(t) * R });
+  }
+  out.push({ x: viz.p1.x, y: viz.p1.y });
+  return out;
+}
+
+type ReplayStrokeType = 'segment' | 'line' | 'lineDashed' | 'lineDashDot' | 'ray';
+const REPLAY_STROKE_TYPES: ReadonlyArray<string> = ['segment', 'line', 'lineDashed', 'lineDashDot', 'ray'];
+
+/** Tvary, které krok záznamu přidal (oproti předchozímu snímku), s polohami definičních bodů. */
+function recordingStepNewShapes(
+  snapshot: { points: GeoPoint[]; shapes: GeoShape[] },
+  prev: { points: GeoPoint[]; shapes: GeoShape[] } | null,
+): Array<{ type: string; p1: { x: number; y: number }; p2: { x: number; y: number } | null; arcSpan?: number }> {
+  const prevIds = new Set((prev?.shapes ?? []).map(s => s.id));
+  const byId = new Map(snapshot.points.map(p => [p.id, p]));
+  const out: Array<{ type: string; p1: { x: number; y: number }; p2: { x: number; y: number } | null; arcSpan?: number }> = [];
+  for (const s of snapshot.shapes) {
+    if (prevIds.has(s.id)) continue;
+    const a = byId.get(s.definition?.p1Id);
+    if (!a) continue;
+    const b = s.definition?.p2Id ? byId.get(s.definition.p2Id) : undefined;
+    out.push({
+      type: s.type,
+      p1: { x: a.x, y: a.y },
+      p2: b ? { x: b.x, y: b.y } : null,
+      arcSpan: (s.definition as { arcSpan?: number } | undefined)?.arcSpan,
+    });
+  }
+  return out;
+}
+
+/** Časová osa přehrání kroku s úhloměrem (ms od začátku animace). */
+const PROTRACTOR_REPLAY_MS = {
+  /** 1) úhloměr přijede a přiloží se */
+  arriveEnd: 1100,
+  /** 2) přejetí stupnice od nuly k hodnotě */
+  sweepEnd: 2100,
+  /** 2b) pulz rysky a čísla */
+  pulseEnd: 2700,
+  /** 3) značka u hodnoty */
+  markEnd: 3300,
+  /** 4) úhloměr odjede */
+  leaveEnd: 3900,
+  /** 4b) pravítko přijede k vrcholu a značce */
+  rulerInStart: 3700,
+  rulerInEnd: 4400,
+  /** 5) rýsování ramene — na konci se objeví výsledná geometrie kroku */
+  drawEnd: 5800,
+  /** pravítko odjede */
+  total: 6400,
+} as const;
 
 /** Výchozí výseč oblouku kružítka (shodné s COMPASS_ARC_SPAN_RAD v editoru). */
 const RECORDING_DEFAULT_ARC_SPAN_RAD = 2 * Math.PI * 0.05 * 1.05;
@@ -2340,10 +2425,7 @@ export function FreeGeometryEditor({
   // Auto-start player when sharedRecording is provided (i po přepnutí podúlohy)
   useEffect(() => {
     if (sharedRecording && sharedRecording.steps.length > 0) {
-      if (recordingAnimTimeoutRef.current !== null) {
-        window.clearTimeout(recordingAnimTimeoutRef.current);
-        recordingAnimTimeoutRef.current = null;
-      }
+      clearRecordingTimers();
       setAnimState({ isActive: false, type: null, startTime: 0, p1: null, p2: null, progress: 0 });
       setRecordingState({
         isRecording: false,
@@ -6683,7 +6765,7 @@ export function FreeGeometryEditor({
 
       if (animState.isActive && animState.p1 && animState.p2) {
         // Rychlost animace - rychlej   na pomal ch za zen ch pro lep   responsivitu
-        const duration = constructionAnimMs.total;
+        const duration = animState.durationMs ?? constructionAnimMs.total;
         const elapsed = time - animState.startTime;
         const rawProgress = Math.min(elapsed / duration, 1);
         
@@ -8615,6 +8697,8 @@ export function FreeGeometryEditor({
           }
         }
         
+      } else if (type === 'protractorReplay' && animState.replay) {
+        drawProtractorReplay(ctx, animState, activeColor, activeWidth);
       } else if (type === 'circle') {
         const r = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
         if (!hideToolOverlays) {
@@ -10385,12 +10469,13 @@ export function FreeGeometryEditor({
     ctx.drawImage(img, x - size * 0.42, y - size * 0.28, size, size);
   };
 
-  const drawRuler = (ctx: CanvasRenderingContext2D, p1: {x:number, y:number}, p2: {x:number, y:number}, progress: number) => {
+  const drawRuler = (ctx: CanvasRenderingContext2D, p1: {x:number, y:number}, p2: {x:number, y:number}, progress: number, opacityOverride?: number, flipOverride?: boolean) => {
     if (!rulerImageRef.current) return;
     
     const { pIn, pDrawEnd } = animPhase;
     let opacity = 1;
-    if (progress < pIn) opacity = progress / pIn;
+    if (opacityOverride !== undefined) opacity = opacityOverride;
+    else if (progress < pIn) opacity = progress / pIn;
     else if (progress > pDrawEnd) opacity = (1 - progress) / (1 - pDrawEnd);
     
     const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
@@ -10412,7 +10497,7 @@ export function FreeGeometryEditor({
     const screenY = offset.y + wy * scale;
 
     // Pokud je horní okraj mimo obrazovku (nebo příliš blízko horní liště), flipneme dolů
-    const flip = screenY < 80; 
+    const flip = flipOverride ?? screenY < 80; 
 
     ctx.save();
     ctx.translate(p1.x, p1.y);
@@ -10465,6 +10550,164 @@ export function FreeGeometryEditor({
     ctx.restore();
   };
 
+  /**
+   * Přehrávač: krok s úhloměrem ve fázích (viz PROTRACTOR_REPLAY_MS) —
+   * přiložení úhloměru, hodnota na stupnici, značka, pravítko, narýsování ramene.
+   */
+  const drawProtractorReplay = (
+    ctx: CanvasRenderingContext2D,
+    st: AnimationState,
+    strokeColor: string,
+    strokeWidth: number,
+  ) => {
+    const rp = st.replay!;
+    const hideToolOverlays = suppressDrawingToolsForExportRef.current;
+    const V = st.p1!;
+    const T = PROTRACTOR_REPLAY_MS;
+    const t = st.progress * (st.durationMs ?? T.total);
+    const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
+    const ease = (x: number) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+    const seg = (a: number, b: number) => clamp01((t - a) / (b - a));
+    const R = PROTRACTOR_PLACED_RADIUS;
+    const base = st.baseAngle ?? 0;
+    const hlColor = darkMode ? '#7aa2f7' : '#2563eb';
+    const markColor = darkMode ? '#e5e7eb' : '#1f2937';
+    const sideSign = rp.mirrored ? 1 : -1; // strana, kam se úhel nanáší (v canvasu)
+    // Směr ramene (vrchol → značka)
+    const armAng = base + (sideSign * rp.value * Math.PI) / 180;
+    const dir = { x: Math.cos(armAng), y: Math.sin(armAng) };
+    const markR = R + 10 / scale;
+    const mark = { x: V.x + dir.x * markR, y: V.y + dir.y * markR };
+
+    // --- 1) + 4a) Úhloměr: přijede, zůstane, odjede ---
+    if (!hideToolOverlays && t < T.leaveEnd) {
+      const arrive = ease(seg(0, T.arriveEnd));
+      const leave = ease(seg(T.markEnd, T.leaveEnd));
+      const away = (1 - arrive) + leave; // 1 = mimo, 0 = přiložený
+      // Odjezd/příjezd z opačné strany než půlkruh, s mírným natočením.
+      const offDir = base - sideSign * (Math.PI / 2) - sideSign * 0.5;
+      const dist = R * 1.25 * away;
+      const center = { x: V.x + Math.cos(offDir) * dist, y: V.y + Math.sin(offDir) * dist };
+      const rot = base - sideSign * 0.45 * away;
+      const alpha = clamp01(1 - away * 1.15);
+      if (alpha > 0) {
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        const showValue = t >= T.arriveEnd;
+        const sweepTo = rp.value * ease(seg(T.arriveEnd, T.sweepEnd));
+        const pulsePhase = seg(T.sweepEnd, T.pulseEnd);
+        const pulse = pulsePhase > 0 && pulsePhase < 1 ? Math.sin(pulsePhase * Math.PI * 2) ** 2 : 0;
+        drawProtractor(
+          ctx,
+          center,
+          rot,
+          R,
+          '#f97316',
+          showValue && t >= T.sweepEnd ? rp.value : undefined,
+          0,
+          rp.mirrored,
+          showValue ? { color: hlColor, pulse, sweepTo } : undefined,
+        );
+        ctx.restore();
+      }
+    }
+
+    // --- 4b) + 5) Pravítko a rameno ---
+    const sP1 = rp.strokeP1;
+    const sDx = rp.strokeP2.x - sP1.x;
+    const sDy = rp.strokeP2.y - sP1.y;
+    const sLen = Math.hypot(sDx, sDy) || 1;
+    const u = { x: sDx / sLen, y: sDy / sLen };
+    // Délka čáry na obrazovce: k nejvzdálenějšímu rohu viditelné plochy.
+    const corners = [
+      { x: -offset.x / scale, y: -offset.y / scale },
+      { x: (canvasSize.width - offset.x) / scale, y: -offset.y / scale },
+      { x: -offset.x / scale, y: (canvasSize.height - offset.y) / scale },
+      { x: (canvasSize.width - offset.x) / scale, y: (canvasSize.height - offset.y) / scale },
+    ];
+    const reach = Math.max(...corners.map(c => Math.hypot(c.x - sP1.x, c.y - sP1.y))) + 40;
+    let from = sP1;
+    let to = rp.strokeP2;
+    if (rp.strokeType === 'ray') to = { x: sP1.x + u.x * reach, y: sP1.y + u.y * reach };
+    else if (rp.strokeType !== 'segment') {
+      from = { x: sP1.x - u.x * reach, y: sP1.y - u.y * reach };
+      to = { x: sP1.x + u.x * reach, y: sP1.y + u.y * reach };
+    }
+
+    if (!hideToolOverlays && t >= T.rulerInStart) {
+      const rin = ease(seg(T.rulerInStart, T.rulerInEnd));
+      const rout = ease(seg(T.drawEnd, T.total));
+      const slide = (1 - rin + rout) * 160;
+      const isLine = rp.strokeType !== 'ray' && rp.strokeType !== 'segment';
+      const a = isLine ? { x: sP1.x - u.x * 360, y: sP1.y - u.y * 360 } : sP1;
+      const b = isLine ? { x: sP1.x + u.x * 440, y: sP1.y + u.y * 440 } : rp.strokeP2;
+      // Stejné rozhodnutí o překlopení jako drawRuler (podle přiložené polohy), ať pravítko
+      // při posunu nepřeskočí na druhou stranu; přijíždí kolmo ze strany svého těla.
+      const ang = Math.atan2(b.y - a.y, b.x - a.x);
+      const wyTop = a.y + 400 * Math.sin(ang) + 380 * Math.cos(ang);
+      const flip = offset.y + wyTop * scale < 80;
+      const nx = flip ? -u.y : u.y;
+      const ny = flip ? u.x : -u.x;
+      const shift = { x: nx * slide, y: ny * slide };
+      drawRuler(
+        ctx,
+        { x: a.x + shift.x, y: a.y + shift.y },
+        { x: b.x + shift.x, y: b.y + shift.y },
+        0,
+        clamp01(rin - rout),
+        flip,
+      );
+    }
+
+    // --- 3) Značka u hodnoty (zůstane do konce kroku) ---
+    if (t >= T.pulseEnd) {
+      const m = ease(seg(T.pulseEnd, T.pulseEnd + 300));
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(mark.x, mark.y, (6 / scale) * (0.3 + 0.7 * m), 0, Math.PI * 2);
+      ctx.fillStyle = hlColor;
+      ctx.fill();
+      ctx.lineWidth = 2 / scale;
+      ctx.strokeStyle = darkMode ? '#1a1b26' : '#ffffff';
+      ctx.stroke();
+      // krátká čárka napříč ramenem
+      const nx = -dir.y;
+      const ny = dir.x;
+      const h = (11 / scale) * m;
+      ctx.beginPath();
+      ctx.moveTo(mark.x - nx * h, mark.y - ny * h);
+      ctx.lineTo(mark.x + nx * h, mark.y + ny * h);
+      ctx.strokeStyle = markColor;
+      ctx.lineWidth = 2.5 / scale;
+      ctx.lineCap = 'round';
+      ctx.stroke();
+      ctx.restore();
+      if (t < T.markEnd) {
+        // tužka u značky
+        const lift = (1 - m) * (30 / scale);
+        drawPenTip(ctx, mark.x + lift * 0.7, mark.y - lift, strokeColor);
+      }
+    }
+
+    if (t >= T.rulerInEnd) {
+      const d = ease(seg(T.rulerInEnd, T.drawEnd));
+      const cur = { x: from.x + (to.x - from.x) * d, y: from.y + (to.y - from.y) * d };
+      ctx.save();
+      if (rp.strokeType === 'lineDashed') applyLineStyle(ctx, 'dashed');
+      else if (rp.strokeType === 'lineDashDot') applyLineStyle(ctx, 'dashdot');
+      else ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y);
+      ctx.lineTo(cur.x, cur.y);
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = strokeWidth;
+      ctx.lineCap = 'round';
+      ctx.stroke();
+      ctx.restore();
+      if (t < T.drawEnd) drawPenTip(ctx, cur.x, cur.y, strokeColor);
+    }
+  };
+
   const drawProtractor = (
     ctx: CanvasRenderingContext2D,
     center: {x:number, y:number},
@@ -10473,7 +10716,9 @@ export function FreeGeometryEditor({
     color: string = '#FF4500',
     highlightAngle?: number,
     rotationOffset: number = 0,
-    isMirrored: boolean = false
+    isMirrored: boolean = false,
+    /** Přehrávač: hodnota na stupnici jinou barvou (ryska, číslo, tečka), `pulse` 0–1 zvětší značku. */
+    highlightStyle?: { color: string; pulse?: number; sweepTo?: number }
   ) => {
     // Udrž velikosti čar/textu čitelné při zoomu (konstantní px na obrazovce).
     const lwMain = 3 / scale;
@@ -10582,8 +10827,76 @@ export function FreeGeometryEditor({
        }
     }
 
+    // 4a. Přehrávač: přejetí stupnice od nuly a zvýraznění hodnoty
+    if (highlightStyle) {
+      const hc = highlightStyle.color;
+      const sweepDeg = Math.max(0, Math.min(180, highlightStyle.sweepTo ?? highlightAngle ?? 0));
+      if (sweepDeg > 0) {
+        ctx.beginPath();
+        ctx.arc(0, 0, radius - 4 / scale, 0, -(sweepDeg * Math.PI) / 180, true);
+        ctx.strokeStyle = hc;
+        ctx.globalAlpha *= 0.55;
+        ctx.lineWidth = 8 / scale;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+        ctx.globalAlpha /= 0.55;
+        const sr = -(sweepDeg * Math.PI) / 180;
+        ctx.beginPath();
+        ctx.arc(Math.cos(sr) * (radius - 4 / scale), Math.sin(sr) * (radius - 4 / scale), 6 / scale, 0, Math.PI * 2);
+        ctx.fillStyle = hc;
+        ctx.fill();
+      }
+      if (highlightAngle !== undefined) {
+        const deg = Math.max(0, Math.min(180, highlightAngle));
+        const hr = -(deg * Math.PI) / 180;
+        const c = Math.cos(hr);
+        const sn = Math.sin(hr);
+        const k = 1 + 0.35 * (highlightStyle.pulse ?? 0);
+        // Čárkovaná pomocná čára od středu ke stupnici
+        ctx.save();
+        ctx.setLineDash([6 / scale, 6 / scale]);
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(c * (radius - 35), sn * (radius - 35));
+        ctx.strokeStyle = hc;
+        ctx.lineWidth = 2 / scale;
+        ctx.stroke();
+        ctx.restore();
+        // Ryska hodnoty
+        ctx.beginPath();
+        ctx.moveTo(c * (radius + 6 / scale), sn * (radius + 6 / scale));
+        ctx.lineTo(c * (radius - 35), sn * (radius - 35));
+        ctx.strokeStyle = hc;
+        ctx.lineWidth = (4 * k) / scale;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+        // Číslo hodnoty (vždy vodorovně, ve štítku vně stupnice)
+        const lr = radius + (26 * k) / scale;
+        ctx.save();
+        ctx.translate(c * lr, sn * lr);
+        if (isMirrored) ctx.scale(1, -1);
+        ctx.rotate(-(baseAngle + (rotationOffset * Math.PI) / 180));
+        const fs = (17 * k) / scale;
+        ctx.font = `bold ${fs}px sans-serif`;
+        const label = `${Math.round(deg * 10) / 10}°`.replace('.', ',');
+        const tw = ctx.measureText(label).width;
+        const ph = fs * 1.35;
+        const pw = tw + fs * 0.9;
+        ctx.beginPath();
+        if (typeof (ctx as any).roundRect === 'function') (ctx as any).roundRect(-pw / 2, -ph / 2, pw, ph, ph / 2);
+        else ctx.rect(-pw / 2, -ph / 2, pw, ph);
+        ctx.fillStyle = hc;
+        ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, 0, fs * 0.04);
+        ctx.restore();
+      }
+    }
+
     // 4. Highlight Angle (Indikátor)
-    if (highlightAngle !== undefined) {
+    if (highlightAngle !== undefined && !highlightStyle) {
          // Ošetření rozsahu 0-180
          const clampedAngle = Math.max(0, Math.min(180, highlightAngle));
          const hRad = -(clampedAngle * Math.PI) / 180;
@@ -10769,17 +11082,78 @@ export function FreeGeometryEditor({
      return (progress - pIn) / (pDrawEnd - pIn);
   };
 
-  /** Přehrávač záznamu: přejít na krok `nextIndex` (stav před krokem + animace pomůcky). Pohled se nemění. */
-  const playRecordingStep = (nextIndex: number) => {
-    if (nextIndex < 0 || nextIndex >= recordingState.steps.length) return;
+  /** Časovač, kdy se při přehrávání ukáže výsledná geometrie kroku (až ji pomůcka „nakreslí“). */
+  const recordingRevealTimeoutRef = useRef<number | null>(null);
+  const recordingCameraRafRef = useRef<number | null>(null);
+
+  const clearRecordingTimers = () => {
     if (recordingAnimTimeoutRef.current !== null) {
       window.clearTimeout(recordingAnimTimeoutRef.current);
       recordingAnimTimeoutRef.current = null;
     }
+    if (recordingRevealTimeoutRef.current !== null) {
+      window.clearTimeout(recordingRevealTimeoutRef.current);
+      recordingRevealTimeoutRef.current = null;
+    }
+  };
+
+  /**
+   * Krok s úhloměrem: když se půlkruh úhloměru s vrcholem nevejde do volné plochy plátna,
+   * plynule oddálit / posunout pohled (nikdy nepřibližovat).
+   */
+  const ensureProtractorStepInView = (step: RecordedStep) => {
+    if (!canvasSize.width || !canvasSize.height) return;
+    const toolPts = protractorReplayWorldPoints(step);
+    if (toolPts.length === 0) return;
+    const area = recordingFitArea(canvasSize.width, canvasSize.height, recordingFitInset);
+    const pad = 8;
+    const inView = toolPts.every(q => {
+      const sx = q.x * scale + offset.x;
+      const sy = q.y * scale + offset.y;
+      return sx >= area.left + pad && sx <= area.right - pad && sy >= area.top + pad && sy <= area.bottom - pad;
+    });
+    if (inView) return;
+    const target = unionBounds(boundsOfPoints(toolPts), computeRecordingGeometryBounds([step]))!;
+    const toScale = Math.min(scale, fitScaleForBounds(target, area));
+    const cx = (area.left + area.right) / 2;
+    const cy = (area.top + area.bottom) / 2;
+    const toW = { x: (target.minX + target.maxX) / 2, y: (target.minY + target.maxY) / 2 };
+    const fromScale = scale;
+    const fromW = { x: (cx - offset.x) / scale, y: (cy - offset.y) / scale };
+    if (recordingCameraRafRef.current !== null) cancelAnimationFrame(recordingCameraRafRef.current);
+    const t0 = performance.now();
+    const ms = 800;
+    const tick = (now: number) => {
+      const u = Math.min(1, (now - t0) / ms);
+      const e = u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
+      const sc = fromScale * Math.pow(toScale / fromScale, e);
+      const wx = fromW.x + (toW.x - fromW.x) * e;
+      const wy = fromW.y + (toW.y - fromW.y) * e;
+      setScale(sc);
+      setOffset({ x: cx - wx * sc, y: cy - wy * sc });
+      recordingCameraRafRef.current = u < 1 ? requestAnimationFrame(tick) : null;
+    };
+    recordingCameraRafRef.current = requestAnimationFrame(tick);
+  };
+
+  /**
+   * Přehrávač záznamu: přejít na krok `nextIndex` — stav před krokem, animace pomůcky
+   * a výsledná geometrie kroku až ve chvíli, kdy ji pomůcka dorýsuje.
+   * „Další“ během animace: stav před dalším krokem = hotový stav tohoto kroku (animace se přeskočí).
+   */
+  const playRecordingStep = (nextIndex: number) => {
+    if (nextIndex < 0 || nextIndex >= recordingState.steps.length) return;
+    clearRecordingTimers();
     setRecordingState(prev => ({ ...prev, currentStepIndex: nextIndex }));
     const step = recordingState.steps[nextIndex];
-    
-    // Nejdřív nastavit stav PŘED krokem (předchozí snapshot)
+
+    const applyFinal = () => {
+      setPoints(step.snapshot.points);
+      setShapes(step.snapshot.shapes);
+      setFreehandPaths(step.snapshot.freehandPaths);
+    };
+
+    // Stav PŘED krokem (předchozí snapshot)
     const prevStep = nextIndex > 0 ? recordingState.steps[nextIndex - 1] : null;
     if (prevStep) {
       setPoints(prevStep.snapshot.points);
@@ -10790,85 +11164,95 @@ export function FreeGeometryEditor({
       setShapes([]);
       setFreehandPaths([]);
     }
-    
-    // Pokud má krok vizualizaci nástroje, spustit animaci
-    console.log('🔍 DEBUG PŘEHRÁVAČ: step.actionType:', step.actionType, 'toolVisualization:', step.toolVisualization);
-    if (step.toolVisualization && step.toolVisualization.p1 && step.toolVisualization.p2) {
-      const viz = step.toolVisualization;
-      console.log('🔍 DEBUG: viz.type:', viz.type, 'viz.p1:', viz.p1, 'viz.p2:', viz.p2);
-      let animType: 'segment' | 'line' | 'lineDashed' | 'ray' | 'circle' | 'angle' | null = null;
-      
-      if (viz.type === 'ruler') {
-        if (step.actionType === 'create-segment') animType = 'segment';
-        else if (step.actionType === 'create-line') animType = 'line';
-        else if (step.actionType === 'create-line-dashed') animType = 'lineDashed';
-        else if (step.actionType === 'create-ray') animType = 'ray';
-        else if (step.actionType === 'create-point') {
-          // Pokud je ruler u create-point, je to pravděpodobně vytváření úsečky
-          // (body se vytváří jako vedlejší efekt)
-          animType = 'segment';
-        }
-        console.log('🔍 DEBUG: Detekován RULER, animType:', animType);
-      } else if (viz.type === 'compass') {
-        animType = 'circle';
-        console.log('🔍 DEBUG: Detekován COMPASS');
-      } else if (viz.type === 'protractor') {
-        animType = 'angle';
-        console.log('🔍 DEBUG: Detekován PROTRACTOR');
-      }
-      
-      if (animType) {
-        // Nastavit finální snapshot okamžitě (tvary jsou viditelné)
-        setPoints(step.snapshot.points);
-        setShapes(step.snapshot.shapes);
-        setFreehandPaths(step.snapshot.freehandPaths);
-        
-        // Spustit animaci nástroje (pravítko/kružítko overlay)
-        setAnimState({
-          isActive: true,
-          type: animType,
-          startTime: performance.now(),
-          p1: viz.p1,
-          p2: viz.p2,
-          angle: step.actionType === 'create-angle' ? 45 : undefined,
-          baseAngle: viz.angle,
-          progress: 0
-        });
-        
-        // Po 2 sekundách zrušit animaci (tvary zůstanou ze snapshot); starší časovač nesmí useknout novou animaci
-        if (recordingAnimTimeoutRef.current !== null) window.clearTimeout(recordingAnimTimeoutRef.current);
-        recordingAnimTimeoutRef.current = window.setTimeout(() => {
-          recordingAnimTimeoutRef.current = null;
-          setAnimState({
-            isActive: false,
-            type: null,
-            startTime: 0,
-            p1: null,
-            p2: null,
-            progress: 0
-          });
-        }, constructionAnimMs.total);
-      } else {
-        console.log('⚠️ DEBUG: animType je NULL! Nebudu animovat.');
-        // Bez animace - rovnou nastavit snapshot
-        setPoints(step.snapshot.points);
-        setShapes(step.snapshot.shapes);
-        setFreehandPaths(step.snapshot.freehandPaths);
-      }
-    } else {
-      console.log('⚠️ DEBUG: Krok nemá toolVisualization nebo chybí p1/p2!');
-      // Bez vizualizace - rovnou nastavit snapshot
-      setPoints(step.snapshot.points);
-      setShapes(step.snapshot.shapes);
-      setFreehandPaths(step.snapshot.freehandPaths);
+
+    const viz = step.toolVisualization;
+    if (!viz || !viz.p1 || !viz.p2) {
+      setAnimState({ isActive: false, type: null, startTime: 0, p1: null, p2: null, progress: 0 });
+      applyFinal();
+      return;
     }
+    const newShapes = recordingStepNewShapes(step.snapshot, prevStep?.snapshot ?? null);
+    const near = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y) < 1;
+    const at = step.actionType;
+    const rulerTypeFromAction: ReplayStrokeType | null =
+      at === 'create-segment' ? 'segment'
+      : at === 'create-line' ? 'line'
+      : at === 'create-line-dashed' ? 'lineDashed'
+      : at === 'create-ray' ? 'ray'
+      : null;
+
+    let next: AnimationState | null = null;
+    let revealMs = 0;
+    let totalMs = constructionAnimMs.total;
+
+    if (viz.type === 'ruler') {
+      let type: ReplayStrokeType | null = rulerTypeFromAction ?? (at === 'create-point' ? 'segment' : null);
+      if (!type) {
+        // Akce kroku je jiná (např. create-circle), ale pravítko rýsovalo čáru — typ podle nového tvaru.
+        const s = newShapes.find(n => REPLAY_STROKE_TYPES.includes(n.type));
+        if (s) type = s.type === 'lineDashDot' ? 'lineDashDot' : (s.type as ReplayStrokeType);
+      }
+      if (type) {
+        next = { isActive: true, type, startTime: performance.now(), p1: viz.p1, p2: viz.p2, progress: 0 };
+        revealMs = constructionAnimMs.fadeIn + constructionAnimMs.draw;
+      }
+    } else if (viz.type === 'compass') {
+      const arc = newShapes.find(n => n.type === 'circleArc' && n.p2 && near(n.p1, viz.p1!));
+      next = arc
+        ? { isActive: true, type: 'circleArc', startTime: performance.now(), p1: arc.p1, p2: arc.p2, arcSpan: arc.arcSpan ?? COMPASS_ARC_SPAN_RAD, progress: 0 }
+        : { isActive: true, type: 'circle', startTime: performance.now(), p1: viz.p1, p2: viz.p2, progress: 0 };
+      revealMs = constructionAnimMs.fadeIn + constructionAnimMs.draw;
+    } else if (viz.type === 'protractor') {
+      const geo = protractorReplayGeometry({ p1: viz.p1, p2: viz.p2, angle: viz.angle });
+      // Rameno: tvar, který krok přidal a prochází vrcholem (polopřímka / úsečka / přímka).
+      const arm = newShapes.find(
+        n => REPLAY_STROKE_TYPES.includes(n.type) && n.p2 && (near(n.p1, viz.p1!) || near(n.p2, viz.p1!)),
+      );
+      let strokeType: ReplayStrokeType = rulerTypeFromAction ?? 'ray';
+      let strokeP1 = viz.p1;
+      let strokeP2 = viz.p2;
+      if (arm && arm.p2) {
+        strokeType = arm.type as ReplayStrokeType;
+        // Rýsuje se od vrcholu.
+        if (near(arm.p1, viz.p1)) { strokeP1 = arm.p1; strokeP2 = arm.p2; }
+        else { strokeP1 = arm.p2; strokeP2 = arm.p1; }
+      }
+      totalMs = PROTRACTOR_REPLAY_MS.total;
+      revealMs = PROTRACTOR_REPLAY_MS.drawEnd;
+      next = {
+        isActive: true,
+        type: 'protractorReplay',
+        startTime: performance.now(),
+        p1: viz.p1,
+        p2: viz.p2,
+        baseAngle: geo.baseAngle,
+        progress: 0,
+        durationMs: totalMs,
+        replay: { value: geo.value, mirrored: geo.mirrored, strokeType, strokeP1, strokeP2 },
+      };
+      ensureProtractorStepInView(step);
+    }
+
+    if (!next) {
+      setAnimState({ isActive: false, type: null, startTime: 0, p1: null, p2: null, progress: 0 });
+      applyFinal();
+      return;
+    }
+
+    setAnimState(next);
+    recordingRevealTimeoutRef.current = window.setTimeout(() => {
+      recordingRevealTimeoutRef.current = null;
+      applyFinal();
+    }, revealMs);
+    // Konec animace (tvary už jsou ze snapshotu); starší časovač nesmí useknout novou animaci
+    recordingAnimTimeoutRef.current = window.setTimeout(() => {
+      recordingAnimTimeoutRef.current = null;
+      setAnimState({ isActive: false, type: null, startTime: 0, p1: null, p2: null, progress: 0 });
+    }, totalMs);
   };
 
   const resetRecordingAnim = () => {
-    if (recordingAnimTimeoutRef.current !== null) {
-      window.clearTimeout(recordingAnimTimeoutRef.current);
-      recordingAnimTimeoutRef.current = null;
-    }
+    clearRecordingTimers();
     setAnimState({ isActive: false, type: null, startTime: 0, p1: null, p2: null, progress: 0 });
   };
 
