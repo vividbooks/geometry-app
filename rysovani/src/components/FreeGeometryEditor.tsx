@@ -77,6 +77,7 @@ import macosOpenHandCursor from '../assets/macos-open-hand.svg?url';
 import Pero from '../imports/Group23910-135-1585';
 import Pravitko from '../imports/Pravitko';
 import Kruzitko from '../imports/Group23908-135-1191';
+import { drawCompassArt, compassArmLength } from './compassArt';
 import Uhel from '../imports/Uhel';
 import Papir from '../imports/Papir';
 
@@ -641,6 +642,14 @@ function protractorReplayWorldPoints(step: RecordingStepForBounds): Array<{ x: n
 type ReplayStrokeType = 'segment' | 'line' | 'lineDashed' | 'lineDashDot' | 'ray';
 const REPLAY_STROKE_TYPES: ReadonlyArray<string> = ['segment', 'line', 'lineDashed', 'lineDashDot', 'ray'];
 
+/**
+ * Přehrávač: zpomalení všech fází pomůcek (plán se staví v „logických“ ms, přehrává se
+ * TOOL_ANIM_SPEED× pomaleji). 1 = původní tempo.
+ */
+const TOOL_ANIM_SPEED = 1.5;
+/** Pauza (logické ms), kdy pomůcka po dorýsování ještě leží na místě, než odjede (× TOOL_ANIM_SPEED). */
+const TOOL_HOLD_MS = 450;
+
 /** Časová osa přehrání kroku s úhloměrem (ms od začátku animace). */
 const PROTRACTOR_REPLAY_MS = {
   /** 1) úhloměr přijede a přiloží se */
@@ -658,8 +667,10 @@ const PROTRACTOR_REPLAY_MS = {
   rulerInEnd: 4400,
   /** 5) rýsování ramene — na konci se objeví výsledná geometrie kroku */
   drawEnd: 5800,
+  /** pravítko po dorýsování chvíli leží */
+  hold: TOOL_HOLD_MS,
   /** pravítko odjede */
-  total: 6400,
+  total: 6400 + TOOL_HOLD_MS,
 } as const;
 
 type RPt = { x: number; y: number };
@@ -905,7 +916,7 @@ function buildRecordingReplayPlan(
       const drawStart = slideEnd + (lengthCm !== null ? 900 : highlight.length ? 500 : 150);
       const drawEnd = drawStart + 1200;
       push(
-        { kind: 'ruler', start: cursor, dur: drawEnd + 550, stroke: sh.type as ReplayStrokeType, p1: a, p2: b, rA, rB, slideFrom, highlight, lengthCm, arriveEnd, slideEnd, drawStart, drawEnd },
+        { kind: 'ruler', start: cursor, dur: drawEnd + TOOL_HOLD_MS + 550, stroke: sh.type as ReplayStrokeType, p1: a, p2: b, rA, rB, slideFrom, highlight, lengthCm, arriveEnd, slideEnd, drawStart, drawEnd },
         drawEnd,
         sh.id,
       );
@@ -957,7 +968,7 @@ function buildRecordingReplayPlan(
       const drawStart = moveEnd + 150;
       const drawEnd = drawStart + 700 + 1100 * Math.min(1, Math.abs(endAng - startAng) / (Math.PI * 2));
       push(
-        { kind: 'compass', start: cursor, dur: drawEnd + 550, center: a, r, startAng, endAng, mode, P, Q, arriveEnd, openStart, openEnd, moveEnd, drawStart, drawEnd },
+        { kind: 'compass', start: cursor, dur: drawEnd + TOOL_HOLD_MS + 550, center: a, r, startAng, endAng, mode, P, Q, arriveEnd, openStart, openEnd, moveEnd, drawStart, drawEnd },
         drawEnd,
         sh.id,
       );
@@ -10818,7 +10829,6 @@ export function FreeGeometryEditor({
   };
 
   const drawCompass = (ctx: CanvasRenderingContext2D, center: {x:number, y:number}, radius: number, progress: number, p2?: {x:number, y:number}) => {
-    if (!compassImageRef.current) return;
 
     const { pIn, pDrawEnd } = animPhase;
     let opacity = 0;
@@ -10842,11 +10852,8 @@ export function FreeGeometryEditor({
     ctx.translate(center.x, center.y);
     ctx.rotate(rotation);
     ctx.globalAlpha = opacity;
-    // Vykreslit kružítko tak, aby hrot byl v [0,0] a tužka v [radius, 0]
-    // Toto SVG kružítka je asi statické, musíme ho naškálovat? 
-    // V jiných komponentách se kreslí: ctx.drawImage(compass, 0, -compassHeight, compassWidth, compassHeight);
-    // Kde compassWidth odpovídá rádiusu.
-    ctx.drawImage(compassImageRef.current, 0, -radius, radius, radius); 
+    // Hrot v [0,0], tuha v [radius, 0]; ramena se rozevírají kolem čepů v hlavě (compassArt).
+    drawCompassArt(ctx, radius, compassArmLength(radius, 4 * PIXELS_PER_CM));
     ctx.restore();
   };
 
@@ -10899,21 +10906,21 @@ export function FreeGeometryEditor({
     ctx.restore();
   };
 
-  /** Kružítko: hrot v `needle`, rozevřené na `w` (tužka v needle + w ve směru `rot`). */
+  /** Kružítko: hrot v `needle`, rozevřené na `w` (tuha v needle + w ve směru `rot`), ramena délky `armLen`. */
   const drawCompassPose = (
     ctx: CanvasRenderingContext2D,
     needle: { x: number; y: number },
     w: number,
-    H: number,
+    armLen: number,
     rot: number,
     alpha: number,
   ) => {
-    if (!compassImageRef.current || alpha <= 0) return;
+    if (alpha <= 0) return;
     ctx.save();
     ctx.translate(needle.x, needle.y);
     ctx.rotate(rot);
     ctx.globalAlpha = Math.min(1, alpha);
-    ctx.drawImage(compassImageRef.current, 0, -H, Math.max(w, 4 / scale), H);
+    drawCompassArt(ctx, Math.max(0, w), armLen);
     ctx.restore();
   };
 
@@ -11007,7 +11014,7 @@ export function FreeGeometryEditor({
         const nb = flip ? { x: -u.y, y: u.x } : { x: u.y, y: -u.x };
         const eIn = ease(seg(0, act.arriveEnd));
         const eSlide = act.slideFrom ? ease(seg(act.arriveEnd, act.slideEnd)) : 1;
-        const eOut = ease(seg(act.drawEnd, act.dur));
+        const eOut = ease(seg(act.drawEnd + TOOL_HOLD_MS, act.dur));
         const approach = (1 - eIn + eOut) * 160;
         let dx = nb.x * approach;
         let dy = nb.y * approach;
@@ -11063,14 +11070,15 @@ export function FreeGeometryEditor({
       if (act.kind === 'compass') {
         const c = act.center;
         const r = act.r;
-        const H = Math.max(r, 90);
+        // délka ramene: ~0,8 r, ale aspoň ~4 cm (při velkém přiblížení max. ~220 px na obrazovce)
+        const armLen = compassArmLength(r, Math.min(4 * PIXELS_PER_CM, 220 / scale));
         const eIn = ease(seg(0, act.arriveEnd));
-        const eOut = ease(seg(act.drawEnd, act.dur));
+        const eOut = ease(seg(act.drawEnd + TOOL_HOLD_MS, act.dur));
         const alpha = Math.min(eIn * 1.2, 1 - eOut);
         const N0 = act.mode === 'transfer' && act.P ? act.P : c;
         const openTarget = act.mode === 'toPoint' && act.Q ? act.Q : act.mode === 'transfer' && act.Q && act.P ? act.Q : null;
         const openDir = openTarget ? Math.atan2(openTarget.y - N0.y, openTarget.x - N0.x) : act.startAng;
-        const w0 = act.mode === 'keep' ? r : r * 0.3;
+        const w0 = act.mode === 'keep' ? r : r * 0.02; // přijede složené, rozevře se z ~0
         const eOpen = ease(seg(act.openStart, act.openEnd));
         const w = w0 + (r - w0) * eOpen;
         const eMove = ease(seg(act.openEnd, act.moveEnd));
@@ -11094,7 +11102,7 @@ export function FreeGeometryEditor({
             drawRuler(ctx, c, { x: c.x + dir.x * 100, y: c.y + dir.y * 100 }, 0, ra, !rulerFlipFor(c, { x: c.x + dir.x, y: c.y + dir.y }) ? false : true);
           }
         }
-        if (!hide) drawCompassPose(ctx, nPos, w, H, rot, alpha);
+        if (!hide) drawCompassPose(ctx, nPos, w, armLen, rot, alpha);
 
         // zvýraznění: střed (zapíchnutí), body pro rozevření
         if (t >= act.arriveEnd - 150 && t <= act.drawStart) {
@@ -11220,7 +11228,7 @@ export function FreeGeometryEditor({
 
     if (!hideToolOverlays && t >= T.rulerInStart) {
       const rin = ease(seg(T.rulerInStart, T.rulerInEnd));
-      const rout = ease(seg(T.drawEnd, T.total));
+      const rout = ease(seg(T.drawEnd + T.hold, T.total));
       const slide = (1 - rin + rout) * 160;
       const isLine = rp.strokeType !== 'ray' && rp.strokeType !== 'segment';
       const a = isLine ? { x: sP1.x - u.x * 360, y: sP1.y - u.y * 360 } : sP1;
@@ -11305,13 +11313,15 @@ export function FreeGeometryEditor({
     highlightStyle?: { color: string; pulse?: number; sweepTo?: number }
   ) => {
     // Udrž velikosti čar/textu čitelné při zoomu (konstantní px na obrazovce).
-    const lwMain = 3 / scale;
-    const lwMinor = 1 / scale;
-    const tickBaseW = 1 / scale;
-    const tickTenW = 2 / scale;
-    const tickMajorW = 3 / scale;
-    const fontMajor = 18 / scale;
-    const fontTen = 12 / scale;
+    const lwMain = 4 / scale;
+    const lwMinor = 1.6 / scale;
+    const tickBaseW = 1.5 / scale;
+    const tickTenW = 2.6 / scale;
+    const tickMajorW = 3.6 / scale;
+    const fontMajor = 20 / scale;
+    const fontTen = 13.5 / scale;
+    // Výchozí oranžová úhloměru sytější (ve tmavém režimu jasnější), ať je stupnice čitelná i při oddálení.
+    if (color.toLowerCase() === '#f97316') color = darkMode ? '#ff8a2a' : '#ea580c';
 
     ctx.save();
     ctx.translate(center.x, center.y);
@@ -11323,6 +11333,16 @@ export function FreeGeometryEditor({
     if (isMirrored) {
       ctx.scale(1, -1);
     }
+
+    // 0. Lehké podbarvení půlkruhu (jako světlý fill pravítka)
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, 0, Math.PI, true);
+    ctx.closePath();
+    ctx.save();
+    ctx.globalAlpha *= darkMode ? 0.15 : 0.14;
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.restore();
 
     // 1. Hlavní obrys - půlkruh (horní polovina)
     ctx.strokeStyle = color;
@@ -11748,18 +11768,18 @@ export function FreeGeometryEditor({
       p1: { x: 0, y: 0 },
       p2: { x: 0, y: 0 },
       progress: 0,
-      durationMs: plan.total,
+      durationMs: plan.total * TOOL_ANIM_SPEED,
       plan,
     });
     ensureRecordingPtsInView(plan.cameraPts, step);
     recordingRevealTimeoutsRef.current = plan.reveals.map(rv =>
-      window.setTimeout(() => applySnap(rv.snap), rv.at),
+      window.setTimeout(() => applySnap(rv.snap), rv.at * TOOL_ANIM_SPEED),
     );
     recordingAnimTimeoutRef.current = window.setTimeout(() => {
       recordingAnimTimeoutRef.current = null;
       applySnap(step.snapshot);
       setAnimState({ isActive: false, type: null, startTime: 0, p1: null, p2: null, progress: 0 });
-    }, plan.total + 30);
+    }, plan.total * TOOL_ANIM_SPEED + 30);
   };
 
   const resetRecordingAnim = () => {
