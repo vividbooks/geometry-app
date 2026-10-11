@@ -77,7 +77,7 @@ import macosOpenHandCursor from '../assets/macos-open-hand.svg?url';
 import Pero from '../imports/Group23910-135-1585';
 import Pravitko from '../imports/Pravitko';
 import Kruzitko from '../imports/Group23908-135-1191';
-import { drawCompassArt, compassArmLength, compassArmForHeight, compassMinOpen } from './compassArt';
+import { drawCompassArt, compassArmLength, compassArmForHeight } from './compassArt';
 import Uhel from '../imports/Uhel';
 import Papir from '../imports/Papir';
 
@@ -1898,7 +1898,6 @@ export function FreeGeometryEditor({
   // Assets
   const rulerImageRef = useRef<HTMLImageElement | null>(null);
   const rulerHandCursorImageRef = useRef<HTMLImageElement | null>(null);
-  const compassImageRef = useRef<HTMLImageElement | null>(null);
   const protractorImageRef = useRef<HTMLImageElement | null>(null);
   const [assetsLoaded, setAssetsLoaded] = useState(false);
 
@@ -3696,7 +3695,7 @@ export function FreeGeometryEditor({
   // --- NAČTENÍ OBRÁZKŮ ---
   useEffect(() => {
     let loadedCount = 0;
-    const TOTAL_ASSETS = 3;
+    const TOTAL_ASSETS = 2;
     const checkLoaded = () => {
       loadedCount++;
       if (loadedCount === TOTAL_ASSETS) setAssetsLoaded(true);
@@ -3706,11 +3705,6 @@ export function FreeGeometryEditor({
     ruler.crossOrigin = 'anonymous';
     ruler.onload = () => { rulerImageRef.current = ruler; checkLoaded(); };
     ruler.src = 'https://jjpiguuubvmiobmixwgh.supabase.co/storage/v1/object/public/Admin%20math/pravitko4.svg';
-
-    const compass = new Image();
-    compass.crossOrigin = 'anonymous';
-    compass.onload = () => { compassImageRef.current = compass; checkLoaded(); };
-    compass.src = 'https://jjpiguuubvmiobmixwgh.supabase.co/storage/v1/object/public/Admin%20math/kruzitko.svg';
 
     const protractor = new Image();
     // Assets from figma:asset do not need crossOrigin usually, but it's safe.
@@ -10852,7 +10846,7 @@ export function FreeGeometryEditor({
     ctx.translate(center.x, center.y);
     ctx.rotate(rotation);
     ctx.globalAlpha = opacity;
-    // Hrot v [0,0], tuha v [radius, 0]; ramena se rozevírají kolem čepů v hlavě (compassArt).
+    // Hrot v [0,0], tuha v [radius, 0]; snímek modelu podle rozevření (compassArt).
     drawCompassArt(ctx, radius, compassArmLength(radius, 4 * PIXELS_PER_CM, compassArmForHeight(120 / scale)));
     ctx.restore();
   };
@@ -10906,7 +10900,10 @@ export function FreeGeometryEditor({
     ctx.restore();
   };
 
-  /** Kružítko: hrot v `needle`, rozevřené na `w` (tuha v needle + w ve směru `rot`), ramena délky `armLen`. */
+  /**
+   * Kružítko: hrot v `needle`, rozevřené na `w` (tuha v needle + w ve směru `rot`), ramena délky `armLen`.
+   * `exact` < 1 během rozevírání: měřítko podle ramene, ne přesně podle hrotů (viz drawCompassArt).
+   */
   const drawCompassPose = (
     ctx: CanvasRenderingContext2D,
     needle: { x: number; y: number },
@@ -10914,13 +10911,14 @@ export function FreeGeometryEditor({
     armLen: number,
     rot: number,
     alpha: number,
+    exact = 1,
   ) => {
     if (alpha <= 0) return;
     ctx.save();
     ctx.translate(needle.x, needle.y);
     ctx.rotate(rot);
     ctx.globalAlpha = Math.min(1, alpha);
-    drawCompassArt(ctx, Math.max(0, w), armLen);
+    drawCompassArt(ctx, Math.max(0, w), armLen, exact);
     ctx.restore();
   };
 
@@ -11071,7 +11069,7 @@ export function FreeGeometryEditor({
         const c = act.center;
         const r = act.r;
         // délka ramene: ~0,8 r, aspoň ~4 cm (při velkém přiblížení max. ~220 px na obrazovce);
-        // pro malé r se kružítko zmenší (nezavírá se pod minimum), ale ne pod ~120 px výšky
+        // pro malé r se kružítko zmenší, ale ne pod ~120 px výšky
         const armLen = compassArmLength(r, Math.min(4 * PIXELS_PER_CM, 220 / scale), compassArmForHeight(120 / scale));
         const eIn = ease(seg(0, act.arriveEnd));
         const eOut = ease(seg(act.drawEnd + TOOL_HOLD_MS, act.dur));
@@ -11079,9 +11077,11 @@ export function FreeGeometryEditor({
         const N0 = act.mode === 'transfer' && act.P ? act.P : c;
         const openTarget = act.mode === 'toPoint' && act.Q ? act.Q : act.mode === 'transfer' && act.Q && act.P ? act.Q : null;
         const openDir = openTarget ? Math.atan2(openTarget.y - N0.y, openTarget.x - N0.x) : act.startAng;
-        const w0 = act.mode === 'keep' ? r : Math.min(r, compassMinOpen(armLen)); // přijede v minimálním rozevření
+        const w0 = act.mode === 'keep' ? r : 0; // přijede zavřené (snímek 0), pak se snímky rozevírá
         const eOpen = ease(seg(act.openStart, act.openEnd));
         const w = w0 + (r - w0) * eOpen;
+        // během rozevírání měřítko podle ramene, ke konci přesně podle hrotů (tuha dojede na cíl)
+        const exact = act.mode === 'keep' ? 1 : ease(seg(act.openStart + (act.openEnd - act.openStart) * 0.5, act.openEnd));
         const eMove = ease(seg(act.openEnd, act.moveEnd));
         let needle = N0;
         if (act.mode === 'transfer') needle = { x: N0.x + (c.x - N0.x) * eMove, y: N0.y + (c.y - N0.y) * eMove };
@@ -11103,7 +11103,7 @@ export function FreeGeometryEditor({
             drawRuler(ctx, c, { x: c.x + dir.x * 100, y: c.y + dir.y * 100 }, 0, ra, !rulerFlipFor(c, { x: c.x + dir.x, y: c.y + dir.y }) ? false : true);
           }
         }
-        if (!hide) drawCompassPose(ctx, nPos, w, armLen, rot, alpha);
+        if (!hide) drawCompassPose(ctx, nPos, w, armLen, rot, alpha, exact);
 
         // zvýraznění: střed (zapíchnutí), body pro rozevření
         if (t >= act.arriveEnd - 150 && t <= act.drawStart) {
