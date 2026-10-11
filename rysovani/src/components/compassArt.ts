@@ -26,7 +26,7 @@ const M = MODEL as unknown as Model;
 const deg = Math.PI / 180;
 
 /** Velikost kružítka v animacích (1 = původní: rameno ~0,8·r, min. 4 cm, strop 220 px, spodní mez 120 px). */
-export const COMPASS_SIZE = 1.3;
+export const COMPASS_SIZE = 1.7;
 /** Podíl výšky kresby a délky ramene (typicky 0,8–0,9 ve střední části rozevírání). */
 const HEIGHT_PER_ARM = 0.85;
 /** Nejmenší polovina úhlu ramen při volbě velikosti (pro malé r se kružítko spíš zmenší). */
