@@ -77,7 +77,7 @@ import macosOpenHandCursor from '../assets/macos-open-hand.svg?url';
 import Pero from '../imports/Group23910-135-1585';
 import Pravitko from '../imports/Pravitko';
 import Kruzitko from '../imports/Group23908-135-1191';
-import { drawCompassArt, compassArmLength, compassArmForHeight } from './compassArt';
+import { drawCompassArt, compassArmLength, compassArmForHeight, COMPASS_SIZE, COMPASS_HEAD_PER_ARM } from './compassArt';
 import Uhel from '../imports/Uhel';
 import Papir from '../imports/Papir';
 
@@ -980,6 +980,20 @@ function buildRecordingReplayPlan(
       cameraPts.push(a);
       if (P) cameraPts.push(P);
       if (Q) cameraPts.push(Q);
+      // kružítko samo (hlava nad spojnicí hrotů) — odhad délky ramene ve světě (bez stropu na obrazovce)
+      {
+        const L = compassArmLength(r, 4 * COMPASS_SIZE * pxPerCm);
+        const hh = COMPASS_HEAD_PER_ARM * L;
+        const headAt = (o: RPt, ang: number, w: number) => {
+          for (const lx of [w / 2 - 0.3 * L, w / 2 + 0.3 * L]) {
+            cameraPts.push({ x: o.x + Math.cos(ang) * lx + Math.sin(ang) * hh, y: o.y + Math.sin(ang) * lx - Math.cos(ang) * hh });
+          }
+        };
+        for (let i = 0; i <= 6; i++) headAt(a, startAng + ((endAng - startAng) * i) / 6, r);
+        if (mode === 'transfer' && P && Q) headAt(P, Math.atan2(Q.y - P.y, Q.x - P.x), r);
+        if (mode === 'toPoint' && Q) headAt(a, Math.atan2(Q.y - a.y, Q.x - a.x), r);
+        headAt(a, startAng, 0); // příjezd zavřené
+      }
       continue;
     }
   }
@@ -10846,8 +10860,8 @@ export function FreeGeometryEditor({
     ctx.translate(center.x, center.y);
     ctx.rotate(rotation);
     ctx.globalAlpha = opacity;
-    // Hrot v [0,0], tuha v [radius, 0]; snímek modelu podle rozevření (compassArt).
-    drawCompassArt(ctx, radius, compassArmLength(radius, 4 * PIXELS_PER_CM, compassArmForHeight(120 / scale)));
+    // Hrot v [0,0], tuha v [radius, 0]; 3D model promítnutý podle rozevření (compassArt).
+    drawCompassArt(ctx, radius, compassArmLength(radius, 4 * COMPASS_SIZE * PIXELS_PER_CM, compassArmForHeight((120 * COMPASS_SIZE) / scale)));
     ctx.restore();
   };
 
@@ -10901,9 +10915,93 @@ export function FreeGeometryEditor({
   };
 
   /**
-   * Kružítko: hrot v `needle`, rozevřené na `w` (tuha v needle + w ve směru `rot`), ramena délky `armLen`.
-   * `exact` < 1 během rozevírání: měřítko podle ramene, ne přesně podle hrotů (viz drawCompassArt).
+   * Stupnice v cm na hraně pravítka přiloženého ke kružítku (zadaný poloměr): nula v `c`, hrana ve směru `ang`,
+   * tělo pravítka na straně `flip` (jako drawRuler). Rysky po mm, delší po 5 mm a cm, čísla cm;
+   * úsek 0 → `w` (aktuální rozevření) zvýrazněný, značka a hodnota u `r`.
    */
+  const drawReplayRulerScale = (
+    ctx: CanvasRenderingContext2D,
+    c: { x: number; y: number },
+    ang: number,
+    flip: boolean,
+    alpha: number,
+    r: number,
+    w: number,
+  ) => {
+    if (alpha <= 0) return;
+    const ux = Math.cos(ang), uy = Math.sin(ang);
+    // normála do těla pravítka (drawRuler kreslí tělo na −y lokálně, při flipu na +y)
+    const s = flip ? 1 : -1;
+    const nx = -uy * s, ny = ux * s;
+    const mm = PIXELS_PER_CM / 10;
+    const tickCol = '#312e81';
+    const hl = '#2563eb';
+    const lw = Math.min(1.2, 1 / scale);
+    const fs = Math.min(30, Math.max(12, 11 / scale));
+    const textAng = ux < -1e-6 ? ang + Math.PI : ang;
+    const at = (x: number, t: number) => ({ x: c.x + ux * x + nx * t, y: c.y + uy * x + ny * t });
+    const maxCm = Math.min(15, Math.ceil(r / PIXELS_PER_CM) + 2);
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    // zvýrazněný úsek 0 → w podél hrany
+    const band = Math.max(4, 5 / scale);
+    const a0 = at(0, 0), a1 = at(Math.max(0, w), 0), a2 = at(Math.max(0, w), band), a3 = at(0, band);
+    ctx.beginPath();
+    ctx.moveTo(a0.x, a0.y); ctx.lineTo(a1.x, a1.y); ctx.lineTo(a2.x, a2.y); ctx.lineTo(a3.x, a3.y); ctx.closePath();
+    ctx.fillStyle = 'rgba(37, 99, 235, 0.28)';
+    ctx.fill();
+    // rysky
+    ctx.beginPath();
+    for (let i = 0; i <= maxCm * 10; i++) {
+      const len = i % 10 === 0 ? 15 : i % 5 === 0 ? 10 : 6;
+      const p0 = at(i * mm, 0), p1 = at(i * mm, len);
+      ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y);
+    }
+    ctx.strokeStyle = tickCol;
+    ctx.lineWidth = lw;
+    ctx.stroke();
+    // čísla cm
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const rCm = r / PIXELS_PER_CM;
+    const rTxt = (Math.round(rCm * 10) / 10).toString().replace('.', ',');
+    const rIsWhole = Math.abs(rCm - Math.round(rCm)) < 0.05;
+    for (let k = 0; k <= maxCm; k++) {
+      const q = at(k * PIXELS_PER_CM, 15 + 3 + fs * 0.55);
+      const isR = rIsWhole && k === Math.round(rCm);
+      ctx.save();
+      ctx.translate(q.x, q.y);
+      ctx.rotate(textAng);
+      ctx.font = `${isR ? 'bold ' : ''}${fs}px sans-serif`;
+      ctx.fillStyle = isR ? hl : tickCol;
+      ctx.fillText(String(k), 0, 0);
+      ctx.restore();
+    }
+    // značka r: delší barevná ryska + hodnota (u necelého r)
+    const m0 = at(r, -2), m1 = at(r, 24);
+    ctx.beginPath();
+    ctx.moveTo(m0.x, m0.y); ctx.lineTo(m1.x, m1.y);
+    ctx.strokeStyle = hl;
+    ctx.lineWidth = Math.max(2, 2.5 / scale);
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    if (!rIsWhole) {
+      const q = at(r, 24 + 3 + fs * 0.6);
+      ctx.save();
+      ctx.translate(q.x, q.y);
+      ctx.rotate(textAng);
+      ctx.font = `bold ${fs}px sans-serif`;
+      const tw = ctx.measureText(rTxt).width;
+      ctx.fillStyle = 'rgba(255, 253, 231, 0.9)';
+      ctx.fillRect(-tw / 2 - 3, -fs * 0.6, tw + 6, fs * 1.2);
+      ctx.fillStyle = hl;
+      ctx.fillText(rTxt, 0, 0);
+      ctx.restore();
+    }
+    ctx.restore();
+  };
+
+  /** Kružítko: hrot v `needle`, rozevřené na `w` (tuha v needle + w ve směru `rot`), ramena délky `armLen`. */
   const drawCompassPose = (
     ctx: CanvasRenderingContext2D,
     needle: { x: number; y: number },
@@ -10911,14 +11009,13 @@ export function FreeGeometryEditor({
     armLen: number,
     rot: number,
     alpha: number,
-    exact = 1,
   ) => {
     if (alpha <= 0) return;
     ctx.save();
     ctx.translate(needle.x, needle.y);
     ctx.rotate(rot);
     ctx.globalAlpha = Math.min(1, alpha);
-    drawCompassArt(ctx, Math.max(0, w), armLen, exact);
+    drawCompassArt(ctx, Math.max(0, w), armLen);
     ctx.restore();
   };
 
@@ -11068,23 +11165,25 @@ export function FreeGeometryEditor({
       if (act.kind === 'compass') {
         const c = act.center;
         const r = act.r;
-        // délka ramene: ~0,8 r, aspoň ~4 cm (při velkém přiblížení max. ~220 px na obrazovce);
-        // pro malé r se kružítko zmenší, ale ne pod ~120 px výšky
-        const armLen = compassArmLength(r, Math.min(4 * PIXELS_PER_CM, 220 / scale), compassArmForHeight(120 / scale));
+        // délka ramene: ~0,8·r, aspoň ~4 cm (při velkém přiblížení max. ~220 px na obrazovce), vše × COMPASS_SIZE;
+        // pro malé r se kružítko zmenší, ale ne pod ~120·COMPASS_SIZE px výšky
+        const armLen = compassArmLength(
+          r,
+          Math.min(4 * COMPASS_SIZE * PIXELS_PER_CM, (220 * COMPASS_SIZE) / scale),
+          compassArmForHeight((120 * COMPASS_SIZE) / scale),
+        );
         const eIn = ease(seg(0, act.arriveEnd));
         const eOut = ease(seg(act.drawEnd + TOOL_HOLD_MS, act.dur));
         const alpha = Math.min(eIn * 1.2, 1 - eOut);
         const N0 = act.mode === 'transfer' && act.P ? act.P : c;
         const openTarget = act.mode === 'toPoint' && act.Q ? act.Q : act.mode === 'transfer' && act.Q && act.P ? act.Q : null;
         const openDir = openTarget ? Math.atan2(openTarget.y - N0.y, openTarget.x - N0.x) : act.startAng;
-        const w0 = act.mode === 'keep' ? r : 0; // přijede zavřené (snímek 0), pak se snímky rozevírá
+        const w0 = act.mode === 'keep' ? r : 0; // přijede zavřené, pak se rozevírá
         const eOpen = ease(seg(act.openStart, act.openEnd)); // ease-in-out
-        // rozevírání: rovnoměrně (s easingem) roste úhel ramen, tj. snímky jdou plynule 0 → cílový;
+        // rozevírání: úhel ramen roste s easingem (model se promítá spojitě);
         // rozevření w = 2·L·sin(úhel), na konci přesně r
         const hT = Math.asin(Math.min(1, r / (2 * armLen)));
         const w = w0 === r || hT <= 0 ? w0 + (r - w0) * eOpen : (r * Math.sin(hT * eOpen)) / Math.sin(hT);
-        // během rozevírání měřítko podle ramene, ke konci přesně podle hrotů (tuha dojede na cíl)
-        const exact = act.mode === 'keep' ? 1 : ease(seg(act.openStart + (act.openEnd - act.openStart) * 0.5, act.openEnd));
         const eMove = ease(seg(act.openEnd, act.moveEnd));
         let needle = N0;
         if (act.mode === 'transfer') needle = { x: N0.x + (c.x - N0.x) * eMove, y: N0.y + (c.y - N0.y) * eMove };
@@ -11103,10 +11202,13 @@ export function FreeGeometryEditor({
           if (ra > 0) {
             const dir = { x: Math.cos(act.startAng), y: Math.sin(act.startAng) };
             // pravítko hranou na spojnici střed → tužka, tělo pod ní (od oblouku)
-            drawRuler(ctx, c, { x: c.x + dir.x * 100, y: c.y + dir.y * 100 }, 0, ra, !rulerFlipFor(c, { x: c.x + dir.x, y: c.y + dir.y }) ? false : true);
+            const flipR = rulerFlipFor(c, { x: c.x + dir.x, y: c.y + dir.y });
+            drawRuler(ctx, c, { x: c.x + dir.x * 100, y: c.y + dir.y * 100 }, 0, ra, flipR);
+            // stupnice v cm na hraně (nula u hrotu jehly), tuha jede po stupnici k hodnotě r
+            drawReplayRulerScale(ctx, c, act.startAng, flipR, ra, r, w);
           }
         }
-        if (!hide) drawCompassPose(ctx, nPos, w, armLen, rot, alpha, exact);
+        if (!hide) drawCompassPose(ctx, nPos, w, armLen, rot, alpha);
 
         // zvýraznění: střed (zapíchnutí), body pro rozevření
         if (t >= act.arriveEnd - 150 && t <= act.drawStart) {
