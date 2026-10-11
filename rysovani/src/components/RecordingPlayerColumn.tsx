@@ -298,7 +298,7 @@ export function RecordingStepArrows({
   onNext: () => void;
   canPrev: boolean;
   canNext: boolean;
-  /** true = vedle sebe dole uprostřed (mobil), false = pod sebou u levého okraje (Další nahoře). */
+  /** true = vedle sebe dole uprostřed (mobil), false = pod sebou u levého okraje. */
   row: boolean;
 }) {
   const btn =
@@ -306,8 +306,7 @@ export function RecordingStepArrows({
   return (
     <div
       className={`absolute z-50 flex pointer-events-none ${
-        // Pod sebou je Další nahoře a Předchozí pod ním, stejně jako v nástěnce.
-        row ? 'left-1/2 -translate-x-1/2 flex-row' : 'top-1/2 -translate-y-1/2 flex-col-reverse'
+        row ? 'left-1/2 -translate-x-1/2 flex-row' : 'top-1/2 -translate-y-1/2 flex-col'
       }`}
       style={
         row
