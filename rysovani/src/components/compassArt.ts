@@ -203,12 +203,15 @@ function project(half: number) {
 const halfFor = (w: number, armLen: number) =>
   Math.min(M.camera.halfMax, Math.asin(Math.min(1, Math.max(0, w / (2 * Math.max(armLen, 1e-6))))) / deg);
 
+/** Největší polovina úhlu ramen, do které se kružítko jen rozevírá; teprve pak se zvětšuje. */
+export const MAX_OPEN_HALF_DEG = 60;
 /**
- * Délka ramene (světové px) pro poloměr r: ~0,8·COMPASS_SIZE·r, aspoň minArm (volající ho už násobí COMPASS_SIZE). Když by r vyžadovalo menší rozevření
+ * Délka ramene (světové px) pro poloměr r: kružítko má stálou velikost minArm (volající ho už násobí COMPASS_SIZE) a jen se rozevírá;
+ * zvětšuje se teprve, když by r vyžadovalo víc než MAX_OPEN_HALF_DEG. Když by r vyžadovalo menší rozevření
  * než MIN_HALF_DEG, kružítko se zmenší — ale ne pod floorArm (pak je prostě víc přivřené).
  */
 export const compassArmLength = (r: number, minArm: number, floorArm = 0) => {
-  let L = Math.max(r * 0.8 * COMPASS_SIZE, minArm);
+  let L = Math.max(minArm, r / (2 * Math.sin(MAX_OPEN_HALF_DEG * deg)));
   const maxForR = r / (2 * Math.sin(MIN_HALF_DEG * deg));
   if (L > maxForR) L = Math.max(maxForR, floorArm);
   return L;
