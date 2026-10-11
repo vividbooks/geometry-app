@@ -500,14 +500,119 @@ function fitViewportToAssignmentBounds(
   };
 }
 
+type WorldBounds = { minX: number; minY: number; maxX: number; maxY: number };
+
+type RecordingStepForBounds = {
+  actionType?: string;
+  snapshot?: Partial<GeometrySubmissionSnapshot> | null;
+  toolVisualization?: {
+    type?: 'ruler' | 'compass' | 'protractor' | null;
+    p1?: { x: number; y: number };
+    p2?: { x: number; y: number };
+    angle?: number;
+    radius?: number;
+  } | null;
+};
+
 /**
- * Obálka všech snapshotů nahrané konstrukce (bez okraje). Přímky a polopřímky jsou
- * nekonečné — berou se jen jejich definiční body, kružnice/oblouky celým poloměrem.
+ * Obrys animovaného pravítka (trojúhelník s ryskou) přesně podle drawRuler: kotva v a,
+ * natočení směrem k b, obrázek 800×400 posunutý o (-40, -398). Vrcholy trojúhelníku
+ * z pravitko4.svg (viewBox 467.08 × 236.12) + spodní hrana obrázku (y = +2).
+ */
+function animRulerWorldOutline(
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+): Array<{ x: number; y: number }> {
+  const ang = Math.atan2(b.y - a.y, b.x - a.x);
+  const cos = Math.cos(ang);
+  const sin = Math.sin(ang);
+  const apexX = -40 + (235.72 / 467.08) * 800;
+  const local = [
+    { x: -40, y: 2 },
+    { x: 760, y: 2 },
+    { x: apexX, y: -398 },
+  ];
+  return local.map(q => ({ x: a.x + q.x * cos - q.y * sin, y: a.y + q.x * sin + q.y * cos }));
+}
+
+/**
+ * Body, které při přehrávání kroku zabere animovaná pomůcka (pravítko, kružítko, úhloměr).
+ * Logika musí sedět s tlačítkem „Další“ přehrávače a s vykreslením animState.
+ */
+function recordingStepToolWorldPoints(step: RecordingStepForBounds): Array<{ x: number; y: number }> {
+  const viz = step.toolVisualization;
+  if (!viz || !viz.p1 || !viz.p2) return [];
+  const p1 = viz.p1;
+  const p2 = viz.p2;
+  const out: Array<{ x: number; y: number }> = [];
+
+  if (viz.type === 'ruler') {
+    const at = step.actionType;
+    const isLine = at === 'create-line' || at === 'create-line-dashed';
+    const isRulerAnim = isLine || at === 'create-segment' || at === 'create-ray' || at === 'create-point';
+    if (!isRulerAnim) return [];
+    const dx = p2.x - p1.x;
+    const dy = p2.y - p1.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 1e-6) return [];
+    if (isLine && len <= 200) {
+      // Krátké definiční body přímky: pravítko vycentrované na p1 (viz drawRuler u 'line').
+      const nx = dx / len;
+      const ny = dy / len;
+      out.push(
+        ...animRulerWorldOutline(
+          { x: p1.x - nx * 360, y: p1.y - ny * 360 },
+          { x: p1.x + nx * 440, y: p1.y + ny * 440 },
+        ),
+      );
+    } else {
+      out.push(...animRulerWorldOutline(p1, p2));
+    }
+  } else if (viz.type === 'compass') {
+    // Kružítko: obrázek r×r s hrotem v p1, při rýsování se otočí o celých 360°.
+    // Nejvzdálenější bod kresby (kloub nahoře) je ~1,12·r od hrotu → obálka kruhu 1,12·r.
+    const r = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+    if (r < 1e-6) return [];
+    const reach = r * 1.12;
+    out.push({ x: p1.x - reach, y: p1.y - reach }, { x: p1.x + reach, y: p1.y + reach });
+  } else if (viz.type === 'protractor') {
+    const R = PROTRACTOR_PLACED_RADIUS;
+    const baseAngle =
+      viz.angle ?? Math.atan2(p2.y - p1.y, p2.x - p1.x) - (45 * Math.PI) / 180;
+    // Půlkruh úhloměru (horní polovina v lokálu = úhly baseAngle − π … baseAngle).
+    for (let i = 0; i <= 16; i++) {
+      const t = baseAngle - (Math.PI * i) / 16;
+      out.push({ x: p1.x + Math.cos(t) * R, y: p1.y + Math.sin(t) * R });
+    }
+    out.push({ x: p1.x, y: p1.y });
+    // Druhá fáze: pravítko podél ramene.
+    if (Math.hypot(p2.x - p1.x, p2.y - p1.y) > 1e-6) out.push(...animRulerWorldOutline(p1, p2));
+  }
+  return out;
+}
+
+/**
+ * Obálka celé nahrané konstrukce (bez okraje): geometrie všech snapshotů, u nekonečných
+ * přímek/polopřímek úsek kolem definičních bodů úměrný velikosti scény a k tomu
+ * animované pomůcky každého kroku (pravítko, kružítko, úhloměr), aby byly vidět celé.
  */
 function computeRecordingWorldBounds(
-  steps: ReadonlyArray<{ snapshot?: Partial<GeometrySubmissionSnapshot> | null }>,
-): { minX: number; minY: number; maxX: number; maxY: number } | null {
-  let acc: { minX: number; minY: number; maxX: number; maxY: number } | null = null;
+  steps: ReadonlyArray<RecordingStepForBounds>,
+): WorldBounds | null {
+  let acc: WorldBounds | null = null;
+  const add = (x: number, y: number) => {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    acc = acc
+      ? {
+          minX: Math.min(acc.minX, x),
+          minY: Math.min(acc.minY, y),
+          maxX: Math.max(acc.maxX, x),
+          maxY: Math.max(acc.maxY, y),
+        }
+      : { minX: x, minY: y, maxX: x, maxY: y };
+  };
+
+  // 1) Geometrie (přímky jen definičními body).
   for (const step of steps) {
     const snap = step?.snapshot;
     if (!snap) continue;
@@ -520,17 +625,45 @@ function computeRecordingWorldBounds(
       false,
     );
     if (!b) continue;
-    acc = acc
-      ? {
-          minX: Math.min(acc.minX, b.minX),
-          minY: Math.min(acc.minY, b.minY),
-          maxX: Math.max(acc.maxX, b.maxX),
-          maxY: Math.max(acc.maxY, b.maxY),
+    add(b.minX, b.minY);
+    add(b.maxX, b.maxY);
+  }
+
+  // 2) Nekonečné přímky a polopřímky: úsek za definičními body úměrný velikosti scény.
+  if (acc) {
+    const core = acc as WorldBounds;
+    const sceneSize = Math.max(core.maxX - core.minX, core.maxY - core.minY, 240);
+    const ext = sceneSize * 0.25;
+    for (const step of steps) {
+      const snap = step?.snapshot;
+      if (!snap) continue;
+      const pointById = new Map((snap.points ?? []).map(p => [p.id, p]));
+      for (const s of snap.shapes ?? []) {
+        if (s.type !== 'line' && s.type !== 'lineDashed' && s.type !== 'lineDashDot' && s.type !== 'ray') {
+          continue;
         }
-      : b;
+        const a = pointById.get(s.definition.p1Id);
+        const b = s.definition.p2Id ? pointById.get(s.definition.p2Id) : undefined;
+        if (!a || !b) continue;
+        const len = Math.hypot(b.x - a.x, b.y - a.y);
+        if (len < 1e-6) continue;
+        const nx = (b.x - a.x) / len;
+        const ny = (b.y - a.y) / len;
+        add(b.x + nx * ext, b.y + ny * ext);
+        if (s.type !== 'ray') add(a.x - nx * ext, a.y - ny * ext);
+      }
+    }
+  }
+
+  // 3) Animované pomůcky.
+  for (const step of steps) {
+    for (const q of recordingStepToolWorldPoints(step)) add(q.x, q.y);
   }
   return acc;
 }
+
+/** Nejvyšší zoom při přizpůsobení pohledu záznamu. */
+const RECORDING_FIT_MAX_SCALE = 1.6;
 
 /**
  * Přizpůsobení pohledu přehrávači záznamu: obálka se vejde do volné plochy mezi
@@ -559,7 +692,8 @@ function fitViewportToRecordingBounds(
   const bw = Math.max(bounds.maxX - bounds.minX, 1);
   const bh = Math.max(bounds.maxY - bounds.minY, 1);
   const raw = Math.min(availW / bw, availH / bh);
-  const scale = Math.max(0.4, Math.min(3, raw));
+  // Strop zoomu: jednoduché scény nemají být obří; spodní mez jen proti degeneraci.
+  const scale = Math.max(0.15, Math.min(RECORDING_FIT_MAX_SCALE, raw));
 
   const worldCx = (bounds.minX + bounds.maxX) / 2;
   const worldCy = (bounds.minY + bounds.maxY) / 2;
