@@ -11078,8 +11078,11 @@ export function FreeGeometryEditor({
         const openTarget = act.mode === 'toPoint' && act.Q ? act.Q : act.mode === 'transfer' && act.Q && act.P ? act.Q : null;
         const openDir = openTarget ? Math.atan2(openTarget.y - N0.y, openTarget.x - N0.x) : act.startAng;
         const w0 = act.mode === 'keep' ? r : 0; // přijede zavřené (snímek 0), pak se snímky rozevírá
-        const eOpen = ease(seg(act.openStart, act.openEnd));
-        const w = w0 + (r - w0) * eOpen;
+        const eOpen = ease(seg(act.openStart, act.openEnd)); // ease-in-out
+        // rozevírání: rovnoměrně (s easingem) roste úhel ramen, tj. snímky jdou plynule 0 → cílový;
+        // rozevření w = 2·L·sin(úhel), na konci přesně r
+        const hT = Math.asin(Math.min(1, r / (2 * armLen)));
+        const w = w0 === r || hT <= 0 ? w0 + (r - w0) * eOpen : (r * Math.sin(hT * eOpen)) / Math.sin(hT);
         // během rozevírání měřítko podle ramene, ke konci přesně podle hrotů (tuha dojede na cíl)
         const exact = act.mode === 'keep' ? 1 : ease(seg(act.openStart + (act.openEnd - act.openStart) * 0.5, act.openEnd));
         const eMove = ease(seg(act.openEnd, act.moveEnd));
