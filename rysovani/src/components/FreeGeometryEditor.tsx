@@ -58,6 +58,8 @@ import { handleToolMenuClick } from './toolMenuHandler';
 import {
   RecordingPlayerColumn,
   RecordingStepArrows,
+  RecordingCollapsedControls,
+  RECORDING_COLLAPSED_LETTERS_PX,
   RECORDING_ARROW_SIZE,
   RECORDING_ARROW_EDGE,
   RECORDING_COLUMN_WIDTH,
@@ -689,6 +691,8 @@ const RECORDING_FIT_TOOL_MIN_RATIO = 0.85;
 type RecordingFitInset = { left?: number; right?: number; bottom?: number; top?: number };
 /** Výška plovoucího ovládání zoomu nahoře na plátně přehrávače (top-4 + lišta 56 px + mezera). */
 const RECORDING_ZOOM_BAR_RESERVE = 80;
+/** localStorage: schovaný sloupec se zápisem v přehrávači. */
+const RECORDING_COLUMN_HIDDEN_KEY = 'rysovani.prehravac.zapisSkryty';
 
 /** Volná plocha plátna pro konstrukci (bez sloupce přehrávače a horního ovládání zoomu). */
 function recordingFitArea(canvasW: number, canvasH: number, inset: RecordingFitInset) {
@@ -3618,12 +3622,36 @@ export function FreeGeometryEditor({
   /** Sloupec přehrávače: vpravo (desktop) / spodní list (mobil < 640 px). */
   const recordingColumnAsSheet = canvasSize.width < RECORDING_COLUMN_SHEET_BELOW;
   const recordingColumnSheetH = recordingSheetHeight(canvasSize.height);
+  /** Schovaný zápis (pamatuje se v prohlížeči). */
+  const [recordingColumnHidden, setRecordingColumnHiddenState] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem(RECORDING_COLUMN_HIDDEN_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+  const setRecordingColumnHidden = (hidden: boolean) => {
+    setRecordingColumnHiddenState(hidden);
+    try {
+      window.localStorage.setItem(RECORDING_COLUMN_HIDDEN_KEY, hidden ? '1' : '0');
+    } catch {
+      /* úložiště nedostupné — stav platí jen do reloadu */
+    }
+  };
+  const recordingHasSubtasks = !!recordingSubtasks && recordingSubtasks.length > 1;
   /** Plocha pro konstrukci: vlevo od sloupce / nad listem, pod plovoucím ovládáním zoomu. */
-  // Šipky kroků: na desktopu pod sebou u levého okraje, na mobilu vedle sebe dole nad listem.
+  // Šipky kroků: na desktopu pod sebou u levého okraje, na mobilu vedle sebe dole.
   const recordingArrowReserve = RECORDING_ARROW_EDGE + RECORDING_ARROW_SIZE + 4;
   const recordingFitInset: RecordingFitInset = recordingColumnAsSheet
-    ? { bottom: recordingColumnSheetH + recordingArrowReserve, top: RECORDING_ZOOM_BAR_RESERVE }
-    : { left: recordingArrowReserve, right: RECORDING_COLUMN_WIDTH, top: RECORDING_ZOOM_BAR_RESERVE };
+    ? {
+        bottom: (recordingColumnHidden ? 0 : recordingColumnSheetH) + recordingArrowReserve,
+        top: RECORDING_ZOOM_BAR_RESERVE + (recordingColumnHidden && recordingHasSubtasks ? RECORDING_COLLAPSED_LETTERS_PX : 0),
+      }
+    : {
+        left: recordingArrowReserve,
+        right: recordingColumnHidden ? 0 : RECORDING_COLUMN_WIDTH,
+        top: RECORDING_ZOOM_BAR_RESERVE,
+      };
   const recordingProtocolRows = useMemo(
     () =>
       recordingState.showPlayer
@@ -3649,11 +3677,12 @@ export function FreeGeometryEditor({
       sharedRecording.steps.length,
       canvasSize.width,
       canvasSize.height,
+      recordingColumnHidden ? 'skryty' : '',
     ].join('|');
     if (recordingFitLayoutKeyRef.current === layoutKey) return;
     if (applyRecordingFit(sharedRecording.steps as RecordedStep[])) recordingFitLayoutKeyRef.current = layoutKey;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sharedRecording, canvasSize.width, canvasSize.height]);
+  }, [sharedRecording, canvasSize.width, canvasSize.height, recordingColumnHidden]);
 
   /** Tlačítko „přizpůsobit“ v přehrávači: vrátí automatický pohled na celou konstrukci. */
   const fitRecordingView = () => {
@@ -12849,7 +12878,7 @@ export function FreeGeometryEditor({
       )}
 
       {/* PŘEHRÁVAČ KROKŮ — sloupec vpravo (mobil: spodní list) */}
-      {recordingState.showPlayer && (
+      {recordingState.showPlayer && !recordingColumnHidden && (
         <RecordingPlayerColumn
           rows={recordingProtocolRows}
           steps={recordingState.steps}
@@ -12863,6 +12892,7 @@ export function FreeGeometryEditor({
           activeSubtaskId={sharedRecording?.id ?? null}
           onSelectSubtask={onSelectRecordingSubtask}
           onClose={isInIframe ? undefined : () => setShowCloseConfirm(true)}
+          onHide={() => setRecordingColumnHidden(true)}
           footer={
             !sharedRecording && !shareLink ? (
               <>
@@ -12926,8 +12956,24 @@ export function FreeGeometryEditor({
       {recordingState.showPlayer && (
         <div
           className="absolute inset-0 z-50 flex flex-col pointer-events-none"
-          style={recordingColumnAsSheet ? { bottom: recordingColumnSheetH } : { right: RECORDING_COLUMN_WIDTH }}
+          style={
+            recordingColumnHidden
+              ? undefined
+              : recordingColumnAsSheet
+                ? { bottom: recordingColumnSheetH }
+                : { right: RECORDING_COLUMN_WIDTH }
+          }
         >
+          {recordingColumnHidden && (
+            <RecordingCollapsedControls
+              sheet={recordingColumnAsSheet}
+              darkMode={darkMode}
+              subtasks={recordingSubtasks}
+              activeSubtaskId={sharedRecording?.id ?? null}
+              onSelectSubtask={onSelectRecordingSubtask}
+              onShow={() => setRecordingColumnHidden(false)}
+            />
+          )}
           {/* Canvas pro přehrávání — vrstva propouští tah/kolečko na plátno (posun a zoom) */}
           <div className="flex-1" />
 

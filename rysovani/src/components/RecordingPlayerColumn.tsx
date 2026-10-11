@@ -1,5 +1,15 @@
 import React, { useEffect, useRef, type ReactNode } from 'react';
-import { ChevronLeft, ChevronRight, FileText, RotateCcw, X } from 'lucide-react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  PanelBottomClose,
+  PanelBottomOpen,
+  PanelRightClose,
+  PanelRightOpen,
+  RotateCcw,
+  X,
+} from 'lucide-react';
 import { Latex, getTypeColor, getTypeSymbol, useKatexCSS, type ConstructionStep } from './ConstructionProtocol';
 import type { RecordingProtocolRow } from './recordingProtocol';
 
@@ -13,6 +23,16 @@ export const recordingSheetHeight = (viewportH: number) => Math.round(viewportH 
 export type RecordingSubtask = { key: string; id: string };
 
 type StepInfo = { actionType?: string; description?: string };
+
+/** Kolečko podúlohy jako přepínač Rýsování ve Freeform nástěnce (modré s obrysem). */
+export const subtaskLetterClass = (active: boolean, darkMode: boolean) =>
+  `flex size-10 items-center justify-center rounded-full border-2 text-[15px] font-bold leading-none transition-colors ${
+    active
+      ? 'border-[#2f6df6] bg-[#2f6df6] text-white shadow-[0_6px_14px_rgba(47,109,246,0.35)] hover:bg-[#1f58d8]'
+      : darkMode
+        ? 'border-[#2f6df6] bg-[#1a1b26] text-[#8fb0ff] hover:bg-[#2f6df6]/20'
+        : 'border-[#2f6df6] bg-white text-[#2f6df6] hover:bg-[#eaf1ff]'
+  }`;
 
 const ACTION_TO_TYPE: Record<string, ConstructionStep['type']> = {
   'create-point': 'point',
@@ -41,6 +61,8 @@ interface Props {
   onSelectSubtask?: (id: string) => void;
   /** Bez handleru se ✕ nezobrazí (např. v iframe, kde má hostitel vlastní hlavičku). */
   onClose?: () => void;
+  /** Schová sloupec (zůstane plovoucí tlačítko pro znovuotevření). */
+  onHide?: () => void;
   /** Doplňkové akce (lokální záznam: upravit, tisk, sdílet). */
   footer?: ReactNode;
 }
@@ -63,6 +85,7 @@ export function RecordingPlayerColumn({
   activeSubtaskId,
   onSelectSubtask,
   onClose,
+  onHide,
   footer,
 }: Props) {
   useKatexCSS();
@@ -88,16 +111,6 @@ export function RecordingPlayerColumn({
   const iconBtn = `flex size-10 shrink-0 items-center justify-center rounded-xl transition-all duration-300 disabled:cursor-not-allowed disabled:opacity-40 ${
     darkMode ? 'text-[#c0caf5] hover:bg-[#24283b]' : 'text-black hover:bg-gray-200'
   }`;
-  /** Kolečko podúlohy jako přepínač Rýsování ve Freeform nástěnce (modré s obrysem). */
-  const letterBtn = (active: boolean) =>
-    `flex size-10 items-center justify-center rounded-full border-2 text-[15px] font-bold leading-none transition-colors ${
-      active
-        ? 'border-[#2f6df6] bg-[#2f6df6] text-white shadow-[0_6px_14px_rgba(47,109,246,0.35)] hover:bg-[#1f58d8]'
-        : darkMode
-          ? 'border-[#2f6df6] bg-[#1a1b26] text-[#8fb0ff] hover:bg-[#2f6df6]/20'
-          : 'border-[#2f6df6] bg-white text-[#2f6df6] hover:bg-[#eaf1ff]'
-    }`;
-
   return (
     <div
       className={`absolute z-[55] flex flex-col ${
@@ -125,7 +138,7 @@ export function RecordingPlayerColumn({
                     role="tab"
                     aria-selected={active}
                     onClick={() => !active && onSelectSubtask?.(t.id)}
-                    className={letterBtn(active)}
+                    className={subtaskLetterClass(active, darkMode)}
                     title={`Podúloha ${t.key}`}
                   >
                     {t.key}
@@ -153,6 +166,17 @@ export function RecordingPlayerColumn({
           darkMode ? 'border-[#2a2b3d]' : 'border-gray-100'
         }`}
       >
+        {onHide && (
+          <button
+            type="button"
+            onClick={onHide}
+            className={`-ml-1 ${iconBtn}`}
+            title="Skrýt zápis"
+            aria-label="Skrýt zápis"
+          >
+            {sheet ? <PanelBottomClose className="size-5" /> : <PanelRightClose className="size-5" />}
+          </button>
+        )}
         <div
           className={`flex items-center justify-center rounded-xl ${sheet ? 'size-9' : 'size-[42px]'} ${
             darkMode ? 'bg-[#24283b]' : 'bg-gray-100'
@@ -302,3 +326,91 @@ export function RecordingStepArrows({
     </div>
   );
 }
+
+/**
+ * Schovaný sloupec: plovoucí přepínač podúloh (je-li jich víc) a tlačítko pro znovuotevření
+ * zápisu. Desktop: vpravo nahoře; mobil: podúlohy vpravo pod lištou zoomu, tlačítko vpravo dole.
+ */
+export function RecordingCollapsedControls({
+  sheet,
+  darkMode,
+  subtasks,
+  activeSubtaskId,
+  onSelectSubtask,
+  onShow,
+}: {
+  sheet: boolean;
+  darkMode: boolean;
+  subtasks?: RecordingSubtask[];
+  activeSubtaskId?: string | null;
+  onSelectSubtask?: (id: string) => void;
+  onShow: () => void;
+}) {
+  const showSubtasks = !!subtasks && subtasks.length > 1;
+  const pill = `pointer-events-auto flex items-center gap-1.5 rounded-full p-1.5 shadow-sm ${
+    darkMode ? 'bg-[#24283b] ring-1 ring-[#2f3549]' : 'bg-[#F2F2F2]'
+  }`;
+  const letters = showSubtasks ? (
+    <div className={pill} role="tablist" aria-label="Podúlohy">
+      {subtasks!.map((t) => {
+        const active = t.id === activeSubtaskId;
+        return (
+          <button
+            key={t.key + t.id}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => !active && onSelectSubtask?.(t.id)}
+            className={subtaskLetterClass(active, darkMode)}
+            title={`Podúloha ${t.key}`}
+          >
+            {t.key}
+          </button>
+        );
+      })}
+    </div>
+  ) : null;
+  const openBtn = (
+    <button
+      type="button"
+      onClick={onShow}
+      className={`pointer-events-auto flex h-[52px] items-center gap-2 rounded-full px-4 text-[15px] font-medium shadow-sm transition-all duration-300 ${
+        darkMode ? 'bg-[#24283b] text-[#c0caf5] ring-1 ring-[#2f3549] hover:bg-[#2f3549]' : 'bg-[#F2F2F2] text-black hover:bg-gray-200'
+      }`}
+      title="Zobrazit zápis konstrukce"
+      aria-label="Zápis konstrukce"
+    >
+      {sheet ? <PanelBottomOpen className="size-5" /> : <PanelRightOpen className="size-5" />}
+      {!sheet && <span>Zápis konstrukce</span>}
+    </button>
+  );
+  const stop = {
+    onMouseDown: (e: React.MouseEvent) => e.stopPropagation(),
+    onTouchStart: (e: React.TouchEvent) => e.stopPropagation(),
+  };
+  if (sheet) {
+    return (
+      <>
+        {letters && (
+          <div className="absolute right-3 z-50 pointer-events-none" style={{ top: RECORDING_ZOOM_BAR_RESERVE_PX }} {...stop}>
+            {letters}
+          </div>
+        )}
+        <div className="absolute right-4 bottom-4 z-50 pointer-events-none" {...stop}>
+          {openBtn}
+        </div>
+      </>
+    );
+  }
+  return (
+    <div className="absolute top-4 right-4 z-50 flex items-center gap-2 pointer-events-none" {...stop}>
+      {letters}
+      {openBtn}
+    </div>
+  );
+}
+
+/** Výška plovoucího ovládání zoomu nahoře na plátně (top-4 + lišta 56 px + mezera). */
+export const RECORDING_ZOOM_BAR_RESERVE_PX = 80;
+/** Výška plovoucího přepínače podúloh na mobilu při schovaném listu. */
+export const RECORDING_COLLAPSED_LETTERS_PX = 56;
