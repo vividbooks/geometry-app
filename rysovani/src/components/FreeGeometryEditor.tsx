@@ -77,7 +77,7 @@ import macosOpenHandCursor from '../assets/macos-open-hand.svg?url';
 import Pero from '../imports/Group23910-135-1585';
 import Pravitko from '../imports/Pravitko';
 import Kruzitko from '../imports/Group23908-135-1191';
-import { drawCompassArt, compassArmLength } from './compassArt';
+import { drawCompassArt, compassArmLength, compassArmForHeight, compassMinOpen } from './compassArt';
 import Uhel from '../imports/Uhel';
 import Papir from '../imports/Papir';
 
@@ -10853,7 +10853,7 @@ export function FreeGeometryEditor({
     ctx.rotate(rotation);
     ctx.globalAlpha = opacity;
     // Hrot v [0,0], tuha v [radius, 0]; ramena se rozevírají kolem čepů v hlavě (compassArt).
-    drawCompassArt(ctx, radius, compassArmLength(radius, 4 * PIXELS_PER_CM));
+    drawCompassArt(ctx, radius, compassArmLength(radius, 4 * PIXELS_PER_CM, compassArmForHeight(120 / scale)));
     ctx.restore();
   };
 
@@ -11070,15 +11070,16 @@ export function FreeGeometryEditor({
       if (act.kind === 'compass') {
         const c = act.center;
         const r = act.r;
-        // délka ramene: ~0,8 r, ale aspoň ~4 cm (při velkém přiblížení max. ~220 px na obrazovce)
-        const armLen = compassArmLength(r, Math.min(4 * PIXELS_PER_CM, 220 / scale));
+        // délka ramene: ~0,8 r, aspoň ~4 cm (při velkém přiblížení max. ~220 px na obrazovce);
+        // pro malé r se kružítko zmenší (nezavírá se pod minimum), ale ne pod ~120 px výšky
+        const armLen = compassArmLength(r, Math.min(4 * PIXELS_PER_CM, 220 / scale), compassArmForHeight(120 / scale));
         const eIn = ease(seg(0, act.arriveEnd));
         const eOut = ease(seg(act.drawEnd + TOOL_HOLD_MS, act.dur));
         const alpha = Math.min(eIn * 1.2, 1 - eOut);
         const N0 = act.mode === 'transfer' && act.P ? act.P : c;
         const openTarget = act.mode === 'toPoint' && act.Q ? act.Q : act.mode === 'transfer' && act.Q && act.P ? act.Q : null;
         const openDir = openTarget ? Math.atan2(openTarget.y - N0.y, openTarget.x - N0.x) : act.startAng;
-        const w0 = act.mode === 'keep' ? r : r * 0.02; // přijede složené, rozevře se z ~0
+        const w0 = act.mode === 'keep' ? r : Math.min(r, compassMinOpen(armLen)); // přijede v minimálním rozevření
         const eOpen = ease(seg(act.openStart, act.openEnd));
         const w = w0 + (r - w0) * eOpen;
         const eMove = ease(seg(act.openEnd, act.moveEnd));

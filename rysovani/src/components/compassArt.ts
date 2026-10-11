@@ -1,8 +1,10 @@
 /**
- * Kružítko kreslené po částech (hlava + dvě ramena) — ramena se otáčejí kolem čepů v hlavě,
- * takže se kružítko opravdu rozevírá a nic se nedeformuje. Kresba z kruzitko.svg
- * (viewBox 0 0 461.14 368.82): hrot jehly ≈ (2.2, 363.2), hrot tuhy ≈ (447.5, 363.5),
- * čepy ramen (šroubky v hlavě) ≈ (205.75, 93.1) a (249.75, 93.1).
+ * Kružítko z Vítkovy kresby (kruzitko.svg, viewBox 0 0 461.14 368.82) beze změny tvarů,
+ * rozdělené na hlavu (+ držátko), rameno s jehlou (+ kolečko) a rameno s tuhou (+ objímka, tuha).
+ * Vrstvy: rameno s jehlou vzadu, rameno s tuhou vpředu, hlava navrchu.
+ * Rozevírání = otočení ramene kolem jeho čepu v nakloněné rovině kresby: afinní
+ * M = S·R(θ)·S⁻¹, S = diag(1, f), f = COMPASS_PLANE_F (svislý směr kresby je zkrácený).
+ * Kružítko se nikdy nezavírá pod COMPASS_MIN_OPEN (podíl rozevření kresby).
  */
 
 const C0 = '#a3c6d3';
@@ -46,86 +48,118 @@ const HEAD: Part[] = [
 
 const NEEDLE = { x: 2.2, y: 363.2 };
 const LEAD = { x: 447.5, y: 363.5 };
-const PIVOT_L = { x: 205.75, y: 93.1 };
-const PIVOT_R = { x: 249.75, y: 93.1 };
-const PIVOT_GAP = PIVOT_R.x - PIVOT_L.x;
-const ARM_L = Math.hypot(NEEDLE.x - PIVOT_L.x, NEEDLE.y - PIVOT_L.y);
-const ARM_R = Math.hypot(LEAD.x - PIVOT_R.x, LEAD.y - PIVOT_R.y);
+const PIVOT_N = { x: 205.75, y: 93.1 };
+const PIVOT_L = { x: 249.75, y: 93.1 };
+/** Výška kresby (jednotky SVG). */
+const ART_HEIGHT = 368.82;
+/** Rozevření v kresbě (vzdálenost hrotů, jednotky SVG). */
+const ART_OPEN = Math.hypot(LEAD.x - NEEDLE.x, LEAD.y - NEEDLE.y);
 /** Délka ramene v jednotkách kresby (čep → hrot). */
-export const COMPASS_ART_ARM = (ARM_L + ARM_R) / 2;
+export const COMPASS_ART_ARM =
+  (Math.hypot(NEEDLE.x - PIVOT_N.x, NEEDLE.y - PIVOT_N.y) + Math.hypot(LEAD.x - PIVOT_L.x, LEAD.y - PIVOT_L.y)) / 2;
+/** Zkrácení nakloněné roviny ramen. */
+export const COMPASS_PLANE_F = 0.8;
+/** Nejmenší rozevření (podíl rozevření kresby) — složené kružítko nevypadá dobře. */
+export const COMPASS_MIN_OPEN = 0.25;
 
-type Built = { path: Path2D; fill: string; shadow: boolean };
+type Built = { path: Path2D; fill: string };
 let cache: { head: Built[]; left: Built[]; right: Built[] } | null = null;
-const build = (parts: Part[]): Built[] =>
-  parts.map(p => {
+const build = (list: Part[]): Built[] =>
+  list.map(p => {
     let path: Path2D;
     if (p.ell) {
       const [cx, cy, rx, ry, deg] = p.ell;
       path = new Path2D();
       path.ellipse(cx, cy, rx, ry, (deg * Math.PI) / 180, 0, Math.PI * 2);
     } else path = new Path2D(p.d!);
-    return { path, fill: p.fill, shadow: !!p.shadow };
+    return { path, fill: p.fill };
   });
 const parts = () => (cache ??= { head: build(HEAD), left: build(LEFT), right: build(RIGHT) });
 
-/**
- * Délka ramene (ve světových px) pro poloměr r: ramena ~ max(0,8·r, minArm)
- * (poměr jako na předloze — rozevřené kružítko se vejde do záběru);
- * rozevření r se vždy vejde (při velkém r se kružítko zvětší).
- */
-export const compassArmLength = (r: number, minArm: number) => {
-  const L = Math.max(r * 0.8, minArm);
-  // max. rozevření ≈ 2 ramena + rozestup čepů, nech rezervu (ramena ne do roviny)
-  const maxOpen = (2 * L + (PIVOT_GAP / COMPASS_ART_ARM) * L) * 0.92;
-  return r > maxOpen ? L * (r / maxOpen) : L;
+type M6 = [number, number, number, number, number, number];
+/** Otočení o θ kolem P v rovině zkrácené faktorem f (matice pro ctx.transform). */
+const rotM = (P: { x: number; y: number }, th: number, f: number): M6 => {
+  const c = Math.cos(th);
+  const s = Math.sin(th);
+  const a = c, b = f * s, cc = -s / f, d = c;
+  return [a, b, cc, d, P.x - (a * P.x + cc * P.y), P.y - (b * P.x + d * P.y)];
 };
+const apply = (m: M6, q: { x: number; y: number }) => ({ x: m[0] * q.x + m[2] * q.y + m[4], y: m[1] * q.x + m[3] * q.y + m[5] });
+const tipsFor = (th: number, f: number) => ({ n: apply(rotM(PIVOT_N, th, f), NEEDLE), l: apply(rotM(PIVOT_L, -th, f), LEAD) });
+const tipDist = (th: number, f: number) => { const t = tipsFor(th, f); return Math.hypot(t.l.x - t.n.x, t.l.y - t.n.y); };
+/** θ ramen pro vzdálenost hrotů d (jednotky SVG); θ < 0 přivírá, θ > 0 rozevírá. */
+const thetaFor = (d: number, f: number) => {
+  let lo = -0.55; // přivřené (minimum vzdálenosti hrotů je kolem −0,59 při f = 0,8)
+  let hi = 0.8;
+  if (d <= tipDist(lo, f)) return lo;
+  if (d >= tipDist(hi, f)) return hi;
+  for (let i = 0; i < 40; i++) {
+    const m = (lo + hi) / 2;
+    if (tipDist(m, f) > d) hi = m;
+    else lo = m;
+  }
+  return (lo + hi) / 2;
+};
+const thetaCache = new Map<number, number>();
+const thetaCached = (d: number) => {
+  const k = Math.round(d * 4) / 4;
+  let v = thetaCache.get(k);
+  if (v === undefined) {
+    v = thetaFor(k, COMPASS_PLANE_F);
+    if (thetaCache.size > 4000) thetaCache.clear();
+    thetaCache.set(k, v);
+  }
+  return v;
+};
+
+/** Nejmenší rozevření (vzdálenost hrotů) kružítka s ramenem armLen. */
+export const compassMinOpen = (armLen: number) => COMPASS_MIN_OPEN * ART_OPEN * (armLen / COMPASS_ART_ARM);
+
+/**
+ * Délka ramene (světové px) pro poloměr r: ~0,8·r, aspoň minArm. Když by r vyžadovalo menší
+ * rozevření než COMPASS_MIN_OPEN, kružítko se zmenší — ale ne pod floorArm
+ * (pak zůstane minimální rozevření a tuha mírně přesáhne).
+ */
+export const compassArmLength = (r: number, minArm: number, floorArm = 0) => {
+  let L = Math.max(r * 0.8, minArm);
+  const maxForR = r / (COMPASS_MIN_OPEN * ART_OPEN / COMPASS_ART_ARM);
+  if (L > maxForR) L = Math.max(maxForR, floorArm);
+  return L;
+};
+/** Délka ramene, při které je kružítko vysoké `px` (pro spodní mez velikosti). */
+export const compassArmForHeight = (px: number) => (px * COMPASS_ART_ARM) / ART_HEIGHT;
 
 /**
  * Vykreslí kružítko v lokálních souřadnicích: hrot jehly v (0,0), hrot tuhy v (w,0),
  * hlava na straně záporného y. `armLen` = délka ramene ve stejných jednotkách.
- * Volající nastaví translate/rotate (a globalAlpha).
+ * Pod minimálním rozevřením zůstane na minimu. Volající nastaví translate/rotate/globalAlpha.
  */
-export function drawCompassArt(ctx: CanvasRenderingContext2D, w: number, armLen: number, shadow = true) {
+export function drawCompassArt(ctx: CanvasRenderingContext2D, w: number, armLen: number) {
   const s = armLen / COMPASS_ART_ARM;
-  const d = PIVOT_GAP * s;
-  const open = Math.max(0, w);
-  // čepy symetricky nad středem rozevření; obě ramena dlouhá přesně armLen
-  // (každé rameno má vlastní nepatrně jiné měřítko, ať hroty sedí přesně)
-  const x = (open - d) / 2;
-  const y = Math.sqrt(Math.max(0, armLen * armLen - x * x));
-  const pL = { x, y: -y };
-  const pR = { x: x + d, y: -y };
-  const head = parts();
-
-  const drawSet = (set: Built[], pivotSvg: { x: number; y: number }, pivot: { x: number; y: number }, ang: number, sc: number) => {
+  const d = Math.max(COMPASS_MIN_OPEN * ART_OPEN, w / s);
+  const th = thetaCached(d);
+  const f = COMPASS_PLANE_F;
+  const mN = rotM(PIVOT_N, th, f);
+  const mL = rotM(PIVOT_L, -th, f);
+  const tN = apply(mN, NEEDLE);
+  const tL = apply(mL, LEAD);
+  const ang = Math.atan2(tL.y - tN.y, tL.x - tN.x);
+  const P = parts();
+  ctx.save();
+  ctx.scale(s, s);
+  ctx.rotate(-ang);
+  ctx.translate(-tN.x, -tN.y);
+  const set = (list: Built[], m: M6 | null) => {
     ctx.save();
-    ctx.translate(pivot.x, pivot.y);
-    if (ang) ctx.rotate(ang);
-    ctx.scale(sc, sc);
-    ctx.translate(-pivotSvg.x, -pivotSvg.y);
-    for (const p of set) {
-      if (shadow && p.shadow) {
-        ctx.shadowColor = 'rgba(15, 23, 42, 0.22)';
-        ctx.shadowBlur = 6;
-        ctx.shadowOffsetX = 2;
-        ctx.shadowOffsetY = 3;
-      } else {
-        ctx.shadowColor = 'transparent';
-        ctx.shadowBlur = 0;
-        ctx.shadowOffsetX = 0;
-        ctx.shadowOffsetY = 0;
-      }
+    if (m) ctx.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
+    for (const p of list) {
       ctx.fillStyle = p.fill;
       ctx.fill(p.path);
     }
     ctx.restore();
   };
-
-  const angOf = (v: { x: number; y: number }) => Math.atan2(v.y, v.x);
-  const rotL = angOf({ x: -pL.x, y: -pL.y }) - angOf({ x: NEEDLE.x - PIVOT_L.x, y: NEEDLE.y - PIVOT_L.y });
-  const rotR = angOf({ x: open - pR.x, y: -pR.y }) - angOf({ x: LEAD.x - PIVOT_R.x, y: LEAD.y - PIVOT_R.y });
-
-  drawSet(head.left, PIVOT_L, pL, rotL, armLen / ARM_L);
-  drawSet(head.right, PIVOT_R, pR, rotR, armLen / ARM_R);
-  drawSet(head.head, PIVOT_L, pL, 0, s);
+  set(P.left, mN);
+  set(P.right, mL);
+  set(P.head, null);
+  ctx.restore();
 }
