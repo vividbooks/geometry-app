@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react';
+import { VividbooksLoader } from '../../../rysovani/src/components/VividbooksLoader';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { CanvasErrorBoundary } from '../../../rysovani/src/components/CanvasErrorBoundary';
 
@@ -199,17 +200,7 @@ export function RysovaniPage() {
 
   // Loading screen
   if (loadingRecording) {
-    return (
-      <div className="min-h-screen bg-[#1a1b26] flex items-center justify-center">
-        <div className="text-center">
-          <div className="relative w-16 h-16 mx-auto mb-6">
-            <div className="absolute inset-0 rounded-full border-4 border-[#565f89]" />
-            <div className="absolute inset-0 rounded-full border-4 border-t-[#7aa2f7] animate-spin" />
-          </div>
-          <p className="text-[#c0caf5] text-lg font-medium">Načítám záznam...</p>
-        </div>
-      </div>
-    );
+    return <VividbooksLoader darkMode={darkMode} label="Načítám záznam" />;
   }
 
   // Error screen
@@ -233,11 +224,7 @@ export function RysovaniPage() {
     );
   }
 
-  const fallback = (
-    <div className="min-h-screen flex items-center justify-center bg-white">
-      <p style={{ color: '#4e5871' }}>Načítání...</p>
-    </div>
-  );
+  const fallback = <VividbooksLoader darkMode={darkMode} />;
 
   // Wrapper that provides explicit height for components using size-full / h-full.
   // Uses 100dvh (dynamic viewport height) so the canvas fills the entire visible

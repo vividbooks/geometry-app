@@ -18,7 +18,8 @@ export const RECORDING_COLUMN_WIDTH = 360;
 /** Pod touto šířkou plátna je sloupec spodní list. */
 export const RECORDING_COLUMN_SHEET_BELOW = 640;
 /** Výška spodního listu na mobilu (px). */
-export const recordingSheetHeight = (viewportH: number) => Math.round(viewportH * 0.45);
+/** Spodní list na mobilu: ~30 % výšky (víc místa pro konstrukci). */
+export const recordingSheetHeight = (viewportH: number) => Math.round(viewportH * 0.3);
 
 export type RecordingSubtask = { key: string; id: string };
 
@@ -329,7 +330,7 @@ export function RecordingStepArrows({
 
 /**
  * Schovaný sloupec: plovoucí přepínač podúloh (je-li jich víc) a tlačítko pro znovuotevření
- * zápisu. Desktop: vpravo nahoře; mobil: podúlohy vpravo pod lištou zoomu, tlačítko vpravo dole.
+ * zápisu. Desktop: vpravo nahoře; mobil (bez lišty zoomu): podúlohy vpravo nahoře, tlačítko vpravo dole.
  */
 export function RecordingCollapsedControls({
   sheet,
@@ -392,7 +393,7 @@ export function RecordingCollapsedControls({
     return (
       <>
         {letters && (
-          <div className="absolute right-3 z-50 pointer-events-none" style={{ top: RECORDING_ZOOM_BAR_RESERVE_PX }} {...stop}>
+          <div className="absolute right-3 top-4 z-50 pointer-events-none" {...stop}>
             {letters}
           </div>
         )}
@@ -410,7 +411,5 @@ export function RecordingCollapsedControls({
   );
 }
 
-/** Výška plovoucího ovládání zoomu nahoře na plátně (top-4 + lišta 56 px + mezera). */
-export const RECORDING_ZOOM_BAR_RESERVE_PX = 80;
 /** Výška plovoucího přepínače podúloh na mobilu při schovaném listu. */
 export const RECORDING_COLLAPSED_LETTERS_PX = 56;

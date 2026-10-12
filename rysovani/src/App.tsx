@@ -1,6 +1,7 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
 import { GeometryMenu } from './components/GeometryMenu';
 import { CanvasErrorBoundary } from './components/CanvasErrorBoundary';
+import { VividbooksLoader } from './components/VividbooksLoader';
 import { projectId, publicAnonKey } from './utils/supabase/info';
 
 // Lazy load těžké komponenty pro lepší performance na starších zařízeních
@@ -91,17 +92,7 @@ export default function App() {
 
   // Loading screen for shared recording
   if (loadingRecording) {
-    return (
-      <div className="min-h-screen bg-[#1a1b26] flex items-center justify-center">
-        <div className="text-center">
-          <div className="relative w-16 h-16 mx-auto mb-6">
-            <div className="absolute inset-0 rounded-full border-4 border-[#565f89]" />
-            <div className="absolute inset-0 rounded-full border-4 border-t-[#7aa2f7] animate-spin" />
-          </div>
-          <p className="text-[#c0caf5] text-lg font-medium">Nacitam zaznam...</p>
-        </div>
-      </div>
-    );
+    return <VividbooksLoader label="Načítám záznam" />;
   }
 
   // Error screen
@@ -135,40 +126,40 @@ export default function App() {
       case 'menu':
         return <GeometryMenu onSelect={setView} darkMode={darkMode} onDarkModeChange={setDarkMode} />;
       case 'bisector':
-        return <Suspense fallback={<div>Loading...</div>}>
+        return <Suspense fallback={<VividbooksLoader />}>
           <BisectorConstruction onBack={() => setView('menu')} darkMode={darkMode} onDarkModeChange={setDarkMode} />
         </Suspense>;
       case 'triangle':
-        return <Suspense fallback={<div>Loading...</div>}>
+        return <Suspense fallback={<VividbooksLoader />}>
           <TriangleConstruction onBack={() => setView('menu')} darkMode={darkMode} onDarkModeChange={setDarkMode} />
         </Suspense>;
       case 'interactive-triangle':
-        return <Suspense fallback={<div>Loading...</div>}>
+        return <Suspense fallback={<VividbooksLoader />}>
           <InteractiveTriangleConstruction onBack={() => setView('menu')} darkMode={darkMode} onDarkModeChange={setDarkMode} />
         </Suspense>;
       case 'angle-triangle':
-        return <Suspense fallback={<div>Loading...</div>}>
+        return <Suspense fallback={<VividbooksLoader />}>
           <AngleTriangleConstruction onBack={() => setView('menu')} darkMode={darkMode} onDarkModeChange={setDarkMode} />
         </Suspense>;
       case 'axial-symmetry':
-        return <Suspense fallback={<div>Loading...</div>}>
+        return <Suspense fallback={<VividbooksLoader />}>
           <AxialSymmetryConstruction onBack={() => setView('menu')} darkMode={darkMode} onDarkModeChange={setDarkMode} />
         </Suspense>;
       case 'custom-triangle':
-        return <Suspense fallback={<div>Loading...</div>}>
+        return <Suspense fallback={<VividbooksLoader />}>
           <InteractiveTriangleConstruction onBack={() => setView('menu')} darkMode={darkMode} onDarkModeChange={setDarkMode} />
         </Suspense>;
       case 'free-editor-board':
-        return <Suspense fallback={<div>Loading...</div>}>
+        return <Suspense fallback={<VividbooksLoader />}>
           <FreeGeometryEditor onBack={() => setView('menu')} darkMode={darkMode} onDarkModeChange={setDarkMode} deviceType="board" />
         </Suspense>;
       case 'free-editor-computer':
-        return <Suspense fallback={<div>Loading...</div>}>
+        return <Suspense fallback={<VividbooksLoader />}>
           <FreeGeometryEditor onBack={() => setView('menu')} darkMode={darkMode} onDarkModeChange={setDarkMode} deviceType="computer" />
         </Suspense>;
       case 'shared-recording':
         return sharedRecording ? (
-          <Suspense fallback={<div>Loading...</div>}>
+          <Suspense fallback={<VividbooksLoader />}>
             <FreeGeometryEditor
               onBack={handleBackFromShared}
               darkMode={darkMode}

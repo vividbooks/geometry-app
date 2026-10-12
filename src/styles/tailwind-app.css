@@ -7,3 +7,12 @@
 
 @import "tw-animate-css";
 @import "./elobvod-circuit-theme.css";
+
+/* Cooper Light (Vividbooks) — nadpisy záznamů konstrukcí; soubor převzatý z Vividbooks Ultra (public/fonts). */
+@font-face {
+  font-family: 'Cooper Light';
+  src: url('../../rysovani/src/assets/fonts/Cooper-Light.otf') format('opentype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}

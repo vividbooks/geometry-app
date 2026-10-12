@@ -1101,6 +1101,8 @@ const RECORDING_FIT_TOOL_MIN_RATIO = 0.85;
 type RecordingFitInset = { left?: number; right?: number; bottom?: number; top?: number };
 /** Výška plovoucího ovládání zoomu nahoře na plátně přehrávače (top-4 + lišta 56 px + mezera). */
 const RECORDING_ZOOM_BAR_RESERVE = 80;
+/** Mobil (spodní list): horní lišta zoomu není, nahoře jen okraj. */
+const RECORDING_SHEET_TOP_RESERVE = 16;
 /** localStorage: schovaný sloupec se zápisem v přehrávači. */
 const RECORDING_COLUMN_HIDDEN_KEY = 'rysovani.prehravac.zapisSkryty';
 
@@ -4046,7 +4048,8 @@ export function FreeGeometryEditor({
   const recordingFitInset: RecordingFitInset = recordingColumnAsSheet
     ? {
         bottom: (recordingColumnHidden ? 0 : recordingColumnSheetH) + recordingArrowReserve,
-        top: RECORDING_ZOOM_BAR_RESERVE + (recordingColumnHidden && recordingHasSubtasks ? RECORDING_COLLAPSED_LETTERS_PX : 0),
+        // mobil: bez lišty zoomu nahoře, jen okraj (+ plovoucí písmena podúloh při schovaném listu)
+        top: RECORDING_SHEET_TOP_RESERVE + (recordingColumnHidden && recordingHasSubtasks ? RECORDING_COLLAPSED_LETTERS_PX : 0),
       }
     : {
         left: recordingArrowReserve,
@@ -13998,7 +14001,8 @@ export function FreeGeometryEditor({
           {/* Canvas pro přehrávání — vrstva propouští tah/kolečko na plátno (posun a zoom) */}
           <div className="flex-1" />
 
-          {/* Zoom + přizpůsobit + tmavý režim — stejné ovládání jako v horní liště editoru */}
+          {/* Zoom + přizpůsobit + tmavý režim — stejné ovládání jako v horní liště editoru (jen desktop; mobil bez lišty) */}
+          {!recordingColumnAsSheet && (
           <div className="absolute top-4 left-0 right-0 z-50 flex justify-center px-2 pointer-events-none">
             <div
               className={`pointer-events-auto flex max-w-full items-center gap-1 overflow-x-auto rounded-full p-2 shadow-sm [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden ${
@@ -14028,6 +14032,7 @@ export function FreeGeometryEditor({
               {renderDarkModeButton(darkMode)}
             </div>
           </div>
+          )}
 
           <RecordingStepArrows
             row={recordingColumnAsSheet}
@@ -14041,8 +14046,15 @@ export function FreeGeometryEditor({
 
           {/* INTRO OBRAZOVKA - Před spuštěním kroků */}
           {recordingState.currentStepIndex === -1 && (
-            <div className="absolute inset-0 z-40 flex items-center justify-center pointer-events-none">
-              <div className="flex flex-col items-center gap-6 pointer-events-auto">
+            <div
+              className="absolute inset-0 z-40 flex overflow-y-auto pointer-events-none px-4"
+              style={{
+                // nad šipkami (mobil) / pod lištou zoomu (desktop); při dlouhém nadpisu se obsah posouvá, nic se nepřekryje
+                paddingTop: recordingColumnAsSheet ? RECORDING_SHEET_TOP_RESERVE : RECORDING_ZOOM_BAR_RESERVE,
+                paddingBottom: recordingColumnAsSheet ? recordingArrowReserve : 16,
+              }}
+            >
+              <div className="m-auto flex flex-col items-center gap-6 pointer-events-auto">
                 {/* "Jak narýsovat:" bubble */}
                 <div className={`px-5 py-2 rounded-full text-sm font-medium ${
                   darkMode ? 'bg-[#7aa2f7]/20 text-[#7aa2f7] border border-[#7aa2f7]/30' : 'bg-blue-50 text-blue-600 border border-blue-200'
@@ -14051,9 +14063,15 @@ export function FreeGeometryEditor({
                 </div>
                 
                 {/* Název konstrukce */}
-                <h1 className={`font-bold text-center max-w-4xl ${
+                <h1 className={`text-center max-w-4xl ${
                   darkMode ? 'text-[#8b9ec7]' : 'text-[#3b4a6b]'
-                }`} style={{ fontSize: 'clamp(3.2rem, 9.6vw, 8rem)', lineHeight: '0.848' }}>
+                }`} style={{
+                  fontFamily: "'Cooper Light', Georgia, serif",
+                  fontWeight: 'normal',
+                  letterSpacing: '0.01em',
+                  fontSize: 'clamp(3.2rem, 9.6vw, 8rem)',
+                  lineHeight: 0.848 * 1.2,
+                }}>
                   {recordingName || (sharedRecording ? sharedRecording.name : 'Konstrukce')}
                 </h1>
                 
