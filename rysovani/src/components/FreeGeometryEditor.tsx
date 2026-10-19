@@ -18,6 +18,7 @@ import {
   Move,
   MoveDiagonal, 
   Dot,
+  Tag,
   Trash2,
   Undo,
   RotateCw,
@@ -83,7 +84,7 @@ import Papir from '../imports/Papir';
 
 // --- TYPY ---
 
-type ToolType = 'move' | 'point' | 'segment' | 'line' | 'lineDashed' | 'lineDashDot' | 'ray' | 'circle' | 'angle' | 'distance' | 'perpendicular' | 'pan' | 'paper' | 'freehand' | 'highlighter' | 'highlighterStraight' | 'eraser' | 'triangleRuler';
+type ToolType = 'move' | 'point' | 'pointNamed' | 'segment' | 'line' | 'lineDashed' | 'lineDashDot' | 'ray' | 'circle' | 'angle' | 'distance' | 'perpendicular' | 'pan' | 'paper' | 'freehand' | 'highlighter' | 'highlighterStraight' | 'eraser' | 'triangleRuler';
 
 type TracePoint = { x: number; y: number };
 
@@ -2469,6 +2470,32 @@ export function FreeGeometryEditor({
   const [editableSteps, setEditableSteps] = useState<RecordedStep[]>([]);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [showRenameModal, setShowRenameModal] = useState(false);
+  /** Nástroj „Bod (vlastní název)“: místo kliknutí čeká na zadání názvu */
+  const [pendingNamedPoint, setPendingNamedPoint] = useState<{ wx: number; wy: number } | null>(null);
+  const [pendingPointName, setPendingPointName] = useState('');
+  const pendingPointInputRef = useRef<HTMLInputElement | null>(null);
+  /** Body nově vytvořené při rýsování úsečky (po dokončení úsečky se zeptáme na jejich názvy) */
+  const segmentNewPointIdsRef = useRef<Set<string>>(new Set());
+  const [pendingSegmentNaming, setPendingSegmentNaming] = useState<{
+    shapeId: string;
+    pointIds: string[];
+    names: Record<string, string>;
+  } | null>(null);
+  const segmentNameInputRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    if (!pendingSegmentNaming) return;
+    const t = setTimeout(() => segmentNameInputRef.current?.focus(), 60);
+    return () => clearTimeout(t);
+  }, [pendingSegmentNaming?.shapeId]);
+  useEffect(() => {
+    if (!pendingNamedPoint) return;
+    // Plátno si po kliknutí bere fokus zpět — zaměřit pole s malým zpožděním.
+    const t = setTimeout(() => {
+      pendingPointInputRef.current?.focus();
+      pendingPointInputRef.current?.select();
+    }, 60);
+    return () => clearTimeout(t);
+  }, [pendingNamedPoint]);
   const [circleRadiusDraft, setCircleRadiusDraft] = useState<string>('');
   const [segmentLengthDraft, setSegmentLengthDraft] = useState<string>('');
 
@@ -3267,7 +3294,8 @@ export function FreeGeometryEditor({
       icon: Pero,
       label: 'Bod a Kreslení',
       tools: [
-        { id: 'point', label: 'Bod', icon: Dot },
+        { id: 'point', label: 'Bod (automatický název)', icon: Dot },
+        { id: 'pointNamed', label: 'Bod (vlastní název)', icon: Tag },
         { id: 'freehand', label: 'Volné pero', icon: Pencil },
         { id: 'highlighter', label: 'Zvýraznění', icon: Highlighter },
         { id: 'highlighterStraight', label: 'Zvýraznění podle pravítka', icon: Ruler }
@@ -3388,7 +3416,7 @@ export function FreeGeometryEditor({
         (target.tagName === 'INPUT' ||
           target.tagName === 'TEXTAREA' ||
           (target as HTMLElement).isContentEditable);
-      if (showRenameModal || isTypingTarget) {
+      if (showRenameModal || pendingNamedPoint || pendingSegmentNaming || isTypingTarget) {
         // Still allow Escape to close tools; it is handled below.
         if (e.key !== 'Escape') return;
       }
@@ -3421,7 +3449,7 @@ export function FreeGeometryEditor({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selection, historyIndex, history, selectedShapeIds, selectedFreehandIds, shapes, points, freehandPaths, showRenameModal]);
+  }, [selection, historyIndex, history, selectedShapeIds, selectedFreehandIds, shapes, points, freehandPaths, showRenameModal, pendingNamedPoint, pendingSegmentNaming]);
 
   const triggerEffect = (x: number, y: number, color: string = '#3b82f6') => {
     setVisualEffects(prev => [...prev, {
@@ -3536,7 +3564,7 @@ export function FreeGeometryEditor({
         if (!toolViz) {
           // Pouze pokud NENÍ nastavený žádný tool visualization
           const newPoint = points[points.length - 1];
-          description = `Vytvoření bodu ${newPoint.label}`;
+          description = newPoint.label ? `Vytvoření bodu ${newPoint.label}` : 'Vytvoření bodu';
           actionType = 'create-point';
         }
       } else if (shapes.length < prev.shapes.length && points.length < prev.points.length) {
@@ -3802,11 +3830,11 @@ export function FreeGeometryEditor({
 
   // Helper: "povýší" skrytý/neoznačený bod na viditelný s labelem
   // Používá se, když nástroj (např. kružnice) potřebuje viditelný střed na průsečíku
-  const promoteToVisiblePoint = (pointId: string | undefined | null): string | null => {
+  const promoteToVisiblePoint = (pointId: string | undefined | null, labelOverride?: string): string | null => {
     if (!pointId) return null;
     const p = points.find(pt => pt.id === pointId);
     if (p && (p.hidden || !p.label)) {
-      const newLabel = getNextPointLabel();
+      const newLabel = labelOverride !== undefined ? labelOverride : getNextPointLabel();
       setPoints(prev => prev.map(pt =>
         pt.id === pointId ? { ...pt, hidden: false, label: newLabel } : pt
       ));
@@ -3879,6 +3907,24 @@ export function FreeGeometryEditor({
     displayCm.includes(',') ? displayCm.replace(',', '{,}') : displayCm;
 
   const latexIt = (s: string) => `\\textit{${s}}`;
+  /** Texty zápisu konstrukce pro úsečku (lA/lB mohou být prázdné = bod bez názvu). */
+  const segmentStepTexts = (lA: string, lB: string, d: string) => {
+    const named = Boolean(lA && lB && lA !== '?' && lB !== '?');
+    if (named) {
+      return {
+        notation: `${lA}${lB}; |${lA}${lB}| = ${d} cm`,
+        latex: `${lA}${lB} \\;;\\; |${lA}${lB}| = ${decimalForLatex(d)} \\text{ cm}`,
+        description: `Úsečka ${lA}${lB} o délce ${d} cm`,
+        descriptionLatex: `\\text{Úsečka } ${latexIt(lA)}${latexIt(lB)} \\text{ o délce } ${decimalForLatex(d)} \\text{ cm}`,
+      };
+    }
+    return {
+      notation: `úsečka; ${d} cm`,
+      latex: `\\text{úsečka} \\;;\\; ${decimalForLatex(d)} \\text{ cm}`,
+      description: `Úsečka o délce ${d} cm`,
+      descriptionLatex: `\\text{Úsečka o délce } ${decimalForLatex(d)} \\text{ cm}`,
+    };
+  };
 
   /** Označení základu kolmice v zápisu (úsečka AB, ne interní label p). */
   const getPerpendicularBaseRef = (baseShape: GeoShape): string => {
@@ -5043,6 +5089,85 @@ export function FreeGeometryEditor({
     ]);
   };
 
+  /** Umístí bod nástrojem Bod (přichycení: průsečík > čára > volně). `customLabel` = vlastní název. Vrací false, pokud už tam bod je. */
+  const placePointAtWorld = (wx: number, wy: number, customLabel?: string): boolean => {
+    // Snap priority: intersection > line > free placement. Never snap to existing labeled points.
+    // Intersection always wins if present in range.
+    const intersection = findNearestIntersection(wx, wy);
+    const lineSnap = intersection ? null : snapToNearestShape(wx, wy);
+
+    let px = wx;
+    let py = wy;
+    let promotedHidden = false;
+
+    if (intersection) {
+      px = intersection.x;
+      py = intersection.y;
+      const hiddenAtIntersection = points.find(p => (!p.label || p.hidden) && Math.sqrt((p.x - px) ** 2 + (p.y - py) ** 2) * scale < 6);
+      if (hiddenAtIntersection) {
+        const assignedLabel = promoteToVisiblePoint(hiddenAtIntersection.id, customLabel);
+        triggerEffect(px, py, '#3b82f6');
+        if (assignedLabel) addConstructionStep('point', assignedLabel, assignedLabel, `Bod ${assignedLabel}`, [hiddenAtIntersection.id], descLatexPoint(assignedLabel));
+        clearSelectionAfterPlacement();
+        promotedHidden = true;
+      }
+    } else if (lineSnap) {
+      px = lineSnap.x;
+      py = lineSnap.y;
+      const hiddenAtLine = points.find(p => (!p.label || p.hidden) && Math.sqrt((p.x - px) ** 2 + (p.y - py) ** 2) * scale < 6);
+      if (hiddenAtLine) {
+        const assignedLabel = promoteToVisiblePoint(hiddenAtLine.id, customLabel);
+        triggerEffect(px, py, '#3b82f6');
+        if (assignedLabel) addConstructionStep('point', assignedLabel, assignedLabel, `Bod ${assignedLabel}`, [hiddenAtLine.id], descLatexPoint(assignedLabel));
+        clearSelectionAfterPlacement();
+        promotedHidden = true;
+      }
+    }
+
+    if (!promotedHidden) {
+      // If there's a hidden construction point exactly here (common for protractor-created angles),
+      // promote it even when we didn't snap to an intersection/line.
+      const hiddenNearby = points.find(
+        p =>
+          p.hidden &&
+          Math.sqrt((p.x - px) ** 2 + (p.y - py) ** 2) * scale < 6,
+      );
+      if (hiddenNearby) {
+        const assignedLabel = promoteToVisiblePoint(hiddenNearby.id, customLabel);
+        triggerEffect(px, py, '#3b82f6');
+        if (assignedLabel)
+          addConstructionStep(
+            'point',
+            assignedLabel,
+            assignedLabel,
+            `Bod ${assignedLabel}`,
+            [hiddenNearby.id],
+            descLatexPoint(assignedLabel),
+          );
+        clearSelectionAfterPlacement();
+        return true;
+      }
+
+      // Check if a labeled point is already very close to this position
+      const alreadyThere = points.some(p => p.label && Math.sqrt((p.x - px) ** 2 + (p.y - py) ** 2) * scale < 6);
+      if (!alreadyThere) {
+        const newPoint: GeoPoint = {
+          id: crypto.randomUUID(),
+          x: px,
+          y: py,
+          label: customLabel !== undefined ? customLabel : getNextPointLabel()
+        };
+        setPoints(prev => [...prev, newPoint]);
+        triggerEffect(px, py, '#3b82f6');
+        if (newPoint.label) addConstructionStep('point', newPoint.label, newPoint.label, `Bod ${newPoint.label}`, [newPoint.id], descLatexPoint(newPoint.label));
+        clearSelectionAfterPlacement();
+      } else {
+        return false;
+      }
+    }
+    return true;
+  };
+
   const handleMouseDown = (e: React.MouseEvent) => {
     // Přehrávač záznamu: plátno jen posouvat (i během animace pomůcky).
     const panOnlyCanvas = readOnlyCanvas || recordingState.showPlayer;
@@ -5598,80 +5723,16 @@ export function FreeGeometryEditor({
       return;
     }
 
-    // 2. NÁSTROJ: BOD (POINT)
+    // 2. NÁSTROJ: BOD (POINT) — automatický / vlastní název
     if (activeTool === 'point') {
-      // Snap priority: intersection > line > free placement. Never snap to existing labeled points.
-      // Intersection always wins if present in range.
-      const intersection = findNearestIntersection(wx, wy);
-      const lineSnap = intersection ? null : snapToNearestShape(wx, wy);
-
-      let px = wx;
-      let py = wy;
-      let promotedHidden = false;
-
-      if (intersection) {
-        px = intersection.x;
-        py = intersection.y;
-        const hiddenAtIntersection = points.find(p => (!p.label || p.hidden) && Math.sqrt((p.x - px) ** 2 + (p.y - py) ** 2) * scale < 6);
-        if (hiddenAtIntersection) {
-          const assignedLabel = promoteToVisiblePoint(hiddenAtIntersection.id);
-          triggerEffect(px, py, '#3b82f6');
-          if (assignedLabel) addConstructionStep('point', assignedLabel, assignedLabel, `Bod ${assignedLabel}`, [hiddenAtIntersection.id], descLatexPoint(assignedLabel));
-          clearSelectionAfterPlacement();
-          promotedHidden = true;
-        }
-      } else if (lineSnap) {
-        px = lineSnap.x;
-        py = lineSnap.y;
-        const hiddenAtLine = points.find(p => (!p.label || p.hidden) && Math.sqrt((p.x - px) ** 2 + (p.y - py) ** 2) * scale < 6);
-        if (hiddenAtLine) {
-          const assignedLabel = promoteToVisiblePoint(hiddenAtLine.id);
-          triggerEffect(px, py, '#3b82f6');
-          if (assignedLabel) addConstructionStep('point', assignedLabel, assignedLabel, `Bod ${assignedLabel}`, [hiddenAtLine.id], descLatexPoint(assignedLabel));
-          clearSelectionAfterPlacement();
-          promotedHidden = true;
-        }
-      }
-
-      if (!promotedHidden) {
-        // If there's a hidden construction point exactly here (common for protractor-created angles),
-        // promote it even when we didn't snap to an intersection/line.
-        const hiddenNearby = points.find(
-          p =>
-            p.hidden &&
-            Math.sqrt((p.x - px) ** 2 + (p.y - py) ** 2) * scale < 6,
-        );
-        if (hiddenNearby) {
-          const assignedLabel = promoteToVisiblePoint(hiddenNearby.id);
-          triggerEffect(px, py, '#3b82f6');
-          if (assignedLabel)
-            addConstructionStep(
-              'point',
-              assignedLabel,
-              assignedLabel,
-              `Bod ${assignedLabel}`,
-              [hiddenNearby.id],
-              descLatexPoint(assignedLabel),
-            );
-          clearSelectionAfterPlacement();
-          return;
-        }
-
-        // Check if a labeled point is already very close to this position
-        const alreadyThere = points.some(p => p.label && Math.sqrt((p.x - px) ** 2 + (p.y - py) ** 2) * scale < 6);
-        if (!alreadyThere) {
-          const newPoint: GeoPoint = {
-            id: crypto.randomUUID(),
-            x: px,
-            y: py,
-            label: getNextPointLabel()
-          };
-          setPoints(prev => [...prev, newPoint]);
-          triggerEffect(px, py, '#3b82f6');
-          addConstructionStep('point', newPoint.label, newPoint.label, `Bod ${newPoint.label}`, [newPoint.id], descLatexPoint(newPoint.label));
-          clearSelectionAfterPlacement();
-        }
-      }
+      placePointAtWorld(wx, wy);
+      return;
+    }
+    if (activeTool === 'pointNamed') {
+      const alreadyThere = points.some(p => p.label && !p.hidden && Math.sqrt((p.x - wx) ** 2 + (p.y - wy) ** 2) * scale < 6);
+      if (alreadyThere) return;
+      setPendingNamedPoint({ wx, wy });
+      setPendingPointName('');
       return;
     }
 
@@ -5882,7 +5943,8 @@ export function FreeGeometryEditor({
             id: crypto.randomUUID(),
             x: ptX,
             y: ptY,
-            label: (isHidden || isCircleRadiusPoint) ? '' : getNextPointLabel(),
+            // Úsečka: nové krajní body zatím bez názvu (název se zadá v dialogu po narýsování)
+            label: (isHidden || isCircleRadiusPoint || activeTool === 'segment') ? '' : getNextPointLabel(),
             hidden: isHidden
           };
           
@@ -5900,6 +5962,7 @@ export function FreeGeometryEditor({
           setPoints(prev => [...prev, newPoint]);
           triggerEffect(ptX, ptY, '#3b82f6'); // Effect at actual (possibly snapped) position
           targetPointId = newPoint.id;
+          if (activeTool === 'segment') segmentNewPointIdsRef.current.add(newPoint.id);
           // Track auto-created circle center for cleanup if circle not completed
           if (activeTool === 'circle' && selectedPointId === null) {
             pendingCircleCenterRef.current = newPoint.id;
@@ -6016,10 +6079,11 @@ export function FreeGeometryEditor({
             id: crypto.randomUUID(),
             x: p1.x + Math.cos(angle) * fixedLength,
             y: p1.y + Math.sin(angle) * fixedLength,
-            label: getNextPointLabel(),
+            label: '',
             hidden: false
           };
           setPoints(prev => [...prev, newPoint]);
+          segmentNewPointIdsRef.current.add(newPoint.id);
           
           // Spustíme animaci s novým bodem jako p2
           startConstructionAnimation('segment', p1, newPoint);
@@ -6484,11 +6548,11 @@ export function FreeGeometryEditor({
           })()
         : getSnappingPoint(wx, wy, SNAP_PX, undefined, activeTool === 'move');
     // For point tool: don't highlight existing points — snap to lines/intersections instead
-    setHoveredPointId(activeTool === 'point' ? null : (snapped ? snapped.id : null));
+    setHoveredPointId(activeTool === 'point' || activeTool === 'pointNamed' ? null : (snapped ? snapped.id : null));
     mousePosRef.current = { x: wx, y: wy };
 
     // Snap indicators
-    if (activeTool === 'point') {
+    if (activeTool === 'point' || activeTool === 'pointNamed') {
       // Point tool: snap to lines and intersections, NOT to existing labeled points.
       // Intersection always takes priority — if one exists in range, never show line snap.
       const intSnap = findNearestIntersection(wx, wy);
@@ -7287,14 +7351,22 @@ export function FreeGeometryEditor({
               const lA = getPointLabel(p1data.id);
               const lB = getPointLabel(p2data.id);
               const d = distanceCm(p1data.x, p1data.y, p2data.x, p2data.y);
-              addConstructionStep(
-                'segment',
-                `${lA}${lB}; |${lA}${lB}| = ${d} cm`,
-                `${lA}${lB} \\;;\\; |${lA}${lB}| = ${decimalForLatex(d)} \\text{ cm}`,
-                `Úsečka ${lA}${lB} o délce ${d} cm`,
-                [newShape.id],
-                `\\text{Úsečka } ${latexIt(lA)}${latexIt(lB)} \\text{ o délce } ${decimalForLatex(d)} \\text{ cm}`
-              );
+              const t = segmentStepTexts(lA, lB, d);
+              addConstructionStep('segment', t.notation, t.latex, t.description, [newShape.id], t.descriptionLatex);
+              // Zeptat se na názvy bodů, které nevznikly výběrem existujícího pojmenovaného bodu
+              const askIds = [p1data.id as string, p2data.id as string].filter(id => {
+                const lbl = getPointLabel(id);
+                return segmentNewPointIdsRef.current.has(id) || !lbl || lbl === '?';
+              });
+              segmentNewPointIdsRef.current.delete(p1data.id);
+              segmentNewPointIdsRef.current.delete(p2data.id);
+              if (askIds.length > 0) {
+                setPendingSegmentNaming({
+                  shapeId: newShape.id,
+                  pointIds: askIds,
+                  names: Object.fromEntries(askIds.map(id => [id, ''])),
+                });
+              }
             } else if (newShape.type === 'line') {
               const lA = getPointLabel(p1data.id);
               const lB = getPointLabel(p2data.id);
@@ -10678,10 +10750,12 @@ export function FreeGeometryEditor({
       if (r1.point.id === r2.point.id) return;
 
       const newPoints: GeoPoint[] = [];
-      if (r1.isNew) newPoints.push(r1.point);
-      if (r2.isNew) newPoints.push(r2.point);
+      // Nové krajní body úsečky zatím bez názvu (název se zadá v dialogu po narýsování)
+      if (r1.isNew) { r1.point.label = ''; newPoints.push(r1.point); }
+      if (r2.isNew) { r2.point.label = ''; newPoints.push(r2.point); }
       if (newPoints.length > 0) {
         setPoints(prev => [...prev, ...newPoints]);
+        newPoints.forEach(np => segmentNewPointIdsRef.current.add(np.id));
       }
       startConstructionAnimation('segment', r1.point, r2.point);
       triggerEffect((r1.point.x + r2.point.x) / 2, (r1.point.y + r2.point.y) / 2, '#3b82f6');
@@ -14212,6 +14286,177 @@ export function FreeGeometryEditor({
       )}
 
       {/* PŘEJMENOVÁNÍ BODŮ A TVARŮ */}
+      {pendingSegmentNaming && (() => {
+        const { shapeId, pointIds, names } = pendingSegmentNaming;
+        const keepAuto = () => setPendingSegmentNaming(null);
+        const confirm = () => {
+          const edits = pointIds.map(id => ({ id, next: (names[id] ?? '').trim() }));
+          const others = new Set(points.filter(p => !p.hidden && !pointIds.includes(p.id)).map(p => p.label).filter(Boolean));
+          const seen = new Set<string>();
+          for (const e of edits) {
+            if (!e.next) continue;
+            if (others.has(e.next) || seen.has(e.next)) {
+              toast.error(`Bod s názvem "${e.next}" už existuje.`);
+              return;
+            }
+            seen.add(e.next);
+          }
+          const nextPoints = points.map(p => {
+            const e = edits.find(x => x.id === p.id);
+            return e ? { ...p, hidden: false, label: e.next } : p;
+          });
+          setPoints(nextPoints);
+          const shape = shapes.find(sh => sh.id === shapeId);
+          if (shape) {
+            const pa = nextPoints.find(p => p.id === shape.points[0]);
+            const pb = nextPoints.find(p => p.id === shape.points[1]);
+            if (pa && pb) {
+              const t = segmentStepTexts(pa.label, pb.label, distanceCm(pa.x, pa.y, pb.x, pb.y));
+              setConstructionSteps(prev => prev.map(st =>
+                st.type === 'segment' && st.objectIds.includes(shapeId)
+                  ? { ...st, notation: t.notation, latex: t.latex, description: t.description, descriptionLatex: t.descriptionLatex }
+                  : st
+              ));
+            }
+          }
+          setPendingSegmentNaming(null);
+        };
+        return (
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+            style={{ touchAction: 'auto' }}
+            onClick={keepAuto}
+          >
+            <div
+              className={`rounded-2xl p-6 shadow-2xl max-w-xs w-full mx-4 ${
+                darkMode ? 'bg-[#24283b] border border-[#565f89]' : 'bg-white'
+              }`}
+              style={{ touchAction: 'auto' }}
+              onClick={(e) => e.stopPropagation()}
+              onTouchStart={(e) => e.stopPropagation()}
+            >
+              <h3 className={`text-xl font-bold mb-4 ${darkMode ? 'text-[#c0caf5]' : 'text-gray-900'}`}>
+                {pointIds.length > 1 ? 'Názvy bodů úsečky' : 'Název bodu úsečky'}
+              </h3>
+              <div className="space-y-2 mb-4">
+                {pointIds.map((pid, i) => {
+                  return (
+                    <div key={pid} className="flex items-center gap-3">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 font-bold text-sm ${
+                        darkMode ? 'bg-blue-900/50 text-blue-400' : 'bg-blue-100 text-blue-600'
+                      }`}>
+                        {pointIds.length > 1 ? i + 1 : '•'}
+                      </div>
+                      <input
+                        ref={i === 0 ? segmentNameInputRef : undefined}
+                        type="text"
+                        value={names[pid] ?? ''}
+                        placeholder="Bez názvu"
+                        maxLength={3}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setPendingSegmentNaming(prev => prev ? { ...prev, names: { ...prev.names, [pid]: v } } : prev);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') { e.preventDefault(); confirm(); }
+                          if (e.key === 'Escape') { e.preventDefault(); keepAuto(); }
+                        }}
+                        className={`flex-1 min-w-0 px-3 py-2 rounded-lg border text-center text-lg font-bold ${
+                          darkMode ? 'bg-[#414868] border-[#565f89] text-[#c0caf5]' : 'bg-white border-gray-300 text-gray-900'
+                        } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={keepAuto}
+                  className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all ${
+                    darkMode ? 'bg-[#414868] text-[#c0caf5] hover:bg-[#565f89]' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  Přeskočit
+                </button>
+                <button
+                  onClick={confirm}
+                  className="flex-1 py-3 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-500 transition-all"
+                >
+                  Hotovo
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {pendingNamedPoint && (() => {
+        const cancel = () => setPendingNamedPoint(null);
+        const confirm = () => {
+          const name = pendingPointName.trim(); // prázdný název = bod bez popisku
+          if (name && points.some(p => !p.hidden && p.label === name)) {
+            toast.error(`Bod s názvem "${name}" už existuje.`);
+            return;
+          }
+          const { wx, wy } = pendingNamedPoint;
+          setPendingNamedPoint(null);
+          placePointAtWorld(wx, wy, name);
+        };
+        return (
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+            style={{ touchAction: 'auto' }}
+            onClick={cancel}
+          >
+            <div
+              className={`rounded-2xl p-6 shadow-2xl max-w-xs w-full mx-4 ${
+                darkMode ? 'bg-[#24283b] border border-[#565f89]' : 'bg-white'
+              }`}
+              style={{ touchAction: 'auto' }}
+              onClick={(e) => e.stopPropagation()}
+              onTouchStart={(e) => e.stopPropagation()}
+            >
+              <h3 className={`text-xl font-bold mb-4 ${darkMode ? 'text-[#c0caf5]' : 'text-gray-900'}`}>
+                Název bodu
+              </h3>
+              <input
+                ref={pendingPointInputRef}
+                type="text"
+                autoFocus
+                value={pendingPointName}
+                placeholder="Bez názvu"
+                maxLength={3}
+                onFocus={(e) => e.currentTarget.select()}
+                onChange={(e) => setPendingPointName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') { e.preventDefault(); confirm(); }
+                  if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+                }}
+                className={`w-full px-3 py-2 rounded-lg border text-center text-lg font-bold mb-4 ${
+                  darkMode ? 'bg-[#414868] border-[#565f89] text-[#c0caf5]' : 'bg-white border-gray-300 text-gray-900'
+                } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={cancel}
+                  className={`flex-1 py-3 rounded-xl font-bold transition-all ${
+                    darkMode ? 'bg-[#414868] text-[#c0caf5] hover:bg-[#565f89]' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  Zrušit
+                </button>
+                <button
+                  onClick={confirm}
+                  className="flex-1 py-3 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-500 transition-all"
+                >
+                  Vytvořit
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {showRenameModal && (
         <div 
           className="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm"

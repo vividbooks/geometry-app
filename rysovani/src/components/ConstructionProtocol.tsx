@@ -160,8 +160,18 @@ export function ConstructionProtocol({ steps, visible, onClose, onClear, darkMod
         const dist = Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2);
         const d = fmtCm(dist);
         if (step.type === 'segment') {
-          const lA = p1.label || '?';
-          const lB = p2.label || '?';
+          const lA = p1.label || '';
+          const lB = p2.label || '';
+          if (!lA || !lB) {
+            // Úsečka s nepojmenovaným krajním bodem — bez písmen
+            return {
+              ...step,
+              notation: `úsečka; ${d} cm`,
+              latex: `\\text{úsečka} \\;;\\; ${decimalForLatex(d)} \\text{ cm}`,
+              description: `Úsečka o délce ${d} cm`,
+              descriptionLatex: `\\text{Úsečka o délce } ${decimalForLatex(d)} \\text{ cm}`,
+            };
+          }
           return {
             ...step,
             notation: `${lA}${lB}; |${lA}${lB}| = ${d} cm`,
