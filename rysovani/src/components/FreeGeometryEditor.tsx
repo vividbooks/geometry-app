@@ -45,6 +45,7 @@ import {
   Link,
   Printer,
   Grid2X2,
+  Magnet,
   Eraser,
   ImagePlus,
   Lock,
@@ -1793,6 +1794,29 @@ const SELECTION_GLOW_STROKE_WORLD = 8.5;
 /** Modrý obrys výběru (světové jednotky). */
 const SELECTION_OUTLINE_STROKE_WORLD = 1.75;
 
+/** Klávesové zkratky nástrojů (písmeno → nástroj). Zobrazují se i v nabídkách nástrojů. */
+const TOOL_SHORTCUTS: Record<string, string> = {
+  move: 'V',
+  pan: 'H',
+  point: 'B',
+  pointNamed: 'N',
+  freehand: 'F',
+  triangleRuler: 'R',
+  segment: 'U',
+  line: 'P',
+  ray: 'L',
+  perpendicular: 'O',
+  circle: 'K',
+  angle: 'A',
+  eraser: 'E',
+};
+const SHORTCUT_TO_TOOL: Record<string, string> = Object.fromEntries(
+  Object.entries(TOOL_SHORTCUTS).map(([tool, key]) => [`Key${key}`, tool]),
+);
+
+/** Automatické ukládání rozpracovaného plátna (jen volné rýsování, ne úkoly/přehrávač). */
+const AUTOSAVE_KEY_PREFIX = 'rysovani-autosave-v1-';
+
 // --- HLAVNÍ KOMPONENTA ---
 
 export function FreeGeometryEditor({
@@ -2210,6 +2234,7 @@ export function FreeGeometryEditor({
     keepCompassToolAfterAnimRef.current = false;
   };
 
+  const selectSidebarToolRef = useRef<((toolId: string) => void) | null>(null);
   const selectSidebarTool = (toolId: string) => {
     resetPlacedRuler();
     if (toolId === 'angle') {
@@ -2250,6 +2275,8 @@ export function FreeGeometryEditor({
       setCircleTabletState
     );
   };
+
+  selectSidebarToolRef.current = selectSidebarTool;
 
   /** Skrýt volné pravítko a kružítko (např. při otevření jiné skupiny nástrojů). */
   const dismissPlacedDrawingTools = () => {
@@ -2389,6 +2416,8 @@ export function FreeGeometryEditor({
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
   const [showMeasurements, setShowMeasurements] = useState(false); // Toggle pro zobrazení měření - defaultně vypnuté
   const [showGrid, setShowGrid] = useState(false);
+  /** Přichytávání nových bodů k průsečíkům mřížky (funguje jen při zobrazené mřížce). */
+  const [snapToGrid, setSnapToGrid] = useState(false);
   const canvasWarningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [canvasWarning, setCanvasWarning] = useState<string | null>(null);
 
@@ -2470,9 +2499,40 @@ export function FreeGeometryEditor({
   const [editableSteps, setEditableSteps] = useState<RecordedStep[]>([]);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [showRenameModal, setShowRenameModal] = useState(false);
+  const renameDoneBtnRef = useRef<HTMLButtonElement | null>(null);
   /** Nástroj „Bod (vlastní název)“: místo kliknutí čeká na zadání názvu */
   const [pendingNamedPoint, setPendingNamedPoint] = useState<{ wx: number; wy: number } | null>(null);
   const [pendingPointName, setPendingPointName] = useState('');
+
+  // --- Automatické ukládání rozpracovaného plátna ---
+  const autosaveEnabled =
+    !embedInAssignment &&
+    !readOnlyCanvas &&
+    !initialCanvasSnapshot &&
+    !(sharedRecording && sharedRecording.steps.length > 0) &&
+    !(typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('canvas'));
+  const autosaveKey = AUTOSAVE_KEY_PREFIX + (deviceTypeProp ?? 'default');
+  type AutosaveData = {
+    savedAt: number;
+    points: GeoPoint[];
+    shapes: GeoShape[];
+    freehandPaths: FreehandPath[];
+    constructionSteps: ConstructionStep[];
+    constructionCounter: number;
+  };
+  /** Uložená konstrukce z minula, o jejímž obnovení se uživatel ještě nerozhodl */
+  const [autosaveOffer, setAutosaveOffer] = useState<AutosaveData | null>(() => {
+    if (!autosaveEnabled) return null;
+    try {
+      const raw = window.localStorage.getItem(autosaveKey);
+      if (!raw) return null;
+      const data = JSON.parse(raw) as AutosaveData;
+      const hasContent = (data.points?.length ?? 0) + (data.shapes?.length ?? 0) + (data.freehandPaths?.length ?? 0) > 0;
+      return hasContent ? data : null;
+    } catch {
+      return null;
+    }
+  });
   const pendingPointInputRef = useRef<HTMLInputElement | null>(null);
   /** Body nově vytvořené při rýsování úsečky (po dokončení úsečky se zeptáme na jejich názvy) */
   const segmentNewPointIdsRef = useRef<Set<string>>(new Set());
@@ -3433,23 +3493,41 @@ export function FreeGeometryEditor({
         setActiveGroup(null);
         setAngleInput(prev => ({ ...prev, visible: false }));
         setAngleTabletState({ step: 'idle', selectedLineId: null, currentPos: null, baseAngle: 0 });
+        setPerpTabletState({ step: 'idle', selectedLineId: null, currentPos: null });
         marqueeRef.current = null;
         groupDragRef.current = null;
         groupDragLiveRef.current = null;
       }
       // Undo/Redo shortcuts
-      if (e.ctrlKey && e.key === 'z' && !e.shiftKey) {
+      const mod = e.ctrlKey || e.metaKey;
+      const k = e.key.toLowerCase();
+      // Zkratky nástrojů (bez modifikátorů, mimo textová pole a dialogy)
+      if (
+        !mod && !e.altKey && !e.repeat &&
+        !isTypingTarget && !showRenameModal && !pendingNamedPoint && !pendingSegmentNaming &&
+        !readOnlyCanvas && !recordingState.showPlayer
+      ) {
+        const toolId = SHORTCUT_TO_TOOL[e.code];
+        if (toolId) {
+          e.preventDefault();
+          if (toolId !== 'move') clearSelectionAfterPlacement();
+          setActiveGroup(null);
+          selectSidebarToolRef.current?.(toolId);
+          return;
+        }
+      }
+      if (mod && k === 'z' && !e.shiftKey) {
         e.preventDefault();
         handleUndo();
       }
-      if (e.ctrlKey && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+      if (mod && (k === 'y' || (k === 'z' && e.shiftKey))) {
         e.preventDefault();
         handleRedo();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selection, historyIndex, history, selectedShapeIds, selectedFreehandIds, shapes, points, freehandPaths, showRenameModal, pendingNamedPoint, pendingSegmentNaming]);
+  }, [selection, historyIndex, history, selectedShapeIds, selectedFreehandIds, shapes, points, freehandPaths, showRenameModal, pendingNamedPoint, pendingSegmentNaming, readOnlyCanvas, recordingState.showPlayer]);
 
   const triggerEffect = (x: number, y: number, color: string = '#3b82f6') => {
     setVisualEffects(prev => [...prev, {
@@ -3502,6 +3580,53 @@ export function FreeGeometryEditor({
     }
     commitHistorySnapshot();
   }, [points, shapes, freehandPaths, commitHistorySnapshot]);
+
+  // Automatické ukládání plátna do prohlížeče (s malým zpožděním)
+  useEffect(() => {
+    if (!autosaveEnabled) return;
+    const isEmpty = points.length === 0 && shapes.length === 0 && freehandPaths.length === 0;
+    if (autosaveOffer) {
+      // Dokud se uživatel nerozhodl o obnovení, nepřepisovat uložená data.
+      // Když ale začne rýsovat, bere se to jako „zahodit“.
+      if (isEmpty) return;
+      setAutosaveOffer(null);
+    }
+    const t = window.setTimeout(() => {
+      try {
+        if (isEmpty) {
+          window.localStorage.removeItem(autosaveKey);
+        } else {
+          const data: AutosaveData = {
+            savedAt: Date.now(),
+            points,
+            shapes,
+            freehandPaths,
+            constructionSteps,
+            constructionCounter: constructionStepCounter.current,
+          };
+          window.localStorage.setItem(autosaveKey, JSON.stringify(data));
+        }
+      } catch {
+        // plné úložiště / soukromé okno — ukládání tiše vynechat
+      }
+    }, 600);
+    return () => window.clearTimeout(t);
+  }, [points, shapes, freehandPaths, constructionSteps, autosaveEnabled, autosaveKey]);
+
+  const restoreAutosave = () => {
+    const data = autosaveOffer;
+    if (!data) return;
+    setAutosaveOffer(null);
+    setPoints(data.points ?? []);
+    setShapes(data.shapes ?? []);
+    setFreehandPaths(data.freehandPaths ?? []);
+    setConstructionSteps(data.constructionSteps ?? []);
+    constructionStepCounter.current = data.constructionCounter ?? (data.constructionSteps?.length ?? 0);
+  };
+  const discardAutosave = () => {
+    setAutosaveOffer(null);
+    try { window.localStorage.removeItem(autosaveKey); } catch { /* ignore */ }
+  };
 
   // Automatické zachytávání změn při nahrávání
   useEffect(() => {
@@ -4442,6 +4567,15 @@ export function FreeGeometryEditor({
   };
 
   // Unified snap: always pick whichever target (existing point OR intersection) is geometrically closer
+  /** Nejbližší průsečík mřížky (stejný krok jako vykreslená mřížka), nebo null, když přichytávání není zapnuté. */
+  const getGridSnap = (wx: number, wy: number): { x: number; y: number } | null => {
+    if (!snapToGrid || !showGrid) return null;
+    let gridSize = 50 * scale;
+    while (gridSize < 35) gridSize *= 2;
+    const step = gridSize / scale;
+    return { x: Math.round(wx / step) * step, y: Math.round(wy / step) * step };
+  };
+
   const getSnapPosition = (
     wx: number,
     wy: number,
@@ -4455,7 +4589,7 @@ export function FreeGeometryEditor({
     const dPoint = pointSnap ? Math.sqrt((pointSnap.x - wx) ** 2 + (pointSnap.y - wy) ** 2) * scale : Infinity;
     const dInt   = intSnap   ? Math.sqrt((intSnap.x   - wx) ** 2 + (intSnap.y   - wy) ** 2) * scale : Infinity;
 
-    if (!pointSnap && !intSnap) return null;
+    if (!pointSnap && !intSnap) return getGridSnap(wx, wy);
     if (!intSnap) return { x: pointSnap!.x, y: pointSnap!.y };
     if (!pointSnap) return intSnap;
 
@@ -4851,6 +4985,44 @@ export function FreeGeometryEditor({
     setOffset({ x: newOffsetX, y: newOffsetY });
   };
 
+  /**
+   * Kolmice (PC): pozice pravítka posouvaného po vybrané přímce.
+   * Přichytí se k bodu/průsečíku u kurzoru, nebo k bodu, jehož kolmý průmět na přímku je u průmětu kurzoru
+   * (kolmice pak prochází tím bodem). Jinak vrací průmět kurzoru na přímku.
+   */
+  const getPerpPositionOnLine = (baseShape: GeoShape, wx: number, wy: number): { x: number; y: number } => {
+    const bp1 = points.find(p => p.id === baseShape.definition.p1Id);
+    const bp2 = baseShape.definition.p2Id ? points.find(p => p.id === baseShape.definition.p2Id) : null;
+    let dx = 1, dy = 0;
+    if (bp1 && bp2) {
+      dx = bp2.x - bp1.x;
+      dy = bp2.y - bp1.y;
+    } else if (baseShape.definition.angle !== undefined) {
+      const rad = -baseShape.definition.angle * Math.PI / 180;
+      dx = Math.cos(rad);
+      dy = Math.sin(rad);
+    }
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    const ox = bp1?.x ?? 0, oy = bp1?.y ?? 0;
+    const project = (x: number, y: number) => {
+      const t = (x - ox) * ux + (y - oy) * uy;
+      return { x: ox + t * ux, y: oy + t * uy, t };
+    };
+    const direct = getSnapPositionPreferPoint(wx, wy, SNAP_PX, undefined, true);
+    if (direct) return direct;
+    const cur = project(wx, wy);
+    let best: { x: number; y: number } | null = null;
+    let bestD = SNAP_PX / scale;
+    for (const p of points) {
+      if (p.hidden || !p.label) continue;
+      const pr = project(p.x, p.y);
+      const d = Math.abs(pr.t - cur.t);
+      if (d < bestD) { bestD = d; best = { x: p.x, y: p.y }; }
+    }
+    return best ?? { x: cur.x, y: cur.y };
+  };
+
   /** Hover nad čárou pro nástroje úhel/kolmice — stejná geometrie jako v handleMouseMove. Na tabletu se v mousedown volá znovu u pozice ťuku, protože React stav hoveredShape je často o snímek pozadu. */
   const getLineHoverAtWorld = (
     wx: number,
@@ -4859,7 +5031,7 @@ export function FreeGeometryEditor({
     if (activeTool !== 'angle' && activeTool !== 'perpendicular') return null;
     let closest: { id: string; proj: { x: number; y: number }; angle: number } | null = null;
     const isInPositioningMode =
-      (activeTool === 'perpendicular' && isTabletMode && perpTabletState.step === 'positioning') ||
+      (activeTool === 'perpendicular' && perpTabletState.step === 'positioning') ||
       (activeTool === 'angle' && isTabletMode && angleTabletState.step === 'positioning');
     const isTouchActive = (Date.now() - lastTouchTimeRef.current) < 1000;
     const baseThreshold = isTouchActive ? 80 : 50;
@@ -4880,7 +5052,7 @@ export function FreeGeometryEditor({
         shape.type === 'lineDashDot' ||
         isPerpRay
       ) {
-        if (activeTool === 'perpendicular' && isTabletMode && perpTabletState.step === 'positioning') {
+        if (activeTool === 'perpendicular' && perpTabletState.step === 'positioning') {
           if (shape.id !== perpTabletState.selectedLineId) return;
         }
         if (activeTool === 'angle' && isTabletMode && angleTabletState.step === 'positioning') {
@@ -5099,6 +5271,10 @@ export function FreeGeometryEditor({
     let px = wx;
     let py = wy;
     let promotedHidden = false;
+    if (!intersection && !lineSnap) {
+      const g = getGridSnap(wx, wy);
+      if (g) { px = g.x; py = g.y; }
+    }
 
     if (intersection) {
       px = intersection.x;
@@ -5166,6 +5342,23 @@ export function FreeGeometryEditor({
       }
     }
     return true;
+  };
+
+  /** Dvojklik na bod (nástroj Výběr) → přejmenování bodu */
+  const handleCanvasDoubleClick = (e: React.MouseEvent) => {
+    if (readOnlyCanvas || recordingState.showPlayer || animState.isActive) return;
+    if (activeTool !== 'move') return;
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const wx = (e.clientX - rect.left - offset.x) / scale;
+    const wy = (e.clientY - rect.top - offset.y) / scale;
+    const hit = getSnappingPoint(wx, wy, SNAP_PX, undefined, true);
+    if (!hit || hit.hidden) return;
+    e.preventDefault();
+    setSelection(hit.id);
+    setSelectedShapeIds([]);
+    setSelectedFreehandIds([]);
+    setShowRenameModal(true);
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -5762,12 +5955,27 @@ export function FreeGeometryEditor({
         return;
       }
       
-      // PC mód - původní logika (jeden klik)
-      if (lineHoverForAnglePerp) {
-        const hs = lineHoverForAnglePerp;
-        const baseShape = shapes.find(s => s.id === hs.id);
-        if (baseShape && ['line', 'lineDashed', 'segment', 'ray'].includes(baseShape.type)) {
-            
+      // PC mód: 1) klik vybere přímku, 2) pravítko se posouvá po přímce za myší, 3) klik narýsuje kolmici
+      if (perpTabletState.step !== 'positioning' || !perpTabletState.selectedLineId) {
+        if (lineHoverForAnglePerp) {
+          const picked = shapes.find(s => s.id === lineHoverForAnglePerp.id);
+          if (picked && ['line', 'lineDashed', 'lineDashDot', 'segment', 'ray'].includes(picked.type)) {
+            setPerpTabletState({
+              step: 'positioning',
+              selectedLineId: picked.id,
+              currentPos: getPerpPositionOnLine(picked, wx, wy),
+            });
+          }
+        }
+        return;
+      }
+      {
+        const baseShape = shapes.find(s => s.id === perpTabletState.selectedLineId);
+        if (!baseShape) {
+          setPerpTabletState({ step: 'selectLine', selectedLineId: null, currentPos: null });
+          return;
+        }
+        {
             const bp1 = points.find(p => p.id === baseShape.definition.p1Id);
             const bp2 = baseShape.definition.p2Id ? points.find(p => p.id === baseShape.definition.p2Id) : null;
             
@@ -5785,10 +5993,9 @@ export function FreeGeometryEditor({
             const perpDy = dx;
             const len = Math.sqrt(perpDx*perpDx + perpDy*perpDy) || 1;
             
-            // Snap: viditelné body + průsečíky; skryté konstrukční body ne (jinak „ukradnou“ kolmici od projekce na přímku).
-            const snapPos = getSnapPositionPreferPoint(wx, wy, SNAP_PX, undefined, true);
-            const pX = snapPos ? snapPos.x : hs.proj.x;
-            const pY = snapPos ? snapPos.y : hs.proj.y;
+            const placePos = getPerpPositionOnLine(baseShape, wx, wy);
+            const pX = placePos.x;
+            const pY = placePos.y;
             
             const newP1Id = crypto.randomUUID();
             const newP2Id = crypto.randomUUID();
@@ -5846,6 +6053,7 @@ export function FreeGeometryEditor({
                 perpTexts.descriptionLatex
               );
             }
+            setPerpTabletState({ step: 'idle', selectedLineId: null, currentPos: null });
             setActiveTool('move'); // Reset nástroje po dokončení
             clearSelectionAfterPlacement();
         }
@@ -6662,6 +6870,15 @@ export function FreeGeometryEditor({
        currentPathRef.current.push({ x: wx, y: wy });
     }
     
+    // PC mód - posun pravítka kolmice po vybrané přímce
+    if (activeTool === 'perpendicular' && !isTabletMode && perpTabletState.step === 'positioning' && perpTabletState.selectedLineId) {
+      const baseShape = shapes.find(s => s.id === perpTabletState.selectedLineId);
+      if (baseShape) {
+        const pos = getPerpPositionOnLine(baseShape, wx, wy);
+        setPerpTabletState(prev => ({ ...prev, currentPos: pos }));
+      }
+    }
+
     // Tablet mód - positioning kolmice (with point snapping)
     if (activeTool === 'perpendicular' && isTabletMode && perpTabletState.step === 'positioning') {
       if (perpTabletState.selectedLineId && hoveredShape && hoveredShape.id === perpTabletState.selectedLineId) {
@@ -9716,7 +9933,7 @@ export function FreeGeometryEditor({
     // 4b-pre. Zvýraznění vybrané linky v angle/perp tablet positioning (i bez hoveru)
     const tabletSelectedLineId = 
       (activeTool === 'angle' && isTabletMode && angleTabletState.step === 'positioning' && angleTabletState.selectedLineId) ? angleTabletState.selectedLineId
-      : (activeTool === 'perpendicular' && isTabletMode && perpTabletState.step === 'positioning' && perpTabletState.selectedLineId) ? perpTabletState.selectedLineId
+      : (activeTool === 'perpendicular' && perpTabletState.step === 'positioning' && perpTabletState.selectedLineId) ? perpTabletState.selectedLineId
       : null;
     if (tabletSelectedLineId) {
        const selectedShape = shapes.find(s => s.id === tabletSelectedLineId);
@@ -9796,10 +10013,10 @@ export function FreeGeometryEditor({
 
     // 4c. Náhled kolmice (Perpendicular Tool)
     if (activeTool === 'perpendicular' && mousePosRef.current) {
-        const inPositioningMode = isTabletMode && perpTabletState.step === 'positioning' && perpTabletState.selectedLineId;
+        const inPositioningMode = perpTabletState.step === 'positioning' && perpTabletState.selectedLineId;
         
-        // V positioning módu zobrazit pouze pokud existuje currentPos (po kliknutí), jinak zobrazit při hoveru (ale ne v tablet módu)
-        if ((inPositioningMode && perpTabletState.currentPos) || (hoveredShape && !isTabletMode)) {
+        // Pravítko kolmice se ukazuje až po výběru přímky (PC i tablet)
+        if (inPositioningMode && perpTabletState.currentPos) {
             const baseShape = inPositioningMode 
                 ? shapes.find(s => s.id === perpTabletState.selectedLineId)
                 : shapes.find(s => s.id === hoveredShape.id);
@@ -9821,7 +10038,7 @@ export function FreeGeometryEditor({
                 const perpDy = dx;
                 const len = Math.sqrt(perpDx*perpDx + perpDy*perpDy) || 1;
                 
-                const useTabletPos = isTabletMode && perpTabletState.step === 'positioning' && perpTabletState.currentPos;
+                const useTabletPos = perpTabletState.step === 'positioning' && perpTabletState.currentPos;
                 const mx = useTabletPos ? perpTabletState.currentPos.x : mousePosRef.current.x;
                 const my = useTabletPos ? perpTabletState.currentPos.y : mousePosRef.current.y;
                 
@@ -9881,19 +10098,8 @@ export function FreeGeometryEditor({
 
                 ctx.restore();
             }
-        } else {
-             // Floating pravítko (vodorovně) když není hover
-             const mx = mousePosRef.current.x;
-             const my = mousePosRef.current.y;
-             const rStart = { x: mx - 400, y: my };
-             const rEnd = { x: mx + 400, y: my };
-             
-             ctx.save();
-             if (!isTabletMode) {
-               drawRuler(ctx, rStart, rEnd, 0.3); // Mírně průhledné
-             }
-             ctx.restore();
         }
+        // Při výběru přímky se pravítko nezobrazuje — objeví se až po kliknutí na přímku.
     }
 
     // Náhled úhloměru před kliknutím (Angle Tool Hover) — jen bez umístěného úhloměru
@@ -12105,6 +12311,23 @@ export function FreeGeometryEditor({
       >
         <Grid2X2 className="h-5 w-5" />
       </button>
+      {showGrid && (
+        <button
+          type="button"
+          onClick={() => setSnapToGrid(v => !v)}
+          onTouchEnd={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setSnapToGrid(v => !v);
+          }}
+          className={`flex h-10 w-10 items-center justify-center rounded-xl transition-all duration-300 ${
+            snapToGrid ? 'bg-[#1e1b4b] text-white' : 'text-black hover:bg-gray-200'
+          }`}
+          title={snapToGrid ? 'Vypnout přichytávání k mřížce' : 'Přichytávat body k mřížce'}
+        >
+          <Magnet className="h-5 w-5" />
+        </button>
+      )}
 
       <div className="h-6 w-px bg-gray-300" />
       <button
@@ -12145,6 +12368,7 @@ export function FreeGeometryEditor({
           cursor: getContainerCursor(),
         }}
         onMouseDown={handleMouseDown}
+        onDoubleClick={handleCanvasDoubleClick}
         onMouseMove={handleMouseMoveWrapper}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
@@ -12429,7 +12653,7 @@ export function FreeGeometryEditor({
                             className={`w-12 h-12 flex items-center justify-center rounded-xl transition-all duration-300 relative ${
                                 isActive ? 'bg-[#1e1b4b] text-white' : 'text-black hover:bg-gray-200'
                             }`}
-                            title={group.label}
+                            title={group.tools.length === 1 && TOOL_SHORTCUTS[group.tools[0].id] ? `${group.label} (${TOOL_SHORTCUTS[group.tools[0].id]})` : group.label}
                         >
                             <DisplayIcon className="w-6 h-6" />
                             {group.tools.length > 1 && (
@@ -12471,6 +12695,9 @@ export function FreeGeometryEditor({
                                         >
                                             {ToolIcon && <ToolIcon className="w-4 h-4" />}
                                             <span>{tool.label}</span>
+                                            {TOOL_SHORTCUTS[tool.id] && (
+                                              <kbd className="ml-auto pl-3 font-sans text-[11px] font-semibold text-gray-400">{TOOL_SHORTCUTS[tool.id]}</kbd>
+                                            )}
                                         </button>
                                     );
                                 })}
@@ -12480,7 +12707,7 @@ export function FreeGeometryEditor({
                             - u "Výběr" by překážel kontextovým tlačítkům (název/zámek/barva) */}
                         {group.tools.length === 1 && group.id !== 'group_move' && (
                             <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-black/80 text-white text-xs rounded-lg whitespace-nowrap opacity-0 group-hover/tool:opacity-100 transition-opacity pointer-events-none">
-                                {group.label}
+                                {group.label}{TOOL_SHORTCUTS[group.tools[0].id] ? ` (${TOOL_SHORTCUTS[group.tools[0].id]})` : ''}
                             </div>
                         )}
                     </div>
@@ -12609,6 +12836,9 @@ export function FreeGeometryEditor({
                                     >
                                       {tool.label}
                                     </span>
+                                    {TOOL_SHORTCUTS[tool.id] && (
+                                      <kbd className="ml-auto pl-3 shrink-0 self-center font-sans text-[11px] font-semibold text-gray-400">{TOOL_SHORTCUTS[tool.id]}</kbd>
+                                    )}
                                  </button>
                                  {isMovableRulerTool && (
                                    <div className="mx-3 my-1.5 border-t border-gray-100" aria-hidden />
@@ -12638,7 +12868,7 @@ export function FreeGeometryEditor({
              >
                <Eraser className="w-5 h-5" />
                <div className="absolute left-full ml-3 px-3 py-1.5 bg-black/80 text-white text-xs rounded-lg whitespace-nowrap opacity-0 group-hover/eraser:opacity-100 transition-opacity pointer-events-none">
-                 Guma — klikni na tvar pro smazání
+                 Guma — klikni na tvar pro smazání (E)
                </div>
              </button>
 
@@ -12917,6 +13147,11 @@ export function FreeGeometryEditor({
           else if (activeTool === 'ray' && selectedPointId) text = 'Vyber druhý bod polopřímky';
           else if (activeTool === 'circle' && !isTabletMode && selectedPointId) text = 'Vyber bod na obvodu (poloměr)';
           else if (activeTool === 'angle' && !isTabletMode && selectedPointId) text = 'Vyber bod na rameni úhlu';
+          else if (activeTool === 'perpendicular') {
+            text = perpTabletState.step === 'positioning'
+              ? 'Posuň pravítko po přímce a kliknutím narýsuj kolmici (Esc = zrušit)'
+              : 'Klikni na přímku, ke které chceš narýsovat kolmici';
+          }
           if (text) content = <span>{text}</span>;
         }
 
@@ -14286,6 +14521,35 @@ export function FreeGeometryEditor({
       )}
 
       {/* PŘEJMENOVÁNÍ BODŮ A TVARŮ */}
+      {autosaveOffer && (
+        <div className="fixed left-1/2 top-20 z-[60] -translate-x-1/2 px-4 w-full max-w-md" style={{ touchAction: 'auto' }}>
+          <div className={`flex flex-wrap items-center gap-3 rounded-2xl px-4 py-3 shadow-xl ${
+            darkMode ? 'bg-[#24283b] border border-[#565f89] text-[#c0caf5]' : 'bg-white border border-gray-200 text-gray-800'
+          }`}>
+            <div className="flex-1 min-w-[180px] text-sm">
+              <div className="font-bold">Rozpracovaná konstrukce</div>
+              <div className={darkMode ? 'text-gray-400' : 'text-gray-500'}>
+                Uloženo {new Date(autosaveOffer.savedAt).toLocaleString('cs-CZ', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' })}
+              </div>
+            </div>
+            <button
+              onClick={discardAutosave}
+              onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); discardAutosave(); }}
+              className={`px-3 py-2 rounded-xl text-sm font-bold ${darkMode ? 'bg-[#414868] hover:bg-[#565f89]' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
+            >
+              Zahodit
+            </button>
+            <button
+              onClick={restoreAutosave}
+              onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); restoreAutosave(); }}
+              className="px-3 py-2 rounded-xl text-sm font-bold text-white bg-blue-600 hover:bg-blue-500"
+            >
+              Obnovit
+            </button>
+          </div>
+        </div>
+      )}
+
       {pendingSegmentNaming && (() => {
         const { shapeId, pointIds, names } = pendingSegmentNaming;
         const keepAuto = () => setPendingSegmentNaming(null);
@@ -14501,6 +14765,12 @@ export function FreeGeometryEditor({
                                 type="text"
                                 value={current}
                                 placeholder="Název bodu"
+                                autoFocus={renameDraft.pointIds[0] === pid}
+                                onFocus={(e) => e.currentTarget.select()}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') { e.preventDefault(); renameDoneBtnRef.current?.click(); }
+                                  if (e.key === 'Escape') { e.preventDefault(); setShowRenameModal(false); }
+                                }}
                                 onChange={(e) => {
                                   const next = e.target.value;
                                   setRenameDraft(prev => ({
@@ -14626,6 +14896,7 @@ export function FreeGeometryEditor({
 
               return (
                 <button
+                  ref={renameDoneBtnRef}
                   onClick={commitRename}
                   onTouchEnd={(e) => {
                     e.preventDefault();

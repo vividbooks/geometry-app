@@ -73,8 +73,8 @@ export const handleToolMenuClick = (
       setCircleTabletState({ active: false, centerId: null, center: null, radius: 150, isDraggingHandle: false, handlePos: null });
     }
     
-    // If switching to perpendicular in tablet mode, activate selectLine step
-    if (toolId === 'perpendicular' && isTabletMode) {
+    // Kolmice: nejdřív výběr přímky, pak posun pravítka (PC i tablet)
+    if (toolId === 'perpendicular') {
       if (setPerpTabletState) {
         setPerpTabletState({ step: 'selectLine', selectedLineId: null, currentPos: null });
       }
